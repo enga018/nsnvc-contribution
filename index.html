@@ -42,18 +42,27 @@
   main{max-width:680px; margin:0 auto; padding:18px 16px 60px}
 
   /* Citizen lookup */
-  .lookup-card{
-    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
-    padding:22px 18px; box-shadow:var(--shadow); text-align:center;
+  .lookup{ text-align:center; padding:14px 4px 6px; }
+  .lookup h1{ font-size:18px; font-weight:600; margin:0 0 16px; color:var(--ink); }
+  .searchbar{
+    display:flex; align-items:center; gap:10px;
+    max-width:420px; margin:0 auto;
+    background:var(--surface); border:1px solid var(--border-strong);
+    border-radius:999px; padding:5px 5px 5px 16px;
+    transition:border-color .15s, box-shadow .15s;
   }
-  .lookup-card h1{font-size:20px; margin:0 0 4px}
-  .lookup-card p.sub{color:var(--muted); font-size:13.5px; margin:0 0 18px}
-  .search-row{display:flex; gap:8px; max-width:380px; margin:0 auto}
-  .search-row input{
-    flex:1; padding:13px 14px; font-size:16px; border:1.5px solid var(--border-strong);
-    border-radius:10px; outline:none; min-width:0;
+  .searchbar:focus-within{ border-color:var(--green); box-shadow:0 0 0 3px rgba(27,77,62,.08); }
+  .search-ico{ width:18px; height:18px; color:var(--muted); flex:none; }
+  .searchbar input{
+    flex:1; min-width:0; border:none; outline:none; background:transparent;
+    font-size:16px; padding:10px 0; color:var(--ink);
   }
-  .search-row input:focus{border-color:var(--green)}
+  .search-go{
+    flex:none; width:40px; height:40px; border-radius:50%; border:none;
+    background:var(--green); color:#fff; display:flex; align-items:center; justify-content:center;
+  }
+  .search-go svg{ width:18px; height:18px; }
+  .search-go:active{ background:var(--green-dark); }
   .btn{
     background:var(--green); color:#fff; border:none; padding:13px 18px;
     border-radius:10px; font-size:15px; font-weight:600; white-space:nowrap;
@@ -189,6 +198,10 @@
   .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff;
     padding:12px 18px; border-radius:99px; font-size:14px; z-index:60; box-shadow:var(--shadow); animation:rise .2s ease}
 
+  .hist-toggle{width:100%; text-align:left; background:none; border:none; border-top:1px solid var(--border);
+    padding:14px 18px; font-size:13px; font-weight:650; color:var(--green); text-transform:uppercase; letter-spacing:.5px; cursor:pointer}
+  .dash-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px}
+  .dash-title{font-size:13px; font-weight:650; text-transform:uppercase; letter-spacing:1px; color:var(--muted)}
   .card-amt{font-size:15.5px; font-weight:700; white-space:nowrap; flex:none}
   .card-amt.owe{color:var(--due)}
   .card-amt.clear{color:var(--paid)}
@@ -213,12 +226,14 @@
 <main>
   <!-- ============ CITIZEN VIEW ============ -->
   <section id="citizenView">
-    <div class="lookup-card">
+    <div class="lookup" id="lookupCard">
       <h1>Check your contribution balance</h1>
-      <p class="sub">Enter your job card number — just the number after the slash (/) is enough.</p>
-      <div class="search-row">
-        <input id="searchId" type="text" inputmode="text" placeholder="e.g. 3" autocomplete="off" />
-        <button class="btn" id="searchBtn">Check</button>
+      <div class="searchbar">
+        <svg class="search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input id="searchId" type="text" inputmode="text" placeholder="Enter your job card no" autocomplete="off" />
+        <button class="search-go" id="searchBtn" aria-label="Search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+        </button>
       </div>
     </div>
     <div id="citizenResult"></div>
@@ -244,6 +259,10 @@
 
     <!-- dashboard -->
     <div id="dashboard" class="hidden">
+      <div class="dash-head">
+        <span class="dash-title">Admin</span>
+        <button class="btn small ghost" id="logoutBtn">Log out</button>
+      </div>
       <div class="stats">
         <div class="stat"><div class="k">Citizens</div><div class="v" id="stCount">0</div></div>
         <div class="stat"><div class="k">Outstanding</div><div class="v due" id="stOut">₹0</div></div>
@@ -254,13 +273,13 @@
         <button class="btn small ghost" id="importBtn">Import</button>
         <button class="btn small" id="addCitizenBtn">+ Add</button>
       </div>
-      <div class="clist" id="citizenList"></div>
+      <div class="clist" id="adminList"></div>
     </div>
   </section>
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.9.0</footer>
+<footer>New Serchhip North Village Council · v1.13.0</footer>
 
 <script type="module">
 /* ============================================================
@@ -296,6 +315,26 @@ function statusOf(c){
 const statusLabel = {paid:"Cleared", partial:"Partly paid", due:"Due"};
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function monthLabel(){ return new Date().toLocaleString("en-IN",{month:"long",year:"numeric"}); }
+// Show register period labels nicely: JANUARY → "January 2026", MAY1 → "May 1 2026".
+// Only the all-caps register labels are reformatted; free-text notes (e.g. "cash") are left alone.
+function prettyPeriod(note){
+  const s=String(note||"").trim();
+  if(!/^[A-Z0-9 ]+$/.test(s)) return note;
+  const m=s.match(/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s*([0-9]*)$/);
+  if(!m) return note;
+  const M={JAN:"January",FEB:"February",MAR:"March",APR:"April",MAY:"May",JUN:"June",JUL:"July",AUG:"August",SEP:"September",OCT:"October",NOV:"November",DEC:"December"};
+  return M[m[1]] + (m[2]?" "+m[2]:"") + " 2026";
+}
+// Charge rows show the period; payment rows show "Payment", with a method note
+// like cash in parentheses. Period notes on payments are not repeated.
+function entryLabel(e){
+  if(e.type==="payment"){
+    const note=e.note;
+    const isPeriod = note && prettyPeriod(note)!==note;
+    return (note && !isPeriod) ? `Payment (${note})` : "Payment";
+  }
+  return prettyPeriod(e.note) || "Contribution";
+}
 // The full job card is the unique key (the after-slash number is NOT unique —
 // different prefixes can share one). We key records on the full number (slash
 // encoded), keep the after-slash number in cardNo for searching, and the full
@@ -380,6 +419,19 @@ function makeLocalStore(){
         c.totalCharged=(c.totalCharged||0)+it.amount;
         c.balance=(c.totalCharged||0)-(c.totalPaid||0);
         c.ledger.push({ type:"charge", amount:it.amount, note:it.note, date:"", createdAt:(it.when? it.when.getTime() : ++clock) });
+        c.updatedAt=++clock;
+        if((++n % 50)===0 && onProgress) onProgress(n, items.length);
+      }
+      persist(); notify(); if(onProgress) onProgress(items.length, items.length);
+      return items.length;
+    },
+    async bulkAppendPayments(items, onProgress){
+      let n=0;
+      for(const it of items){
+        const c=data.citizens[it.id]; if(!c) continue;
+        c.totalPaid=(c.totalPaid||0)+it.amount;
+        c.balance=(c.totalCharged||0)-(c.totalPaid||0);
+        c.ledger.push({ type:"payment", amount:it.amount, note:it.note, date:it.date||"", createdAt:(it.when? it.when.getTime() : ++clock) });
         c.updatedAt=++clock;
         if((++n % 50)===0 && onProgress) onProgress(n, items.length);
       }
@@ -530,6 +582,24 @@ function makeFirebaseStore({ auth, db, fs, au }){
       if(onProgress) onProgress(items.length, items.length);
       return items.length;
     },
+    async bulkAppendPayments(items, onProgress){
+      let batch=fs.writeBatch(db), ops=0, done=0;
+      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
+      for(const it of items){
+        const cRef=fs.doc(db,"citizens",it.id);
+        batch.set(cRef,{ totalPaid:fs.increment(it.amount), balance:fs.increment(-it.amount), updatedAt:fs.serverTimestamp() }, { merge:true });
+        ops++;
+        const eRef=fs.doc(fs.collection(db,"citizens",it.id,"ledger"));
+        batch.set(eRef,{ type:"payment", amount:it.amount, note:it.note, date:it.date||"",
+          createdAt:(it.when? fs.Timestamp.fromDate(it.when) : fs.serverTimestamp()) });
+        ops++;
+        if(ops>=400) await flush();
+        if((++done % 25)===0 && onProgress) onProgress(done, items.length);
+      }
+      await flush();
+      if(onProgress) onProgress(items.length, items.length);
+      return items.length;
+    },
     async signIn(email, pass){ await au.signInWithEmailAndPassword(auth, email, pass); },
     signOut(){ au.signOut(auth); },
     onAuth(cb){ au.onAuthStateChanged(auth, u=>cb(!!u)); }
@@ -606,6 +676,7 @@ async function doSearch(){
 
 // search results — same card layout, with a back-to-list link
 function renderResults(){
+  $("lookupCard").classList.remove("hidden");
   $("citizenList").classList.add("hidden");
   const multi = matches.length>1;
   const cards = matches.map(m=>personCardHTML(m.id, m.c)).join("");
@@ -622,6 +693,7 @@ async function openMatch(id, fromList){
   backTarget = fromList ? "list" : "results";
   const c = (matches.find(x=>x.id===id)||{}).c || pubAll.find(x=>x.id===id) || await store.getCitizen(id);
   if(!c) return;
+  $("lookupCard").classList.add("hidden");   // end search once a person is open
   $("citizenList").classList.add("hidden");
   $("citizenResult").innerHTML = `<div class="notice info">Loading…</div>`;
   const entries = await store.getLedger(id);
@@ -676,33 +748,15 @@ function renderPubList(){
 // month"; any payments after it are "paid this month".
 function renderStatement(){
   const { id, c, entries } = lastResult;
-  const chrono = [...entries].reverse(); // oldest first
-  let lastChargeIdx = -1;
-  for(let i=0;i<chrono.length;i++){ if(chrono[i].type==="charge") lastChargeIdx=i; }
-
-  let brought=0, thisAmt=0, thisLabel="This month", paidThis=0;
-  for(let i=0;i<chrono.length;i++){
-    const e=chrono[i], v=e.amount||0;
-    if(i<lastChargeIdx){ brought += e.type==="charge" ? v : -v; }
-    else if(i===lastChargeIdx){ thisAmt=v; thisLabel=e.note||"This month"; }
-    else if(e.type==="payment"){ paidThis += v; }
-  }
-
   const bal = (c.totalCharged||0)-(c.totalPaid||0);
   const toPay = Math.max(0, bal);
-  const credit = bal<0 ? -bal : 0;
   const st = statusOf(c);
 
-  let lines="";
-  if(brought>0) lines += `<div class="brow"><span>Previous balance carried over</span><b>+ ${fmt(brought)}</b></div>`;
-  else if(brought<0) lines += `<div class="brow"><span>Credit from before</span><b class="credit">− ${fmt(-brought)}</b></div>`;
-  if(lastChargeIdx>=0) lines += `<div class="brow"><span>${esc(thisLabel)}</span><b>+ ${fmt(thisAmt)}</b></div>`;
-  if(paidThis>0) lines += `<div class="brow"><span>Paid this month</span><b class="credit">− ${fmt(paidThis)}</b></div>`;
-  lines += `<div class="brow total"><span>Total to pay now</span><b>${fmt(toPay)}</b></div>`;
-
-  const rows = entries.length ? entries.map(e=>`
+  // History oldest-first (January at top)
+  const chrono = [...entries].reverse();
+  const rows = chrono.length ? chrono.map(e=>`
     <div class="row">
-      <div class="desc"><b>${esc(e.note || (e.type==="charge"?"Contribution":"Payment"))}</b>
+      <div class="desc"><b>${esc(entryLabel(e))}</b>
         <small>${esc(e.date||"")}</small></div>
       <div class="amt ${e.type==="payment"?"payment":"charge"}">
         ${e.type==="payment"?"− ":"+ "}${fmt(e.amount)}</div>
@@ -714,27 +768,26 @@ function renderStatement(){
     <div class="top">
       <div>
         <p class="name">${esc(c.name||"—")}</p>
-        <div class="meta">Job card ${esc(c.jobCard||id)}${c.area?" · "+esc(c.area):""}</div>
+        <div class="meta">${esc(c.jobCard||id)}</div>
       </div>
       <span class="badge ${st}">${statusLabel[st]}</span>
     </div>
     <div class="balance-block">
       <div class="label">Total to pay now</div>
       <div class="amount money ${toPay<=0?"zero":"owing"}">${fmt(toPay)}</div>
-      ${toPay<=0 && credit<=0 ? `<div class="meta">You're all paid up. Thank you.</div>` : ``}
-    </div>
-    ${credit>0 ? `<div class="carry-note">You have ${fmt(credit)} in credit, carried to next month.</div>` : ``}
-    <div class="breakdown">${lines}</div>
-    <div class="split money">
-      <div><div class="k">Total contributed</div><div class="v">${fmt(c.totalCharged)}</div></div>
-      <div><div class="k">Total paid</div><div class="v">${fmt(c.totalPaid)}</div></div>
+      ${toPay<=0 ? `<div class="meta">You're all paid up. Thank you.</div>` : ``}
     </div>
     <div class="ledger">
-      <h3>History</h3>
-      ${rows}
+      <button class="hist-toggle" id="histToggle">Show history (${chrono.length}) ▾</button>
+      <div id="histBody" class="hidden">${rows}</div>
     </div>
   </div>`;
   $("backBtn").addEventListener("click", goBack);
+  $("histToggle").addEventListener("click", ()=>{
+    const body=$("histBody"); const open=!body.classList.contains("hidden");
+    body.classList.toggle("hidden", open);
+    $("histToggle").textContent = open ? `Show history (${chrono.length}) ▾` : `Hide history ▴`;
+  });
 }
 
 /* ============================================================
@@ -744,16 +797,22 @@ $("modeBtn").addEventListener("click", ()=>{
   const adminHidden = $("adminView").classList.contains("hidden");
   $("adminView").classList.toggle("hidden", !adminHidden);
   $("citizenView").classList.toggle("hidden", adminHidden);
-  $("modeBtn").textContent = adminHidden ? "Citizen view" : (loggedIn ? "Citizen view" : "Council login");
   // returning to citizen view → refresh the public list with latest data
   if(!adminHidden){ $("searchId").value=""; showList(); }
+  updateModeBtn();
 });
+function updateModeBtn(){
+  const adminShown = !$("adminView").classList.contains("hidden");
+  // the label names the view the button switches TO
+  $("modeBtn").textContent = adminShown ? "Citizen view" : (loggedIn ? "Admin" : "Council login");
+}
 
 /* ============================================================
    ADMIN — auth
    ============================================================ */
 $("loginBtn").addEventListener("click", login);
 $("adminPass").addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
+$("logoutBtn").addEventListener("click", ()=>{ store.signOut(); });
 
 async function login(){
   const email=$("adminEmail").value.trim(), pass=$("adminPass").value;
@@ -770,13 +829,13 @@ function onAuth(isIn){
   if(isIn){
     $("loginCard").classList.add("hidden");
     $("dashboard").classList.remove("hidden");
-    $("modeBtn").textContent="Citizen view";
     subscribeCitizens();
   } else {
     $("loginCard").classList.remove("hidden");
     $("dashboard").classList.add("hidden");
     if(citizensUnsub){ citizensUnsub(); citizensUnsub=null; }
   }
+  updateModeBtn();
 }
 
 /* ============================================================
@@ -801,12 +860,12 @@ function renderList(){
   const term = $("adminSearch").value.trim().toLowerCase();
   const list = allCitizens.filter(c =>
     !term || (c.jobCard||c.id).toLowerCase().includes(term) || (c.name||"").toLowerCase().includes(term));
-  if(!list.length){ $("citizenList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet. Tap + Add to begin."}</div>`; return; }
-  $("citizenList").innerHTML = list.map(c=>{
+  if(!list.length){ $("adminList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet. Tap + Add to begin."}</div>`; return; }
+  $("adminList").innerHTML = list.map(c=>{
     const bal=(c.totalCharged||0)-(c.totalPaid||0), st=statusOf(c);
     return `<button class="citizen-row" data-id="${esc(c.id)}">
       <span class="dot ${st}"></span>
-      <span class="info"><b>${esc(c.name||"—")}</b><small>Job card ${esc(c.jobCard||c.id)}${c.area?" · "+esc(c.area):""}</small></span>
+      <span class="info"><b>${esc(c.name||"—")}</b><small>${esc(c.jobCard||c.id)}</small></span>
       <span class="bal money" style="color:${bal>0?'var(--due)':'var(--paid)'}">${fmt(Math.max(0,bal))}</span>
     </button>`;
   }).join("");
@@ -833,10 +892,12 @@ function openImport(){
   openSheet("Import from Excel", `
     <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">What are you importing?</p>
     <button class="btn block" id="impHistBtn" style="margin-bottom:10px">First-time historical register</button>
-    <button class="btn block ghost" id="impMonthBtn">Monthly update file</button>
+    <button class="btn block ghost" id="impMonthBtn" style="margin-bottom:10px">Monthly update file (charges)</button>
+    <button class="btn block ghost" id="impBankBtn">Bank payment file</button>
   `);
   $("impHistBtn").addEventListener("click", openHistorical);
   $("impMonthBtn").addEventListener("click", openMonthly);
+  $("impBankBtn").addEventListener("click", openBank);
 }
 
 async function ensureXLSX(){
@@ -950,9 +1011,9 @@ function openMonthly(){
   openSheet("Monthly update", `
     <p style="font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5">
       One sheet with Job card, Holder name, amount received and payable amount.
-      The period name is taken from the file name. People are matched by job card;
-      new job cards are added. Rows with 0 received are skipped.</p>
-    <div class="field"><label>Period name</label><input id="impPeriod" placeholder="e.g. MAY2"></div>
+      People are matched by job card; new job cards are added. Rows with 0 received are skipped.</p>
+    <div class="field"><label>Period name — what this shows as in history</label>
+      <input id="impPeriod" placeholder="e.g. MAY2"></div>
     <div class="field"><label>Excel file (.xlsx)</label>
       <input id="impFile" type="file" accept=".xlsx,.xls"></div>
     <div id="impMsg"></div><div id="impPreview"></div>
@@ -962,8 +1023,6 @@ function openMonthly(){
 
 async function handleMonthly(e){
   const file=e.target.files[0]; if(!file) return;
-  if(!$("impPeriod").value.trim()) $("impPeriod").value = file.name.replace(/\.(xlsx|xls)$/i,"").trim();
-  const period=$("impPeriod").value.trim();
   $("impMsg").innerHTML=`<div class="notice info">Reading…</div>`; $("impPreview").innerHTML="";
   let XLSX; try{ XLSX=await ensureXLSX(); }catch(err){ $("impMsg").innerHTML=`<div class="notice err">Couldn't load the Excel reader. Connect to the internet and try again.</div>`; return; }
   try{
@@ -987,11 +1046,11 @@ async function handleMonthly(e){
       known ? existCount++ : newCount++;
       totAmt+=pay;
       items.push({ id, jobCard:full, cardNo:suffixOf(full), name:String(row[cName>=0?cName:2]||"").trim(),
-        amount:pay, note:period, when:new Date() });
+        amount:pay, when:new Date() });   // period note is set at confirm
     }
     if(!items.length){ $("impMsg").innerHTML=`<div class="notice err">No rows with a payable amount found.</div>`; return; }
-    pendingMonthly={items, period};
-    $("impMsg").innerHTML=`<div class="notice info">Period "<b>${esc(period)}</b>" — review and confirm.</div>`;
+    pendingMonthly={items};
+    $("impMsg").innerHTML=`<div class="notice info">Found ${items.length} households. Set the period name above, then add.</div>`;
     $("impPreview").innerHTML=`
       <div class="panel" style="margin-top:12px">
         <div class="brow"><span>New charges to add</span><b>${items.length}</b></div>
@@ -1000,8 +1059,8 @@ async function handleMonthly(e){
         <div class="brow"><span>Skipped (0 received)</span><b>${skipped}</b></div>
         <div class="brow total"><span>Total added this period</span><b class="money">${fmt(totAmt)}</b></div>
       </div>
-      <p style="font-size:12px;color:var(--muted);margin:0 0 10px">This adds "${esc(period)}" charges. Import each period's file only once.</p>
-      <button class="btn block" id="impConfirm">Add "${esc(period)}" for ${items.length}</button>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Import each period's file only once.</p>
+      <button class="btn block" id="impConfirm">Add for ${items.length} households</button>
       <div id="impProgress" style="margin-top:10px"></div>`;
     $("impConfirm").addEventListener("click", runMonthly);
   }catch(err){ console.error(err); $("impMsg").innerHTML=`<div class="notice err">Couldn't read that file.</div>`; }
@@ -1009,14 +1068,104 @@ async function handleMonthly(e){
 
 async function runMonthly(){
   if(!pendingMonthly) return;
+  const period=$("impPeriod").value.trim();
+  if(!period){
+    $("impMsg").innerHTML=`<div class="notice err">Please type the period name above (e.g. MAY2) before adding.</div>`;
+    $("impPeriod").focus();
+    return;
+  }
+  const items=pendingMonthly.items.map(it=>({...it, note:period}));
   const btn=$("impConfirm"); btn.disabled=true; const prog=$("impProgress");
-  const {items,period}=pendingMonthly;
-  prog.innerHTML=`<div class="notice info">Adding… 0 / ${items.length}</div>`;
+  prog.innerHTML=`<div class="notice info">Adding "${esc(period)}"… 0 / ${items.length}</div>`;
   try{
     await store.bulkAppendCharges(items,(d,t)=>{ prog.innerHTML=`<div class="notice info">Adding… ${d} / ${t}</div>`; });
     prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — "${esc(period)}" added for ${items.length}.</div>`;
     pendingMonthly=null; setTimeout(()=>{ closeSheet(); toast("Monthly update added"); },900);
   }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Update failed partway. Check connection and try again.</div>`; btn.disabled=false; }
+}
+
+/* ---------- Bank payment file (records payments) ---------- */
+let pendingBank=null;
+
+function openBank(){
+  openSheet("Bank payment file", `
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5">
+      One sheet with Job Card No., Name and amount — the list of who paid through the bank.
+      Each row is recorded as a payment ("Payment (Bank)") and lowers that person's balance.
+      People are matched by job card; rows that don't match anyone are skipped and listed.</p>
+    <div class="field"><label>Payment date</label><input id="impDate" type="date" value="${todayISO()}"></div>
+    <div class="field"><label>Excel file (.xlsx)</label>
+      <input id="impFile" type="file" accept=".xlsx,.xls"></div>
+    <div id="impMsg"></div><div id="impPreview"></div>
+  `);
+  $("impFile").addEventListener("change", handleBank);
+}
+
+// resolve a job card value (full or after-slash) to exactly one citizen
+function resolveCitizen(value){
+  const fk=fullKey(value);
+  let cand=allCitizens.filter(c=>c.id===fk);
+  if(!cand.length){ const suf=suffixOf(value); cand=allCitizens.filter(c=>(c.cardNo||"")===suf); }
+  return cand; // 0 = not found, 1 = matched, >1 = ambiguous
+}
+
+async function handleBank(e){
+  const file=e.target.files[0]; if(!file) return;
+  $("impMsg").innerHTML=`<div class="notice info">Reading…</div>`; $("impPreview").innerHTML="";
+  let XLSX; try{ XLSX=await ensureXLSX(); }catch(err){ $("impMsg").innerHTML=`<div class="notice err">Couldn't load the Excel reader. Connect to the internet and try again.</div>`; return; }
+  try{
+    const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+    const h=rows[0]||[];
+    const cFull=_findCol(h,/job\s*card/i);
+    const cName=_findCol(h,/name|holder/i);
+    let cAmt=_findCol(h,/amount|paid|payable|pay/i);
+    if(cFull<0 || cAmt<0){ $("impMsg").innerHTML=`<div class="notice err">Need a Job card column and an amount column.</div>`; return; }
+
+    const items=[]; const notFound=[]; const ambiguous=[];
+    let totAmt=0;
+    for(let r=1;r<rows.length;r++){ const row=rows[r]; if(!row) continue;
+      const val=String(row[cFull]||"").trim(); if(!val) continue;
+      const amt=_num(row[cAmt]); if(amt<=0) continue;
+      const nm=String(row[cName>=0?cName:1]||"").trim();
+      const cand=resolveCitizen(val);
+      if(cand.length===1){ items.push({ id:cand[0].id, amount:amt }); totAmt+=amt; }
+      else if(cand.length>1){ ambiguous.push(val+(nm?" ("+nm+")":"")); }
+      else { notFound.push(val+(nm?" ("+nm+")":"")); }
+    }
+    if(!items.length && !notFound.length && !ambiguous.length){ $("impMsg").innerHTML=`<div class="notice err">No rows with an amount found.</div>`; return; }
+    pendingBank={items};
+    const issues = [...ambiguous.map(x=>"⚠︎ "+x+" — number matches more than one person"),
+                    ...notFound.map(x=>"• "+x+" — not found")];
+    $("impMsg").innerHTML=`<div class="notice info">Review and confirm the bank payments.</div>`;
+    $("impPreview").innerHTML=`
+      <div class="panel" style="margin-top:12px">
+        <div class="brow"><span>Payments to record</span><b>${items.length}</b></div>
+        <div class="brow"><span>Not matched (skipped)</span><b>${notFound.length}</b></div>
+        <div class="brow"><span>Ambiguous (skipped)</span><b>${ambiguous.length}</b></div>
+        <div class="brow total"><span>Total being paid</span><b class="money">${fmt(totAmt)}</b></div>
+      </div>
+      ${issues.length?`<div class="panel" style="max-height:160px;overflow:auto"><h4>Skipped rows</h4>
+        <div style="font-size:12.5px;color:var(--muted);line-height:1.7">${issues.map(esc).join("<br>")}</div></div>`:``}
+      <button class="btn block" id="impConfirm" ${items.length?"":"disabled"}>Record ${items.length} bank payments</button>
+      <div id="impProgress" style="margin-top:10px"></div>`;
+    if($("impConfirm")) $("impConfirm").addEventListener("click", runBank);
+  }catch(err){ console.error(err); $("impMsg").innerHTML=`<div class="notice err">Couldn't read that file.</div>`; }
+}
+
+async function runBank(){
+  if(!pendingBank) return;
+  const dateStr=$("impDate").value || todayISO();
+  const when=new Date(dateStr+"T12:00:00");
+  const items=pendingBank.items.map(it=>({...it, note:"Bank", date:dateStr, when}));
+  const btn=$("impConfirm"); btn.disabled=true; const prog=$("impProgress");
+  prog.innerHTML=`<div class="notice info">Recording… 0 / ${items.length}</div>`;
+  try{
+    await store.bulkAppendPayments(items,(d,t)=>{ prog.innerHTML=`<div class="notice info">Recording… ${d} / ${t}</div>`; });
+    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${items.length} bank payments recorded.</div>`;
+    pendingBank=null; setTimeout(()=>{ closeSheet(); toast("Bank payments recorded"); },900);
+  }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Recording failed partway. Check connection and try again.</div>`; btn.disabled=false; }
 }
 
 /* ============================================================
@@ -1043,10 +1192,7 @@ function openAddCitizen(){
     <div class="field"><label>Job card number (unique)</label><input id="ncId" placeholder="e.g. MZ-07-001-005-001/3">
       <small style="display:block;color:var(--muted);font-size:11.5px;margin-top:5px">Type the full number exactly as printed (not zero-padded). Citizens look up by the part after the slash (e.g. 3).</small></div>
     <div class="field"><label>Name</label><input id="ncName" placeholder="Owner / household name"></div>
-    <div class="inline">
-      <div class="field"><label>Area / locality</label><input id="ncArea" placeholder="optional"></div>
-      <div class="field"><label>Phone</label><input id="ncPhone" inputmode="tel" placeholder="optional"></div>
-    </div>
+    <div class="field"><label>Phone</label><input id="ncPhone" inputmode="tel" placeholder="optional"></div>
     <div id="ncErr"></div>
     <button class="btn block" id="ncSave" style="margin-top:6px">Save citizen</button>
   `);
@@ -1054,7 +1200,7 @@ function openAddCitizen(){
 }
 async function saveNewCitizen(){
   const jobCard=$("ncId").value.trim(), name=$("ncName").value.trim();
-  const area=$("ncArea").value.trim(), phone=$("ncPhone").value.trim();
+  const area="", phone=$("ncPhone").value.trim();
   if(!jobCard || !name){ $("ncErr").innerHTML=`<div class="notice err">Job card number and name are required.</div>`; return; }
   $("ncSave").disabled=true;
   const id=fullKey(jobCard);
@@ -1082,7 +1228,7 @@ async function renderCitizenDetail(id){
   const bal=(c.totalCharged||0)-(c.totalPaid||0);
   const rows = entries.length ? entries.map(e=>`
     <div class="row">
-      <div class="desc"><b>${esc(e.note||(e.type==="charge"?"Contribution":"Payment"))}</b><small>${esc(e.date||"")}</small></div>
+      <div class="desc"><b>${esc(entryLabel(e))}</b><small>${esc(e.date||"")}</small></div>
       <div class="amt ${e.type==="payment"?"payment":"charge"}">${e.type==="payment"?"− ":"+ "}${fmt(e.amount)}</div>
     </div>`).join("") : `<div class="empty">No entries yet.</div>`;
 
@@ -1090,7 +1236,7 @@ async function renderCitizenDetail(id){
     <div class="balance-block" style="padding-top:0">
       <div class="label">Remaining balance</div>
       <div class="amount money ${bal<=0?'zero':'owing'}">${fmt(Math.max(0,bal))}</div>
-      <div class="meta">Job card ${esc(c.jobCard||id)}${c.area?" · "+esc(c.area):""}${c.phone?" · "+esc(c.phone):""}</div>
+      <div class="meta">${esc(c.jobCard||id)}${c.phone?" · "+esc(c.phone):""}</div>
     </div>
 
     <div class="panel">
