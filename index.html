@@ -260,7 +260,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.3.0</footer>
+<footer>New Serchhip North Village Council · v1.9.0</footer>
 
 <script type="module">
 /* ============================================================
@@ -303,6 +303,9 @@ function monthLabel(){ return new Date().toLocaleString("en-IN",{month:"long",ye
 // than one person, so the lookup handles a list.
 function suffixOf(s){ s=String(s||"").trim(); const i=s.lastIndexOf("/"); return (i>=0?s.slice(i+1):s).trim().toLowerCase(); }
 function fullKey(s){ return (String(s||"").trim().replace(/\//g,"%2F").replace(/^\.+$/,"_")) || "_"; }
+// Sort by the after-slash number as a number, so /3 comes before /12.
+function seqNum(s){ const n=parseInt(String(s==null?"":s).replace(/[^0-9]/g,""),10); return isNaN(n)?Number.MAX_SAFE_INTEGER:n; }
+function byCardNo(a,b){ const d=seqNum(a.cardNo)-seqNum(b.cardNo); return d!==0?d:String(a.jobCard||a.id).localeCompare(String(b.jobCard||b.id)); }
 
 /* ============================================================
    DATA LAYER — one interface, two backends (local test / Firebase)
@@ -336,18 +339,11 @@ function makeLocalStore(){
       return out;
     },
     subscribe(cb){ listeners.add(cb); cb(sortedList()); return ()=>listeners.delete(cb); },
-    async pageCitizens(cursor, pageSize){
-      const arr=Object.entries(data.citizens)
+    async listOwing(){
+      return Object.entries(data.citizens)
+        .filter(([id,c])=> ((c.totalCharged||0)-(c.totalPaid||0))>0)
         .map(([id,c])=>({ id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name, area:c.area,
-                          totalCharged:c.totalCharged, totalPaid:c.totalPaid, balance:c.balance }))
-        .sort((a,b)=>String(a.jobCard||a.id).localeCompare(String(b.jobCard||b.id), undefined, {numeric:true}));
-      let start=0;
-      if(cursor){ const i=arr.findIndex(x=>String(x.jobCard||x.id)===cursor); start=i>=0?i+1:0; }
-      const slice=arr.slice(start, start+pageSize+1);
-      const hasMore=slice.length>pageSize;
-      const items=slice.slice(0,pageSize);
-      const nextCursor=items.length?String(items[items.length-1].jobCard||items[items.length-1].id):null;
-      return { items, nextCursor, hasMore };
+                          totalCharged:c.totalCharged, totalPaid:c.totalPaid, balance:c.balance }));
     },
     async exists(id){ return !!data.citizens[id]; },
     async addCitizen(id, d){ data.citizens[id]={...d, ledger:[], createdAt:++clock, updatedAt:++clock}; persist(); notify(); },
@@ -466,6 +462,11 @@ function makeFirebaseStore({ auth, db, fs, au }){
       const items=docs.slice(0,pageSize);
       const nextCursor=items.length?String(items[items.length-1].jobCard||items[items.length-1].id):null;
       return { items, nextCursor, hasMore };
+    },
+    async listOwing(){
+      const q=fs.query(fs.collection(db,"citizens"), fs.where("balance",">",0), fs.orderBy("balance"));
+      const snap=await fs.getDocs(q);
+      return snap.docs.map(d=>({ id:d.id, ...d.data() }));
     },
     async exists(id){ return (await fs.getDoc(fs.doc(db,"citizens",id))).exists(); },
     async addCitizen(id, d){
@@ -619,7 +620,7 @@ function renderResults(){
 
 async function openMatch(id, fromList){
   backTarget = fromList ? "list" : "results";
-  const c = (matches.find(x=>x.id===id)||{}).c || pubItems.find(x=>x.id===id) || await store.getCitizen(id);
+  const c = (matches.find(x=>x.id===id)||{}).c || pubAll.find(x=>x.id===id) || await store.getCitizen(id);
   if(!c) return;
   $("citizenList").classList.add("hidden");
   $("citizenResult").innerHTML = `<div class="notice info">Loading…</div>`;
@@ -633,40 +634,41 @@ function goBack(){
   else { $("citizenResult").innerHTML=""; $("citizenList").classList.remove("hidden"); }
 }
 
-/* ---------- public browse list (20 per page) ---------- */
-let pubItems=[], pubStack=[null], pubIdx=0, pubHasMore=false, backTarget="list";
+/* ---------- public list: only those with a balance still to pay ---------- */
+let pubAll=[], pubShown=20, backTarget="list";
+const PUB_STEP=20;
 
 function showList(){
   backTarget="list";
   $("citizenResult").innerHTML="";
   $("citizenList").classList.remove("hidden");
-  loadPubPage();
+  loadOwing();
 }
-async function loadPubPage(){
+async function loadOwing(){
   $("citizenList").innerHTML=`<div class="empty">Loading…</div>`;
   try{
-    const { items, nextCursor, hasMore } = await store.pageCitizens(pubStack[pubIdx], 20);
-    pubItems=items; pubHasMore=hasMore;
-    if(hasMore) pubStack[pubIdx+1]=nextCursor;
+    pubAll = await store.listOwing();
+    pubAll.sort(byCardNo);           // by after-slash number: /3 before /12
+    pubShown=PUB_STEP;
     renderPubList();
   }catch(err){ console.error(err); $("citizenList").innerHTML=`<div class="notice err">Couldn't load the list.</div>`; }
 }
 function renderPubList(){
-  if(!pubItems.length){ $("citizenList").innerHTML=`<div class="empty">No records yet.</div>`; return; }
-  const cards = pubItems.map(c=>personCardHTML(c.id, c)).join("");
+  const total=pubAll.length;
+  if(!total){
+    $("citizenList").innerHTML=`<div class="list-head">Pending payments</div>
+      <div class="empty">Everyone is fully paid. Nothing pending.</div>`;
+    return;
+  }
+  const shown=Math.min(pubShown, total);
+  const cards=pubAll.slice(0, shown).map(c=>personCardHTML(c.id, c)).join("");
   $("citizenList").innerHTML =
-    `<div class="list-head">All contributors</div>` + cards +
-    `<div class="pager">
-      <button class="btn small ghost" id="pgPrev" ${pubIdx===0?"disabled":""}>‹ Prev</button>
-      <span class="pageno">Page ${pubIdx+1}</span>
-      <button class="btn small ghost" id="pgNext" ${pubHasMore?"":"disabled"}>Next ›</button>
-    </div>`;
+    `<div class="list-head">Pending payments (${total})</div>` + cards +
+    (shown<total ? `<button class="btn block ghost small" id="seeMore" style="margin-top:12px">See more (${total-shown} more)</button>` : ``);
   document.querySelectorAll("#citizenList .result-card").forEach(b=>
     b.addEventListener("click", ()=>openMatch(b.dataset.id, true)));
-  if($("pgPrev")) $("pgPrev").addEventListener("click", ()=>{ if(pubIdx>0){ pubIdx--; loadPubPage(); } });
-  if($("pgNext")) $("pgNext").addEventListener("click", ()=>{ if(pubHasMore){ pubIdx++; loadPubPage(); } });
+  if($("seeMore")) $("seeMore").addEventListener("click", ()=>{ pubShown+=PUB_STEP; renderPubList(); });
 }
-function refreshPublicList(){ pubStack=[null]; pubIdx=0; loadPubPage(); }
 
 // Step 2: the payable detail, with carry-forward / credit spelled out.
 // Carryover is computed positionally from the ledger: everything before the
