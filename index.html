@@ -273,6 +273,11 @@
         <button class="btn small ghost" id="importBtn">Import</button>
         <button class="btn small" id="addCitizenBtn">+ Add</button>
       </div>
+      <div class="seg" id="adminFilter" style="margin-bottom:12px">
+        <button data-f="pending" class="active">Pending</button>
+        <button data-f="paid">Paid</button>
+        <button data-f="all">All</button>
+      </div>
       <div class="clist" id="adminList"></div>
     </div>
   </section>
@@ -702,16 +707,18 @@ async function openMatch(id, fromList){
 }
 
 function goBack(){
+  $("lookupCard").classList.remove("hidden");   // search bar comes back
   if(backTarget==="results"){ renderResults(); }
   else { $("citizenResult").innerHTML=""; $("citizenList").classList.remove("hidden"); }
 }
 
 /* ---------- public list: only those with a balance still to pay ---------- */
-let pubAll=[], pubShown=20, backTarget="list";
-const PUB_STEP=20;
+let pubAll=[], pubShown=10, backTarget="list";
+const PUB_STEP=10;
 
 function showList(){
   backTarget="list";
+  $("lookupCard").classList.remove("hidden");
   $("citizenResult").innerHTML="";
   $("citizenList").classList.remove("hidden");
   loadOwing();
@@ -855,13 +862,30 @@ function renderStats(){
   $("stOut").textContent = fmt(out);
   $("stPaid").textContent = fmt(paid);
 }
-$("adminSearch").addEventListener("input", renderList);
+let adminFilter="pending", adminShown=10;
+$("adminSearch").addEventListener("input", ()=>{ adminShown=10; renderList(); });
+document.querySelectorAll("#adminFilter button").forEach(b=>
+  b.addEventListener("click", ()=>{
+    adminFilter=b.dataset.f; adminShown=10;
+    document.querySelectorAll("#adminFilter button").forEach(x=>x.classList.toggle("active", x===b));
+    renderList();
+  }));
 function renderList(){
   const term = $("adminSearch").value.trim().toLowerCase();
-  const list = allCitizens.filter(c =>
-    !term || (c.jobCard||c.id).toLowerCase().includes(term) || (c.name||"").toLowerCase().includes(term));
-  if(!list.length){ $("adminList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet. Tap + Add to begin."}</div>`; return; }
-  $("adminList").innerHTML = list.map(c=>{
+  let list = allCitizens.slice();
+  if(term){
+    // searching looks across everyone, ignoring the filter
+    list = list.filter(c => (c.jobCard||c.id).toLowerCase().includes(term) || (c.name||"").toLowerCase().includes(term));
+  } else if(adminFilter==="pending"){
+    list = list.filter(c => ((c.totalCharged||0)-(c.totalPaid||0))>0);
+  } else if(adminFilter==="paid"){
+    list = list.filter(c => ((c.totalCharged||0)-(c.totalPaid||0))<=0);
+  }
+  list.sort(byCardNo);
+  const total=list.length;
+  if(!total){ $("adminList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet. Tap + Add to begin."}</div>`; return; }
+  const shown=Math.min(adminShown, total);
+  const cards = list.slice(0, shown).map(c=>{
     const bal=(c.totalCharged||0)-(c.totalPaid||0), st=statusOf(c);
     return `<button class="citizen-row" data-id="${esc(c.id)}">
       <span class="dot ${st}"></span>
@@ -869,8 +893,11 @@ function renderList(){
       <span class="bal money" style="color:${bal>0?'var(--due)':'var(--paid)'}">${fmt(Math.max(0,bal))}</span>
     </button>`;
   }).join("");
-  document.querySelectorAll(".citizen-row").forEach(b=>
+  $("adminList").innerHTML = cards +
+    (shown<total ? `<button class="btn block ghost small" id="adminMore" style="margin-top:12px">See more (${total-shown} more)</button>` : ``);
+  document.querySelectorAll("#adminList .citizen-row").forEach(b=>
     b.addEventListener("click",()=>openCitizen(b.dataset.id)));
+  if($("adminMore")) $("adminMore").addEventListener("click", ()=>{ adminShown+=10; renderList(); });
 }
 
 /* ============================================================
