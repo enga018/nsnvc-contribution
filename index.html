@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+<title>Contributions — New Serchhip North Village Council</title>
+<style>
+  :root{
+    --green:#1b4d3e; --green-dark:#143a2f; --green-soft:#e8efe9;
+    --paper:#f7f6f2; --surface:#ffffff; --ink:#1c2724; --muted:#6b7672;
+    --border:#e3e1d8; --border-strong:#cfd0c7;
+    --paid:#15803d; --partial:#b45309; --due:#b91c1c;
+    --shadow:0 1px 2px rgba(20,40,30,.06),0 6px 20px rgba(20,40,30,.06);
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--paper); color:var(--ink); line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+  }
+  .money{font-variant-numeric:tabular-nums; font-feature-settings:"tnum"}
+  button{font-family:inherit; cursor:pointer}
+  input{font-family:inherit}
+
+  /* Header */
+  header{
+    background:var(--green); color:#fff; padding:14px 16px;
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    position:sticky; top:0; z-index:20;
+  }
+  .brand{display:flex; flex-direction:column; line-height:1.2}
+  .brand b{font-size:15px; font-weight:650; letter-spacing:.2px}
+  .brand span{font-size:11px; opacity:.8; text-transform:uppercase; letter-spacing:1px}
+  .mode-link{
+    background:rgba(255,255,255,.12); color:#fff; border:1px solid rgba(255,255,255,.25);
+    padding:7px 12px; border-radius:99px; font-size:12.5px; font-weight:600;
+  }
+  .mode-link:active{background:rgba(255,255,255,.22)}
+
+  main{max-width:680px; margin:0 auto; padding:18px 16px 60px}
+
+  /* Citizen lookup */
+  .lookup-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:22px 18px; box-shadow:var(--shadow); text-align:center;
+  }
+  .lookup-card h1{font-size:20px; margin:0 0 4px}
+  .lookup-card p.sub{color:var(--muted); font-size:13.5px; margin:0 0 18px}
+  .search-row{display:flex; gap:8px; max-width:380px; margin:0 auto}
+  .search-row input{
+    flex:1; padding:13px 14px; font-size:16px; border:1.5px solid var(--border-strong);
+    border-radius:10px; outline:none; min-width:0;
+  }
+  .search-row input:focus{border-color:var(--green)}
+  .btn{
+    background:var(--green); color:#fff; border:none; padding:13px 18px;
+    border-radius:10px; font-size:15px; font-weight:600; white-space:nowrap;
+  }
+  .btn:active{background:var(--green-dark)}
+  .btn.block{width:100%}
+  .btn.ghost{background:transparent; color:var(--green); border:1.5px solid var(--green)}
+  .btn.small{padding:9px 13px; font-size:13.5px}
+  .btn.danger{background:var(--due)}
+  .btn[disabled]{opacity:.5; pointer-events:none}
+
+  /* Statement / receipt */
+  .statement{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    box-shadow:var(--shadow); margin-top:18px; overflow:hidden; animation:rise .25s ease;
+  }
+  @keyframes rise{from{opacity:0; transform:translateY(8px)}to{opacity:1; transform:none}}
+  .statement .top{
+    padding:18px; border-bottom:1px dashed var(--border-strong);
+    display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
+  }
+  .statement .name{font-size:18px; font-weight:650; margin:0}
+  .statement .meta{font-size:12.5px; color:var(--muted); margin-top:3px}
+  .badge{font-size:11px; font-weight:700; padding:5px 10px; border-radius:99px; white-space:nowrap; text-transform:uppercase; letter-spacing:.5px}
+  .badge.paid{background:#e6f4ea; color:var(--paid)}
+  .badge.partial{background:#fdf1e3; color:var(--partial)}
+  .badge.due{background:#fdeaea; color:var(--due)}
+
+  .balance-block{padding:20px 18px; text-align:center; background:linear-gradient(180deg,#fbfbf8,transparent)}
+  .balance-block .label{font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted)}
+  .balance-block .amount{font-size:40px; font-weight:700; margin:4px 0 2px; letter-spacing:-1px}
+  .balance-block .amount.zero{color:var(--paid)}
+  .balance-block .amount.owing{color:var(--due)}
+  .split{display:flex; border-top:1px solid var(--border)}
+  .split div{flex:1; padding:13px; text-align:center}
+  .split div+div{border-left:1px solid var(--border)}
+  .split .k{font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px}
+  .split .v{font-size:17px; font-weight:650; margin-top:2px}
+
+  .ledger{border-top:1px solid var(--border)}
+  .ledger h3{font-size:12.5px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:0; padding:14px 18px 6px}
+  .row{
+    display:flex; align-items:center; gap:10px; padding:11px 18px; border-top:1px solid var(--border);
+  }
+  .row .desc{flex:1; min-width:0}
+  .row .desc b{font-size:14px; font-weight:600; display:block}
+  .row .desc small{font-size:12px; color:var(--muted)}
+  .row .amt{font-size:14.5px; font-weight:650; white-space:nowrap}
+  .amt.charge{color:var(--ink)}
+  .amt.payment{color:var(--paid)}
+  .empty{padding:18px; text-align:center; color:var(--muted); font-size:13.5px}
+
+  /* Search result card (step 1) */
+  .result-card{display:flex; align-items:center; gap:12px; width:100%; text-align:left;
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px 18px; box-shadow:var(--shadow); margin-top:18px; animation:rise .2s ease}
+  .result-card:active{background:var(--paper)}
+  .result-card .info{flex:1; min-width:0}
+  .result-card .info b{font-size:16px; display:block}
+  .result-card .info small{font-size:12.5px; color:var(--muted)}
+  .result-card .hint{display:block; font-size:12px; color:var(--green); font-weight:650; margin-top:4px}
+  .result-card .chev{color:var(--muted); font-size:24px; line-height:1; flex:none}
+
+  /* Back link */
+  .back{background:none; border:none; color:var(--green); font-size:13.5px; font-weight:600;
+    padding:14px 4px 2px; display:inline-flex; align-items:center; gap:4px}
+
+  /* Monthly breakdown (step 2) */
+  .breakdown{padding:6px 18px 8px}
+  .brow{display:flex; justify-content:space-between; align-items:center; gap:12px;
+    padding:10px 0; font-size:14.5px; border-bottom:1px solid var(--border)}
+  .brow span{color:var(--muted)}
+  .brow b{font-weight:650; white-space:nowrap}
+  .brow.total{border-bottom:none; border-top:2px solid var(--border-strong); margin-top:2px; padding-top:13px; font-size:16.5px}
+  .brow.total span{color:var(--ink); font-weight:700}
+  .brow b.credit{color:var(--paid)}
+  .carry-note{font-size:12.5px; color:var(--paid); padding:0 18px 16px; text-align:center}
+
+  .notice{padding:16px; border-radius:10px; font-size:14px; margin-top:16px}
+  .notice.err{background:#fdeaea; color:#7a1d1d; border:1px solid #f3c4c4}
+  .notice.info{background:var(--green-soft); color:var(--green-dark); border:1px solid #cfe0d5}
+
+  /* Admin */
+  .hidden{display:none !important}
+  .login-card{max-width:360px; margin:30px auto; background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius); padding:24px 20px; box-shadow:var(--shadow)}
+  .login-card h2{margin:0 0 16px; font-size:18px}
+  .field{margin-bottom:12px}
+  .field label{display:block; font-size:12.5px; font-weight:600; color:var(--muted); margin-bottom:5px}
+  .field input{width:100%; padding:11px 12px; font-size:15px; border:1.5px solid var(--border-strong); border-radius:9px; outline:none}
+  .field input:focus{border-color:var(--green)}
+
+  .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px}
+  .stat{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 12px; box-shadow:var(--shadow)}
+  .stat .k{font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted)}
+  .stat .v{font-size:20px; font-weight:700; margin-top:3px}
+  .stat .v.due{color:var(--due)}
+  .stat .v.paid{color:var(--paid)}
+
+  .toolbar{display:flex; gap:8px; margin-bottom:14px}
+  .toolbar input{flex:1; padding:11px 12px; font-size:15px; border:1.5px solid var(--border-strong); border-radius:9px; outline:none; min-width:0}
+  .toolbar input:focus{border-color:var(--green)}
+
+  .clist{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden}
+  .citizen-row{display:flex; align-items:center; gap:10px; padding:13px 15px; border-top:1px solid var(--border); width:100%; background:none; border-left:none; border-right:none; text-align:left}
+  .citizen-row:first-child{border-top:none}
+  .citizen-row:active{background:var(--paper)}
+  .citizen-row .info{flex:1; min-width:0}
+  .citizen-row .info b{font-size:14.5px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .citizen-row .info small{font-size:12px; color:var(--muted)}
+  .citizen-row .bal{font-size:15px; font-weight:700; white-space:nowrap}
+  .dot{width:8px; height:8px; border-radius:50%; flex:none}
+  .dot.paid{background:var(--paid)} .dot.partial{background:var(--partial)} .dot.due{background:var(--due)}
+
+  /* Sheet modal */
+  .overlay{position:fixed; inset:0; background:rgba(20,30,25,.45); z-index:40; display:flex; align-items:flex-end; justify-content:center}
+  .sheet{background:var(--surface); width:100%; max-width:680px; max-height:92vh; overflow-y:auto;
+    border-radius:18px 18px 0 0; animation:slideup .25s ease}
+  @keyframes slideup{from{transform:translateY(100%)}to{transform:none}}
+  .sheet-head{position:sticky; top:0; background:var(--surface); padding:16px 18px; border-bottom:1px solid var(--border);
+    display:flex; justify-content:space-between; align-items:center; z-index:2}
+  .sheet-head h2{margin:0; font-size:17px}
+  .x{background:var(--paper); border:1px solid var(--border); width:34px; height:34px; border-radius:50%; font-size:18px; line-height:1; color:var(--muted)}
+  .sheet-body{padding:18px}
+  .panel{background:var(--paper); border:1px solid var(--border); border-radius:12px; padding:15px; margin-bottom:14px}
+  .panel h4{margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted)}
+  .inline{display:flex; gap:8px}
+  .inline .field{flex:1; margin-bottom:0}
+  .seg{display:flex; gap:8px; margin-bottom:12px}
+  .seg button{flex:1; padding:10px; border:1.5px solid var(--border-strong); background:var(--surface); border-radius:9px; font-weight:600; font-size:14px; color:var(--muted)}
+  .seg button.active{border-color:var(--green); background:var(--green-soft); color:var(--green-dark)}
+
+  .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff;
+    padding:12px 18px; border-radius:99px; font-size:14px; z-index:60; box-shadow:var(--shadow); animation:rise .2s ease}
+
+  .card-amt{font-size:15.5px; font-weight:700; white-space:nowrap; flex:none}
+  .card-amt.owe{color:var(--due)}
+  .card-amt.clear{color:var(--paid)}
+  .pager{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:16px 2px 4px}
+  .pager .pageno{font-size:13px; color:var(--muted)}
+  .list-head{font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); padding:18px 4px 2px}
+  #citizenList .result-card{margin-top:10px}
+
+  footer{text-align:center; color:var(--muted); font-size:11.5px; padding:24px 16px}
+  .config-warn{background:#fff7e6; border:1px solid #f0d99a; color:#7a5a12; padding:14px 16px; border-radius:10px; font-size:13px; margin:16px; line-height:1.5}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <b>Contributions</b>
+    <span>New Serchhip North · Village Council</span>
+  </div>
+  <button class="mode-link" id="modeBtn">Council login</button>
+</header>
+
+<main>
+  <!-- ============ CITIZEN VIEW ============ -->
+  <section id="citizenView">
+    <div class="lookup-card">
+      <h1>Check your contribution balance</h1>
+      <p class="sub">Enter your job card number — just the number after the slash (/) is enough.</p>
+      <div class="search-row">
+        <input id="searchId" type="text" inputmode="text" placeholder="e.g. 3" autocomplete="off" />
+        <button class="btn" id="searchBtn">Check</button>
+      </div>
+    </div>
+    <div id="citizenResult"></div>
+    <div id="citizenList"></div>
+  </section>
+
+  <!-- ============ ADMIN VIEW ============ -->
+  <section id="adminView" class="hidden">
+    <!-- login -->
+    <div id="loginCard" class="login-card">
+      <h2>Council login</h2>
+      <div class="field">
+        <label>Email</label>
+        <input id="adminEmail" type="email" autocomplete="username" placeholder="you@council.in" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input id="adminPass" type="password" autocomplete="current-password" placeholder="••••••••" />
+      </div>
+      <div id="loginErr"></div>
+      <button class="btn block" id="loginBtn">Log in</button>
+    </div>
+
+    <!-- dashboard -->
+    <div id="dashboard" class="hidden">
+      <div class="stats">
+        <div class="stat"><div class="k">Citizens</div><div class="v" id="stCount">0</div></div>
+        <div class="stat"><div class="k">Outstanding</div><div class="v due" id="stOut">₹0</div></div>
+        <div class="stat"><div class="k">Collected</div><div class="v paid" id="stPaid">₹0</div></div>
+      </div>
+      <div class="toolbar">
+        <input id="adminSearch" type="text" placeholder="Search job card no. or name" />
+        <button class="btn small ghost" id="importBtn">Import</button>
+        <button class="btn small" id="addCitizenBtn">+ Add</button>
+      </div>
+      <div class="clist" id="citizenList"></div>
+    </div>
+  </section>
+</main>
+
+<div id="modalRoot"></div>
+<footer>New Serchhip North Village Council · v1.3.0</footer>
+
+<script type="module">
+/* ============================================================
+   TO GO LIVE: paste your Firebase config below.
+   LEAVE AS-IS to run in TEST MODE — works offline, with sample
+   data saved in this browser only. Great for trying things out.
+   (Firebase console → Project settings → Your apps → Web app)
+   ============================================================ */
+const firebaseConfig = {
+  apiKey: "PASTE_HERE",
+  authDomain: "PASTE_HERE",
+  projectId: "PASTE_HERE",
+  storageBucket: "PASTE_HERE",
+  messagingSenderId: "PASTE_HERE",
+  appId: "PASTE_HERE"
+};
+
+/* ---------- helpers (defined first so init can use them) ---------- */
+const CURRENCY = "₹";
+const fmt = n => CURRENCY + (Number(n)||0).toLocaleString("en-IN");
+const $ = id => document.getElementById(id);
+const esc = s => String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function toast(msg){
+  const t=document.createElement("div"); t.className="toast"; t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(),2200);
+}
+function statusOf(c){
+  const bal = (c.totalCharged||0)-(c.totalPaid||0);
+  if(bal<=0) return "paid";
+  if((c.totalPaid||0)>0) return "partial";
+  return "due";
+}
+const statusLabel = {paid:"Cleared", partial:"Partly paid", due:"Due"};
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function monthLabel(){ return new Date().toLocaleString("en-IN",{month:"long",year:"numeric"}); }
+// The full job card is the unique key (the after-slash number is NOT unique —
+// different prefixes can share one). We key records on the full number (slash
+// encoded), keep the after-slash number in cardNo for searching, and the full
+// number in jobCard for display. Searching by the short number can return more
+// than one person, so the lookup handles a list.
+function suffixOf(s){ s=String(s||"").trim(); const i=s.lastIndexOf("/"); return (i>=0?s.slice(i+1):s).trim().toLowerCase(); }
+function fullKey(s){ return (String(s||"").trim().replace(/\//g,"%2F").replace(/^\.+$/,"_")) || "_"; }
+
+/* ============================================================
+   DATA LAYER — one interface, two backends (local test / Firebase)
+   ============================================================ */
+function makeLocalStore(){
+  const KEY="nsn_contrib_v1";
+  let data=null;
+  try{ const raw=localStorage.getItem(KEY); if(raw) data=JSON.parse(raw); }catch(e){}
+  if(!data) data=seedData();
+  let clock = Date.now();
+  const listeners=new Set();
+  const authCbs=new Set();
+  let loggedIn=false;
+  const persist=()=>{ try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){} };
+  const sortedList=()=>Object.entries(data.citizens)
+    .map(([id,c])=>({ id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name, area:c.area, phone:c.phone,
+                      totalCharged:c.totalCharged, totalPaid:c.totalPaid, balance:c.balance }))
+    .sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+  const notify=()=>listeners.forEach(cb=>cb(sortedList()));
+  return {
+    isLocal:true,
+    async getCitizen(id){ const c=data.citizens[id]; return c? {...c, ledger:undefined} : null; },
+    async getLedger(id){ const c=data.citizens[id]; if(!c) return [];
+      return [...(c.ledger||[])].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)); },
+    async findByCard(typed){
+      const suf=suffixOf(typed), fk=fullKey(typed);
+      const out=[];
+      for(const [id,c] of Object.entries(data.citizens)){
+        if(id===fk || (c.cardNo||"")===suf) out.push({ id, c:{...c, ledger:undefined} });
+      }
+      return out;
+    },
+    subscribe(cb){ listeners.add(cb); cb(sortedList()); return ()=>listeners.delete(cb); },
+    async pageCitizens(cursor, pageSize){
+      const arr=Object.entries(data.citizens)
+        .map(([id,c])=>({ id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name, area:c.area,
+                          totalCharged:c.totalCharged, totalPaid:c.totalPaid, balance:c.balance }))
+        .sort((a,b)=>String(a.jobCard||a.id).localeCompare(String(b.jobCard||b.id), undefined, {numeric:true}));
+      let start=0;
+      if(cursor){ const i=arr.findIndex(x=>String(x.jobCard||x.id)===cursor); start=i>=0?i+1:0; }
+      const slice=arr.slice(start, start+pageSize+1);
+      const hasMore=slice.length>pageSize;
+      const items=slice.slice(0,pageSize);
+      const nextCursor=items.length?String(items[items.length-1].jobCard||items[items.length-1].id):null;
+      return { items, nextCursor, hasMore };
+    },
+    async exists(id){ return !!data.citizens[id]; },
+    async addCitizen(id, d){ data.citizens[id]={...d, ledger:[], createdAt:++clock, updatedAt:++clock}; persist(); notify(); },
+    async addEntry(id, type, amount, note, date){
+      const c=data.citizens[id]; if(!c) throw new Error("missing");
+      if(type==="charge") c.totalCharged=(c.totalCharged||0)+amount; else c.totalPaid=(c.totalPaid||0)+amount;
+      c.balance=(c.totalCharged||0)-(c.totalPaid||0);
+      c.ledger.push({ type, amount, note, date, createdAt:++clock });
+      c.updatedAt=++clock; persist(); notify();
+    },
+    async deleteCitizen(id){ delete data.citizens[id]; persist(); notify(); },
+    async bulkImport(rows, onProgress){
+      let n=0;
+      for(const r of rows){
+        data.citizens[r.id] = {
+          jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, area:r.area||"", phone:r.phone||"",
+          totalCharged:r.totalCharged, totalPaid:r.totalPaid, balance:r.balance,
+          createdAt:++clock, updatedAt:++clock,
+          ledger:(r.ledger||[]).map(e=>({ type:e.type, amount:e.amount, note:e.note, date:e.date,
+                                          createdAt:(e.when? e.when.getTime() : ++clock) }))
+        };
+        if((++n % 50)===0 && onProgress) onProgress(n, rows.length);
+      }
+      persist(); notify(); if(onProgress) onProgress(rows.length, rows.length);
+      return rows.length;
+    },
+    async bulkAppendCharges(items, onProgress){
+      let n=0;
+      for(const it of items){
+        let c=data.citizens[it.id];
+        if(!c){ c={ jobCard:it.jobCard, cardNo:it.cardNo, name:it.name, area:"", phone:"",
+                    totalCharged:0, totalPaid:0, balance:0, createdAt:++clock, updatedAt:++clock, ledger:[] };
+                data.citizens[it.id]=c; }
+        c.totalCharged=(c.totalCharged||0)+it.amount;
+        c.balance=(c.totalCharged||0)-(c.totalPaid||0);
+        c.ledger.push({ type:"charge", amount:it.amount, note:it.note, date:"", createdAt:(it.when? it.when.getTime() : ++clock) });
+        c.updatedAt=++clock;
+        if((++n % 50)===0 && onProgress) onProgress(n, items.length);
+      }
+      persist(); notify(); if(onProgress) onProgress(items.length, items.length);
+      return items.length;
+    },
+    async signIn(){ loggedIn=true; authCbs.forEach(cb=>cb(true)); },
+    signOut(){ loggedIn=false; authCbs.forEach(cb=>cb(false)); },
+    onAuth(cb){ authCbs.add(cb); cb(loggedIn); }
+  };
+}
+
+function seedData(){
+  let t=1;
+  const k=()=>++t;
+  return { citizens:{
+    "MZ-07-001-005-001%2F3":{ jobCard:"MZ-07-001-005-001/3", cardNo:"3", name:"Lalrinmawia", area:"Venghlui", phone:"",
+      totalCharged:1000, totalPaid:300, balance:700, createdAt:k(), updatedAt:k(),
+      ledger:[
+        { type:"charge",  amount:500, note:"April 2026", date:"2026-04-03", createdAt:k() },
+        { type:"payment", amount:300, note:"cash",       date:"2026-04-12", createdAt:k() },
+        { type:"charge",  amount:500, note:"MAY1",        date:"", createdAt:k() }
+      ]},
+    "MZ-07-001-005-001%2F18":{ jobCard:"MZ-07-001-005-001/18", cardNo:"18", name:"Lalduhawmi", area:"Chhimveng", phone:"",
+      totalCharged:1000, totalPaid:800, balance:200, createdAt:k(), updatedAt:k(),
+      ledger:[
+        { type:"charge",  amount:500, note:"April 2026", date:"2026-04-03", createdAt:k() },
+        { type:"payment", amount:800, note:"paid extra", date:"2026-04-10", createdAt:k() },
+        { type:"charge",  amount:500, note:"MAY1",        date:"", createdAt:k() }
+      ]},
+    "MZ-07-001-005-001%2F22":{ jobCard:"MZ-07-001-005-001/22", cardNo:"22", name:"Vanlalruata", area:"Venghlui", phone:"",
+      totalCharged:500, totalPaid:500, balance:0, createdAt:k(), updatedAt:k(),
+      ledger:[
+        { type:"charge",  amount:500, note:"April 2026", date:"2026-04-03", createdAt:k() },
+        { type:"payment", amount:500, note:"cash",       date:"2026-04-08", createdAt:k() }
+      ]}
+  }};
+}
+
+async function loadFirebase(cfg){
+  const appMod  = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+  const authMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+  const fsMod   = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+  const app  = appMod.initializeApp(cfg);
+  const auth = authMod.getAuth(app);
+  const db   = fsMod.getFirestore(app);
+  return { auth, db, fs:fsMod, au:authMod };
+}
+
+function makeFirebaseStore({ auth, db, fs, au }){
+  return {
+    isLocal:false,
+    async getCitizen(id){ const s=await fs.getDoc(fs.doc(db,"citizens",id)); return s.exists()? s.data() : null; },
+    async getLedger(id){
+      const q=fs.query(fs.collection(db,"citizens",id,"ledger"), fs.orderBy("createdAt","desc"));
+      return (await fs.getDocs(q)).docs.map(d=>d.data());
+    },
+    async findByCard(typed){
+      const suf=suffixOf(typed), fk=fullKey(typed);
+      const out=[]; const seen=new Set();
+      const byNo=await fs.getDocs(fs.query(fs.collection(db,"citizens"), fs.where("cardNo","==",suf)));
+      byNo.forEach(d=>{ if(!seen.has(d.id)){ seen.add(d.id); out.push({ id:d.id, c:d.data() }); } });
+      if(!seen.has(fk)){
+        const direct=await fs.getDoc(fs.doc(db,"citizens",fk));
+        if(direct.exists()){ out.push({ id:fk, c:direct.data() }); }
+      }
+      return out;
+    },
+    subscribe(cb){
+      const q=fs.query(fs.collection(db,"citizens"), fs.orderBy("name"));
+      return fs.onSnapshot(q, snap=> cb(snap.docs.map(d=>({ id:d.id, ...d.data() }))));
+    },
+    async pageCitizens(cursor, pageSize){
+      const base=[fs.orderBy("jobCard"), fs.limit(pageSize+1)];
+      const q = cursor ? fs.query(fs.collection(db,"citizens"), fs.orderBy("jobCard"), fs.startAfter(cursor), fs.limit(pageSize+1))
+                       : fs.query(fs.collection(db,"citizens"), ...base);
+      const snap=await fs.getDocs(q);
+      const docs=snap.docs.map(d=>({ id:d.id, ...d.data() }));
+      const hasMore=docs.length>pageSize;
+      const items=docs.slice(0,pageSize);
+      const nextCursor=items.length?String(items[items.length-1].jobCard||items[items.length-1].id):null;
+      return { items, nextCursor, hasMore };
+    },
+    async exists(id){ return (await fs.getDoc(fs.doc(db,"citizens",id))).exists(); },
+    async addCitizen(id, d){
+      await fs.setDoc(fs.doc(db,"citizens",id), {...d, createdAt:fs.serverTimestamp(), updatedAt:fs.serverTimestamp()});
+    },
+    async addEntry(id, type, amount, note, date){
+      await fs.runTransaction(db, async tx=>{
+        const cRef=fs.doc(db,"citizens",id);
+        const s=await tx.get(cRef); if(!s.exists()) throw new Error("missing");
+        const d=s.data(); let tc=d.totalCharged||0, tp=d.totalPaid||0;
+        if(type==="charge") tc+=amount; else tp+=amount;
+        const eRef=fs.doc(fs.collection(db,"citizens",id,"ledger"));
+        tx.set(eRef,{ type, amount, note, date, createdAt:fs.serverTimestamp() });
+        tx.update(cRef,{ totalCharged:tc, totalPaid:tp, balance:tc-tp, updatedAt:fs.serverTimestamp() });
+      });
+    },
+    async deleteCitizen(id){
+      const ld=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
+      await Promise.all(ld.docs.map(d=>fs.deleteDoc(d.ref)));
+      await fs.deleteDoc(fs.doc(db,"citizens",id));
+    },
+    async bulkImport(rows, onProgress){
+      const TS = w => w ? fs.Timestamp.fromDate(w) : fs.serverTimestamp();
+      let batch=fs.writeBatch(db), ops=0, done=0;
+      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
+      for(const r of rows){
+        const cRef=fs.doc(db,"citizens",r.id);
+        batch.set(cRef,{ jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, area:r.area||"", phone:r.phone||"",
+          totalCharged:r.totalCharged, totalPaid:r.totalPaid, balance:r.balance,
+          createdAt:fs.serverTimestamp(), updatedAt:fs.serverTimestamp() });
+        ops++;
+        for(const e of (r.ledger||[])){
+          const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));
+          batch.set(eRef,{ type:e.type, amount:e.amount, note:e.note, date:e.date, createdAt:TS(e.when) });
+          ops++;
+          if(ops>=400) await flush();
+        }
+        if(ops>=400) await flush();
+        if((++done % 25)===0 && onProgress) onProgress(done, rows.length);
+      }
+      await flush();
+      if(onProgress) onProgress(rows.length, rows.length);
+      return rows.length;
+    },
+    async bulkAppendCharges(items, onProgress){
+      let batch=fs.writeBatch(db), ops=0, done=0;
+      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
+      for(const it of items){
+        const cRef=fs.doc(db,"citizens",it.id);
+        batch.set(cRef,{ jobCard:it.jobCard, cardNo:it.cardNo, name:it.name,
+          totalCharged:fs.increment(it.amount), balance:fs.increment(it.amount), updatedAt:fs.serverTimestamp() }, { merge:true });
+        ops++;
+        const eRef=fs.doc(fs.collection(db,"citizens",it.id,"ledger"));
+        batch.set(eRef,{ type:"charge", amount:it.amount, note:it.note, date:"",
+          createdAt:(it.when? fs.Timestamp.fromDate(it.when) : fs.serverTimestamp()) });
+        ops++;
+        if(ops>=400) await flush();
+        if((++done % 25)===0 && onProgress) onProgress(done, items.length);
+      }
+      await flush();
+      if(onProgress) onProgress(items.length, items.length);
+      return items.length;
+    },
+    async signIn(email, pass){ await au.signInWithEmailAndPassword(auth, email, pass); },
+    signOut(){ au.signOut(auth); },
+    onAuth(cb){ au.onAuthStateChanged(auth, u=>cb(!!u)); }
+  };
+}
+
+/* ---------- choose backend ---------- */
+let citizensUnsub=null, allCitizens=[], loggedIn=false, store=null, isLocalMode=false, lastResult=null, matches=[];
+
+const notConfigured = Object.values(firebaseConfig).some(v => v === "PASTE_HERE");
+if(notConfigured){
+  isLocalMode=true; store=makeLocalStore();
+  showModeBanner("Test mode — running on this device with sample data. Add citizens, contributions and payments to try it out; everything is saved in this browser only. Paste your Firebase config into the file to go live.");
+} else {
+  try{
+    store=makeFirebaseStore(await loadFirebase(firebaseConfig));
+  }catch(err){
+    console.error(err);
+    isLocalMode=true; store=makeLocalStore();
+    showModeBanner("Couldn't reach the database, so the app is running in local test mode. Check your connection or Firebase settings.");
+  }
+}
+if(isLocalMode) addTestLoginHint();
+store.onAuth(onAuth);
+
+function showModeBanner(msg){
+  document.querySelector("main").insertAdjacentHTML("afterbegin", `<div class="config-warn">${msg}</div>`);
+}
+function addTestLoginHint(){
+  const btn=document.getElementById("loginBtn");
+  if(!btn || document.getElementById("testHint")) return;
+  btn.insertAdjacentHTML("afterend",
+    `<p id="testHint" style="font-size:12px;color:var(--muted);text-align:center;margin:12px 0 0">Test mode — any email and password will log you in.</p>`);
+}
+
+/* ============================================================
+   CITIZEN LOOKUP (public, no login)
+   ============================================================ */
+$("searchBtn").addEventListener("click", doSearch);
+$("searchId").addEventListener("keydown", e => { if(e.key==="Enter") doSearch(); });
+
+// shared person card: full job card on top, name below, amount on right (red if owing)
+function personCardHTML(id, c){
+  const owe = Math.max(0, (c.totalCharged||0)-(c.totalPaid||0));
+  return `<button class="result-card" data-id="${esc(id)}">
+    <span class="info">
+      <b>${esc(c.jobCard||id)}</b>
+      <small>${esc(c.name||"—")}</small>
+    </span>
+    <span class="card-amt money ${owe>0?"owe":"clear"}">${fmt(owe)}</span>
+  </button>`;
+}
+
+async function doSearch(){
+  const typed = $("searchId").value.trim();
+  const out = $("citizenResult");
+  if(!typed){ showList(); return; }
+  $("citizenList").classList.add("hidden");
+  out.innerHTML=`<div class="notice info">Looking up…</div>`;
+  try{
+    matches = await store.findByCard(typed);
+    if(!matches.length){
+      out.innerHTML=`<button class="back" id="toListBtn">‹ Back to list</button>
+        <div class="notice err">No record found for <b>${esc(typed)}</b>. Please check the number or contact the council office.</div>`;
+      $("toListBtn").addEventListener("click", ()=>{ $("searchId").value=""; showList(); });
+      return;
+    }
+    renderResults();
+  }catch(err){
+    out.innerHTML=`<div class="notice err">Couldn't load the record. Check your connection and try again.</div>`;
+    console.error(err);
+  }
+}
+
+// search results — same card layout, with a back-to-list link
+function renderResults(){
+  $("citizenList").classList.add("hidden");
+  const multi = matches.length>1;
+  const cards = matches.map(m=>personCardHTML(m.id, m.c)).join("");
+  $("citizenResult").innerHTML =
+    `<button class="back" id="toListBtn">‹ Back to list</button>` +
+    (multi ? `<div class="notice info">More than one person uses this number — tap your name.</div>` : ``) +
+    cards;
+  $("toListBtn").addEventListener("click", ()=>{ $("searchId").value=""; showList(); });
+  document.querySelectorAll("#citizenResult .result-card").forEach(b=>
+    b.addEventListener("click", ()=>openMatch(b.dataset.id, false)));
+}
+
+async function openMatch(id, fromList){
+  backTarget = fromList ? "list" : "results";
+  const c = (matches.find(x=>x.id===id)||{}).c || pubItems.find(x=>x.id===id) || await store.getCitizen(id);
+  if(!c) return;
+  $("citizenList").classList.add("hidden");
+  $("citizenResult").innerHTML = `<div class="notice info">Loading…</div>`;
+  const entries = await store.getLedger(id);
+  lastResult = { id, c, entries };
+  renderStatement();
+}
+
+function goBack(){
+  if(backTarget==="results"){ renderResults(); }
+  else { $("citizenResult").innerHTML=""; $("citizenList").classList.remove("hidden"); }
+}
+
+/* ---------- public browse list (20 per page) ---------- */
+let pubItems=[], pubStack=[null], pubIdx=0, pubHasMore=false, backTarget="list";
+
+function showList(){
+  backTarget="list";
+  $("citizenResult").innerHTML="";
+  $("citizenList").classList.remove("hidden");
+  loadPubPage();
+}
+async function loadPubPage(){
+  $("citizenList").innerHTML=`<div class="empty">Loading…</div>`;
+  try{
+    const { items, nextCursor, hasMore } = await store.pageCitizens(pubStack[pubIdx], 20);
+    pubItems=items; pubHasMore=hasMore;
+    if(hasMore) pubStack[pubIdx+1]=nextCursor;
+    renderPubList();
+  }catch(err){ console.error(err); $("citizenList").innerHTML=`<div class="notice err">Couldn't load the list.</div>`; }
+}
+function renderPubList(){
+  if(!pubItems.length){ $("citizenList").innerHTML=`<div class="empty">No records yet.</div>`; return; }
+  const cards = pubItems.map(c=>personCardHTML(c.id, c)).join("");
+  $("citizenList").innerHTML =
+    `<div class="list-head">All contributors</div>` + cards +
+    `<div class="pager">
+      <button class="btn small ghost" id="pgPrev" ${pubIdx===0?"disabled":""}>‹ Prev</button>
+      <span class="pageno">Page ${pubIdx+1}</span>
+      <button class="btn small ghost" id="pgNext" ${pubHasMore?"":"disabled"}>Next ›</button>
+    </div>`;
+  document.querySelectorAll("#citizenList .result-card").forEach(b=>
+    b.addEventListener("click", ()=>openMatch(b.dataset.id, true)));
+  if($("pgPrev")) $("pgPrev").addEventListener("click", ()=>{ if(pubIdx>0){ pubIdx--; loadPubPage(); } });
+  if($("pgNext")) $("pgNext").addEventListener("click", ()=>{ if(pubHasMore){ pubIdx++; loadPubPage(); } });
+}
+function refreshPublicList(){ pubStack=[null]; pubIdx=0; loadPubPage(); }
+
+// Step 2: the payable detail, with carry-forward / credit spelled out.
+// Carryover is computed positionally from the ledger: everything before the
+// most recent contribution is "brought forward"; that contribution is "this
+// month"; any payments after it are "paid this month".
+function renderStatement(){
+  const { id, c, entries } = lastResult;
+  const chrono = [...entries].reverse(); // oldest first
+  let lastChargeIdx = -1;
+  for(let i=0;i<chrono.length;i++){ if(chrono[i].type==="charge") lastChargeIdx=i; }
+
+  let brought=0, thisAmt=0, thisLabel="This month", paidThis=0;
+  for(let i=0;i<chrono.length;i++){
+    const e=chrono[i], v=e.amount||0;
+    if(i<lastChargeIdx){ brought += e.type==="charge" ? v : -v; }
+    else if(i===lastChargeIdx){ thisAmt=v; thisLabel=e.note||"This month"; }
+    else if(e.type==="payment"){ paidThis += v; }
+  }
+
+  const bal = (c.totalCharged||0)-(c.totalPaid||0);
+  const toPay = Math.max(0, bal);
+  const credit = bal<0 ? -bal : 0;
+  const st = statusOf(c);
+
+  let lines="";
+  if(brought>0) lines += `<div class="brow"><span>Previous balance carried over</span><b>+ ${fmt(brought)}</b></div>`;
+  else if(brought<0) lines += `<div class="brow"><span>Credit from before</span><b class="credit">− ${fmt(-brought)}</b></div>`;
+  if(lastChargeIdx>=0) lines += `<div class="brow"><span>${esc(thisLabel)}</span><b>+ ${fmt(thisAmt)}</b></div>`;
+  if(paidThis>0) lines += `<div class="brow"><span>Paid this month</span><b class="credit">− ${fmt(paidThis)}</b></div>`;
+  lines += `<div class="brow total"><span>Total to pay now</span><b>${fmt(toPay)}</b></div>`;
+
+  const rows = entries.length ? entries.map(e=>`
+    <div class="row">
+      <div class="desc"><b>${esc(e.note || (e.type==="charge"?"Contribution":"Payment"))}</b>
+        <small>${esc(e.date||"")}</small></div>
+      <div class="amt ${e.type==="payment"?"payment":"charge"}">
+        ${e.type==="payment"?"− ":"+ "}${fmt(e.amount)}</div>
+    </div>`).join("") : `<div class="empty">No entries yet.</div>`;
+
+  $("citizenResult").innerHTML = `
+  <button class="back" id="backBtn">‹ Back</button>
+  <div class="statement">
+    <div class="top">
+      <div>
+        <p class="name">${esc(c.name||"—")}</p>
+        <div class="meta">Job card ${esc(c.jobCard||id)}${c.area?" · "+esc(c.area):""}</div>
+      </div>
+      <span class="badge ${st}">${statusLabel[st]}</span>
+    </div>
+    <div class="balance-block">
+      <div class="label">Total to pay now</div>
+      <div class="amount money ${toPay<=0?"zero":"owing"}">${fmt(toPay)}</div>
+      ${toPay<=0 && credit<=0 ? `<div class="meta">You're all paid up. Thank you.</div>` : ``}
+    </div>
+    ${credit>0 ? `<div class="carry-note">You have ${fmt(credit)} in credit, carried to next month.</div>` : ``}
+    <div class="breakdown">${lines}</div>
+    <div class="split money">
+      <div><div class="k">Total contributed</div><div class="v">${fmt(c.totalCharged)}</div></div>
+      <div><div class="k">Total paid</div><div class="v">${fmt(c.totalPaid)}</div></div>
+    </div>
+    <div class="ledger">
+      <h3>History</h3>
+      ${rows}
+    </div>
+  </div>`;
+  $("backBtn").addEventListener("click", goBack);
+}
+
+/* ============================================================
+   MODE TOGGLE
+   ============================================================ */
+$("modeBtn").addEventListener("click", ()=>{
+  const adminHidden = $("adminView").classList.contains("hidden");
+  $("adminView").classList.toggle("hidden", !adminHidden);
+  $("citizenView").classList.toggle("hidden", adminHidden);
+  $("modeBtn").textContent = adminHidden ? "Citizen view" : (loggedIn ? "Citizen view" : "Council login");
+  // returning to citizen view → refresh the public list with latest data
+  if(!adminHidden){ $("searchId").value=""; showList(); }
+});
+
+/* ============================================================
+   ADMIN — auth
+   ============================================================ */
+$("loginBtn").addEventListener("click", login);
+$("adminPass").addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
+
+async function login(){
+  const email=$("adminEmail").value.trim(), pass=$("adminPass").value;
+  $("loginErr").innerHTML="";
+  try{ await store.signIn(email, pass); }
+  catch(err){
+    $("loginErr").innerHTML=`<div class="notice err">Login failed. Check email and password.</div>`;
+    console.error(err);
+  }
+}
+
+function onAuth(isIn){
+  loggedIn = isIn;
+  if(isIn){
+    $("loginCard").classList.add("hidden");
+    $("dashboard").classList.remove("hidden");
+    $("modeBtn").textContent="Citizen view";
+    subscribeCitizens();
+  } else {
+    $("loginCard").classList.remove("hidden");
+    $("dashboard").classList.add("hidden");
+    if(citizensUnsub){ citizensUnsub(); citizensUnsub=null; }
+  }
+}
+
+/* ============================================================
+   ADMIN — live citizen list + stats
+   ============================================================ */
+function subscribeCitizens(){
+  if(citizensUnsub) return;
+  citizensUnsub = store.subscribe(list=>{
+    allCitizens = list;
+    renderStats(); renderList();
+  });
+}
+function renderStats(){
+  const out = allCitizens.reduce((s,c)=>s+Math.max(0,(c.totalCharged||0)-(c.totalPaid||0)),0);
+  const paid = allCitizens.reduce((s,c)=>s+(c.totalPaid||0),0);
+  $("stCount").textContent = allCitizens.length;
+  $("stOut").textContent = fmt(out);
+  $("stPaid").textContent = fmt(paid);
+}
+$("adminSearch").addEventListener("input", renderList);
+function renderList(){
+  const term = $("adminSearch").value.trim().toLowerCase();
+  const list = allCitizens.filter(c =>
+    !term || (c.jobCard||c.id).toLowerCase().includes(term) || (c.name||"").toLowerCase().includes(term));
+  if(!list.length){ $("citizenList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet. Tap + Add to begin."}</div>`; return; }
+  $("citizenList").innerHTML = list.map(c=>{
+    const bal=(c.totalCharged||0)-(c.totalPaid||0), st=statusOf(c);
+    return `<button class="citizen-row" data-id="${esc(c.id)}">
+      <span class="dot ${st}"></span>
+      <span class="info"><b>${esc(c.name||"—")}</b><small>Job card ${esc(c.jobCard||c.id)}${c.area?" · "+esc(c.area):""}</small></span>
+      <span class="bal money" style="color:${bal>0?'var(--due)':'var(--paid)'}">${fmt(Math.max(0,bal))}</span>
+    </button>`;
+  }).join("");
+  document.querySelectorAll(".citizen-row").forEach(b=>
+    b.addEventListener("click",()=>openCitizen(b.dataset.id)));
+}
+
+/* ============================================================
+   ADMIN — import from Excel
+   Two modes:
+   • Historical (first time): 3-sheet file. Sheet 2 = amount to pay per period,
+     Sheet 3 = those who still owe. Period columns are read by their header
+     (JANUARY … MAY1, MAY2 …). Sheet 1 (received) ignored; 0 = no entry.
+   • Monthly update: one sheet with Job card, Holder name, amount received,
+     payable amount. The period name comes from the file name (e.g. MAY2).
+     Rows are matched to existing people by job card; new job cards are added.
+   ============================================================ */
+$("importBtn").addEventListener("click", openImport);
+
+let pendingImport = null;        // historical rows
+let pendingMonthly = null;       // {items, period, newCount, existCount, total}
+
+function openImport(){
+  openSheet("Import from Excel", `
+    <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">What are you importing?</p>
+    <button class="btn block" id="impHistBtn" style="margin-bottom:10px">First-time historical register</button>
+    <button class="btn block ghost" id="impMonthBtn">Monthly update file</button>
+  `);
+  $("impHistBtn").addEventListener("click", openHistorical);
+  $("impMonthBtn").addEventListener("click", openMonthly);
+}
+
+async function ensureXLSX(){
+  if(window.XLSX) return window.XLSX;
+  await new Promise((res,rej)=>{
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload=res; s.onerror=()=>rej(new Error("xlsx load failed"));
+    document.head.appendChild(s);
+  });
+  return window.XLSX;
+}
+
+const _num = v => { const n=parseFloat(v); return isNaN(n)?0:n; };
+const _norm = h => String(h||"").toUpperCase().replace(/\s+/g,"").trim();
+function _findCol(header, re){ for(let i=0;i<header.length;i++){ if(re.test(String(header[i]||"").trim())) return i; } return -1; }
+// Period columns = any header naming a month (keeps the exact label, e.g. MAY1)
+function _periodCols(header){
+  const re=/(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/i;
+  const out=[];
+  header.forEach((h,i)=>{ if(h!=null && re.test(String(h))) out.push({ label:String(h).trim(), key:_norm(h), col:i }); });
+  return out;
+}
+let _ord=0;
+const _when = () => new Date(Date.UTC(2026,0,1) + (++_ord)*60000);
+
+/* ---------- Historical (3-sheet) ---------- */
+function openHistorical(){
+  openSheet("Historical register", `
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5">
+      3-sheet file. Sheet 2 = amount to pay per period, Sheet 3 = those still owing.
+      Everyone not on Sheet 3 is treated as fully paid. Periods are read by their
+      column names, so MAY1 / MAY2 etc. are kept as-is.</p>
+    <div class="field"><label>Excel file (.xlsx)</label>
+      <input id="impFile" type="file" accept=".xlsx,.xls"></div>
+    <div id="impMsg"></div><div id="impPreview"></div>
+  `);
+  $("impFile").addEventListener("change", handleHistorical);
+}
+
+async function handleHistorical(e){
+  const file=e.target.files[0]; if(!file) return;
+  $("impMsg").innerHTML=`<div class="notice info">Reading…</div>`; $("impPreview").innerHTML="";
+  let XLSX; try{ XLSX=await ensureXLSX(); }catch(err){ $("impMsg").innerHTML=`<div class="notice err">Couldn't load the Excel reader. Connect to the internet and try again.</div>`; return; }
+  try{
+    _ord=0;
+    const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
+    const dueWs=wb.Sheets["Sheet2"]||wb.Sheets[wb.SheetNames[1]];
+    const defWs=wb.Sheets["Sheet3"]||wb.Sheets[wb.SheetNames[2]];
+    if(!dueWs){ $("impMsg").innerHTML=`<div class="notice err">Couldn't find the "amount to pay" sheet (Sheet 2).</div>`; return; }
+    const dueRows=XLSX.utils.sheet_to_json(dueWs,{header:1,raw:true,defval:null});
+    const defRows=defWs?XLSX.utils.sheet_to_json(defWs,{header:1,raw:true,defval:null}):[];
+    const dh=dueRows[0]||[];
+    const dFull=_findCol(dh,/job\s*card/i);
+    const dName=_findCol(dh,/head of house|holder|name/i);
+    const periods=_periodCols(dh);
+    if(dFull<0 || !periods.length){ $("impMsg").innerHTML=`<div class="notice err">This sheet doesn't look right — need a Job card column and month columns.</div>`; return; }
+
+    const unpaid={};
+    if(defRows.length){
+      const fh=defRows[0]||[]; const fFull=_findCol(fh,/job\s*card/i); const fp=_periodCols(fh);
+      for(let r=1;r<defRows.length;r++){ const row=defRows[r]; if(!row) continue;
+        const full=String(row[fFull]||"").trim(); if(!full) continue;
+        const mm={}; fp.forEach(p=>{ mm[p.key]=_num(row[p.col]); }); unpaid[full]=mm; }
+    }
+
+    const rows=[]; let fully=0,owing=0,totC=0,totP=0,totO=0;
+    for(let r=1;r<dueRows.length;r++){ const row=dueRows[r]; if(!row) continue;
+      const full=String(row[dFull]||"").trim(); if(!full) continue;
+      const name=String(row[dName>=0?dName:2]||"").trim();
+      const up=unpaid[full]||{}; const ledger=[]; let tc=0,tp=0;
+      for(const p of periods){ const due=_num(row[p.col]); if(due<=0) continue;
+        const u=_num(up[p.key]); const paid=due-u; tc+=due; tp+=paid;
+        ledger.push({ type:"charge", amount:due, note:p.label, date:"", when:_when() });
+        if(paid>0) ledger.push({ type:"payment", amount:paid, note:p.label, date:"", when:_when() }); }
+      const bal=tc-tp; totC+=tc; totP+=tp; totO+=bal; (bal>0?owing++:fully++);
+      rows.push({ id:fullKey(full), jobCard:full, cardNo:suffixOf(full), name, area:"", phone:"",
+        totalCharged:tc, totalPaid:tp, balance:bal, ledger });
+    }
+    pendingImport=rows;
+    $("impMsg").innerHTML=`<div class="notice info">Periods found: ${periods.map(p=>esc(p.label)).join(", ")}. Review and confirm.</div>`;
+    $("impPreview").innerHTML=`
+      <div class="panel" style="margin-top:12px">
+        <div class="brow"><span>Households</span><b>${rows.length}</b></div>
+        <div class="brow"><span>Fully paid</span><b>${fully}</b></div>
+        <div class="brow"><span>Still owing</span><b>${owing}</b></div>
+        <div class="brow"><span>Total charged</span><b class="money">${fmt(totC)}</b></div>
+        <div class="brow"><span>Total paid</span><b class="money">${fmt(totP)}</b></div>
+        <div class="brow total"><span>Total outstanding</span><b class="money">${fmt(totO)}</b></div>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Run once on a fresh database. Re-importing may duplicate history.</p>
+      <button class="btn block" id="impConfirm">Import ${rows.length} households</button>
+      <div id="impProgress" style="margin-top:10px"></div>`;
+    $("impConfirm").addEventListener("click", runHistorical);
+  }catch(err){ console.error(err); $("impMsg").innerHTML=`<div class="notice err">Couldn't read that file.</div>`; }
+}
+
+async function runHistorical(){
+  if(!pendingImport) return;
+  const btn=$("impConfirm"); btn.disabled=true; const prog=$("impProgress");
+  prog.innerHTML=`<div class="notice info">Importing… 0 / ${pendingImport.length}</div>`;
+  try{
+    await store.bulkImport(pendingImport,(d,t)=>{ prog.innerHTML=`<div class="notice info">Importing… ${d} / ${t}</div>`; });
+    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${pendingImport.length} households imported.</div>`;
+    pendingImport=null; setTimeout(()=>{ closeSheet(); toast("Import complete"); },900);
+  }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Import failed partway. Try again on a fresh database.</div>`; btn.disabled=false; }
+}
+
+/* ---------- Monthly update (single period) ---------- */
+function openMonthly(){
+  openSheet("Monthly update", `
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5">
+      One sheet with Job card, Holder name, amount received and payable amount.
+      The period name is taken from the file name. People are matched by job card;
+      new job cards are added. Rows with 0 received are skipped.</p>
+    <div class="field"><label>Period name</label><input id="impPeriod" placeholder="e.g. MAY2"></div>
+    <div class="field"><label>Excel file (.xlsx)</label>
+      <input id="impFile" type="file" accept=".xlsx,.xls"></div>
+    <div id="impMsg"></div><div id="impPreview"></div>
+  `);
+  $("impFile").addEventListener("change", handleMonthly);
+}
+
+async function handleMonthly(e){
+  const file=e.target.files[0]; if(!file) return;
+  if(!$("impPeriod").value.trim()) $("impPeriod").value = file.name.replace(/\.(xlsx|xls)$/i,"").trim();
+  const period=$("impPeriod").value.trim();
+  $("impMsg").innerHTML=`<div class="notice info">Reading…</div>`; $("impPreview").innerHTML="";
+  let XLSX; try{ XLSX=await ensureXLSX(); }catch(err){ $("impMsg").innerHTML=`<div class="notice err">Couldn't load the Excel reader. Connect to the internet and try again.</div>`; return; }
+  try{
+    const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+    const h=rows[0]||[];
+    const cFull=_findCol(h,/job\s*card/i);
+    const cName=_findCol(h,/holder|head of house|name/i);
+    const cRecv=_findCol(h,/receiv/i);
+    let cPay=_findCol(h,/payable/i); if(cPay<0) cPay=_findCol(h,/pay/i);
+    if(cFull<0 || cPay<0){ $("impMsg").innerHTML=`<div class="notice err">Need a Job card column and a payable amount column.</div>`; return; }
+
+    const items=[]; let newCount=0, existCount=0, skipped=0, totAmt=0;
+    for(let r=1;r<rows.length;r++){ const row=rows[r]; if(!row) continue;
+      const full=String(row[cFull]||"").trim(); if(!full) continue;
+      const recv = cRecv>=0 ? _num(row[cRecv]) : 1;
+      const pay = _num(row[cPay]);
+      if(recv<=0 || pay<=0){ skipped++; continue; }
+      const id=fullKey(full); const known = allCitizens.some(c=>c.id===id);
+      known ? existCount++ : newCount++;
+      totAmt+=pay;
+      items.push({ id, jobCard:full, cardNo:suffixOf(full), name:String(row[cName>=0?cName:2]||"").trim(),
+        amount:pay, note:period, when:new Date() });
+    }
+    if(!items.length){ $("impMsg").innerHTML=`<div class="notice err">No rows with a payable amount found.</div>`; return; }
+    pendingMonthly={items, period};
+    $("impMsg").innerHTML=`<div class="notice info">Period "<b>${esc(period)}</b>" — review and confirm.</div>`;
+    $("impPreview").innerHTML=`
+      <div class="panel" style="margin-top:12px">
+        <div class="brow"><span>New charges to add</span><b>${items.length}</b></div>
+        <div class="brow"><span>Existing people</span><b>${existCount}</b></div>
+        <div class="brow"><span>New people added</span><b>${newCount}</b></div>
+        <div class="brow"><span>Skipped (0 received)</span><b>${skipped}</b></div>
+        <div class="brow total"><span>Total added this period</span><b class="money">${fmt(totAmt)}</b></div>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 10px">This adds "${esc(period)}" charges. Import each period's file only once.</p>
+      <button class="btn block" id="impConfirm">Add "${esc(period)}" for ${items.length}</button>
+      <div id="impProgress" style="margin-top:10px"></div>`;
+    $("impConfirm").addEventListener("click", runMonthly);
+  }catch(err){ console.error(err); $("impMsg").innerHTML=`<div class="notice err">Couldn't read that file.</div>`; }
+}
+
+async function runMonthly(){
+  if(!pendingMonthly) return;
+  const btn=$("impConfirm"); btn.disabled=true; const prog=$("impProgress");
+  const {items,period}=pendingMonthly;
+  prog.innerHTML=`<div class="notice info">Adding… 0 / ${items.length}</div>`;
+  try{
+    await store.bulkAppendCharges(items,(d,t)=>{ prog.innerHTML=`<div class="notice info">Adding… ${d} / ${t}</div>`; });
+    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — "${esc(period)}" added for ${items.length}.</div>`;
+    pendingMonthly=null; setTimeout(()=>{ closeSheet(); toast("Monthly update added"); },900);
+  }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Update failed partway. Check connection and try again.</div>`; btn.disabled=false; }
+}
+
+/* ============================================================
+   ADMIN — add citizen
+   ============================================================ */
+$("addCitizenBtn").addEventListener("click", openAddCitizen);
+
+function openSheet(title, bodyHTML){
+  $("modalRoot").innerHTML = `
+    <div class="overlay" id="overlay">
+      <div class="sheet">
+        <div class="sheet-head"><h2>${esc(title)}</h2><button class="x" id="closeSheet">×</button></div>
+        <div class="sheet-body">${bodyHTML}</div>
+      </div>
+    </div>`;
+  document.body.style.overflow="hidden";
+  $("overlay").addEventListener("click", e=>{ if(e.target.id==="overlay") closeSheet(); });
+  $("closeSheet").addEventListener("click", closeSheet);
+}
+function closeSheet(){ $("modalRoot").innerHTML=""; document.body.style.overflow=""; }
+
+function openAddCitizen(){
+  openSheet("Add citizen", `
+    <div class="field"><label>Job card number (unique)</label><input id="ncId" placeholder="e.g. MZ-07-001-005-001/3">
+      <small style="display:block;color:var(--muted);font-size:11.5px;margin-top:5px">Type the full number exactly as printed (not zero-padded). Citizens look up by the part after the slash (e.g. 3).</small></div>
+    <div class="field"><label>Name</label><input id="ncName" placeholder="Owner / household name"></div>
+    <div class="inline">
+      <div class="field"><label>Area / locality</label><input id="ncArea" placeholder="optional"></div>
+      <div class="field"><label>Phone</label><input id="ncPhone" inputmode="tel" placeholder="optional"></div>
+    </div>
+    <div id="ncErr"></div>
+    <button class="btn block" id="ncSave" style="margin-top:6px">Save citizen</button>
+  `);
+  $("ncSave").addEventListener("click", saveNewCitizen);
+}
+async function saveNewCitizen(){
+  const jobCard=$("ncId").value.trim(), name=$("ncName").value.trim();
+  const area=$("ncArea").value.trim(), phone=$("ncPhone").value.trim();
+  if(!jobCard || !name){ $("ncErr").innerHTML=`<div class="notice err">Job card number and name are required.</div>`; return; }
+  $("ncSave").disabled=true;
+  const id=fullKey(jobCard);
+  try{
+    if(await store.exists(id)){
+      $("ncErr").innerHTML=`<div class="notice err">Job card ${esc(jobCard)} already exists.</div>`; $("ncSave").disabled=false; return;
+    }
+    await store.addCitizen(id, { jobCard, cardNo:suffixOf(jobCard), name, area, phone, totalCharged:0, totalPaid:0, balance:0 });
+    closeSheet(); toast("Citizen added");
+  }catch(err){ $("ncErr").innerHTML=`<div class="notice err">Couldn't save. Try again.</div>`; console.error(err); $("ncSave").disabled=false; }
+}
+
+/* ============================================================
+   ADMIN — citizen detail: add contribution / record payment / history
+   ============================================================ */
+async function openCitizen(id){
+  const c = allCitizens.find(x=>x.id===id); if(!c) return;
+  openSheet(c.name||"Citizen", `<div id="cDetail" class="empty">Loading…</div>`);
+  await renderCitizenDetail(id);
+}
+
+async function renderCitizenDetail(id){
+  const c = allCitizens.find(x=>x.id===id);
+  const entries = await store.getLedger(id);
+  const bal=(c.totalCharged||0)-(c.totalPaid||0);
+  const rows = entries.length ? entries.map(e=>`
+    <div class="row">
+      <div class="desc"><b>${esc(e.note||(e.type==="charge"?"Contribution":"Payment"))}</b><small>${esc(e.date||"")}</small></div>
+      <div class="amt ${e.type==="payment"?"payment":"charge"}">${e.type==="payment"?"− ":"+ "}${fmt(e.amount)}</div>
+    </div>`).join("") : `<div class="empty">No entries yet.</div>`;
+
+  $("cDetail").outerHTML = `<div id="cDetail">
+    <div class="balance-block" style="padding-top:0">
+      <div class="label">Remaining balance</div>
+      <div class="amount money ${bal<=0?'zero':'owing'}">${fmt(Math.max(0,bal))}</div>
+      <div class="meta">Job card ${esc(c.jobCard||id)}${c.area?" · "+esc(c.area):""}${c.phone?" · "+esc(c.phone):""}</div>
+    </div>
+
+    <div class="panel">
+      <h4>Add this month's contribution</h4>
+      <div class="field"><label>Amount (${CURRENCY})</label><input id="chAmt" inputmode="decimal" placeholder="0"></div>
+      <div class="inline">
+        <div class="field"><label>For</label><input id="chNote" value="${esc(monthLabel())}"></div>
+        <div class="field"><label>Date</label><input id="chDate" type="date" value="${todayISO()}"></div>
+      </div>
+      <button class="btn block small" id="addCharge" style="margin-top:10px">Add contribution</button>
+    </div>
+
+    <div class="panel">
+      <h4>Record a payment</h4>
+      ${bal>0 ? `<button class="btn block small" id="markPaid" style="margin-bottom:12px">Mark fully paid (${fmt(bal)})</button>` : ``}
+      <div class="field"><label>Amount paid (${CURRENCY})</label><input id="pyAmt" inputmode="decimal" placeholder="0"></div>
+      <div class="inline">
+        <div class="field"><label>Note</label><input id="pyNote" placeholder="optional (e.g. cash)"></div>
+        <div class="field"><label>Date</label><input id="pyDate" type="date" value="${todayISO()}"></div>
+      </div>
+      <button class="btn block small ghost" id="addPayment" style="margin-top:10px">Record this amount</button>
+    </div>
+
+    <div class="clist" style="box-shadow:none">
+      <h3 style="font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:0;padding:14px 15px 4px">History</h3>
+      ${rows}
+    </div>
+
+    <button class="btn ghost block small" id="delCitizen" style="margin-top:16px;color:var(--due);border-color:var(--due)">Delete this citizen</button>
+  </div>`;
+
+  $("addCharge").addEventListener("click", ()=>addEntry(id,"charge"));
+  $("addPayment").addEventListener("click", ()=>addEntry(id,"payment"));
+  if($("markPaid")) $("markPaid").addEventListener("click", ()=>markFullyPaid(id, bal));
+  $("delCitizen").addEventListener("click", ()=>deleteCitizen(id));
+}
+
+async function markFullyPaid(id, bal){
+  if(!(bal>0)) return;
+  const btn=$("markPaid"); if(btn) btn.disabled=true;
+  try{
+    await store.addEntry(id, "payment", bal, "Paid in full", todayISO());
+    const fresh=await store.getCitizen(id);
+    const i=allCitizens.findIndex(x=>x.id===id); if(i>-1) allCitizens[i]={...allCitizens[i], ...fresh};
+    toast("Marked fully paid");
+    await renderCitizenDetail(id);
+  }catch(err){ toast("Couldn't save. Try again."); console.error(err); if(btn) btn.disabled=false; }
+}
+
+async function addEntry(id, type){
+  const amtEl = type==="charge" ? $("chAmt") : $("pyAmt");
+  const noteEl = type==="charge" ? $("chNote") : $("pyNote");
+  const dateEl = type==="charge" ? $("chDate") : $("pyDate");
+  const amount = parseFloat(amtEl.value);
+  if(!(amount>0)){ toast("Enter a valid amount"); return; }
+  const btn = type==="charge" ? $("addCharge") : $("addPayment");
+  btn.disabled=true;
+  try{
+    await store.addEntry(id, type, amount, noteEl.value.trim(), dateEl.value||todayISO());
+    const fresh=await store.getCitizen(id);
+    const i=allCitizens.findIndex(x=>x.id===id); if(i>-1) allCitizens[i]={...allCitizens[i], ...fresh};
+    toast(type==="charge"?"Contribution added":"Payment recorded");
+    await renderCitizenDetail(id);
+  }catch(err){ toast("Couldn't save. Try again."); console.error(err); btn.disabled=false; }
+}
+
+async function deleteCitizen(id){
+  if(!confirm("Delete this citizen and all their records? This cannot be undone.")) return;
+  try{
+    await store.deleteCitizen(id);
+    closeSheet(); toast("Citizen deleted");
+  }catch(err){ toast("Couldn't delete."); console.error(err); }
+}
+
+// Initial public browse list (citizen view is the default screen)
+showList();
+</script>
+</body>
+</html>
