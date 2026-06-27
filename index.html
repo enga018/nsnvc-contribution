@@ -205,6 +205,8 @@
   .seg button.active{border-color:var(--green); background:var(--green-soft); color:var(--green-dark)}
   .period-sel{width:100%; padding:11px 12px; border:1.5px solid var(--border-strong); border-radius:9px;
     background:var(--surface); font-size:14px; color:var(--ink); -webkit-appearance:none; appearance:none}
+  .action-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px; }
+  .action-grid .btn{ width:100%; }
 
   .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff;
     padding:12px 18px; border-radius:99px; font-size:14px; z-index:60; box-shadow:var(--shadow); animation:rise .2s ease}
@@ -270,17 +272,6 @@
   .confirm-btns{ display:flex; gap:10px; }
   .confirm-btns .btn{ flex:1; }
 
-  /* Migration panel */
-  #migrationPanel .btn {
-    background:#fef3c7; color:#92400e; border-color:#f0d99a;
-  }
-  #migrationPanel .btn:disabled {
-    opacity:0.6;
-    pointer-events:none;
-  }
-  #migrateStatus { font-size:13px; margin-top:6px; }
-  #migrateStatus .success { color:var(--paid); }
-  #migrateStatus .error { color:var(--due); }
 
   /* Pending list improvements */
   .pending-list .pending-row .info {
@@ -337,11 +328,6 @@
         <span class="dash-title">Admin</span>
         <button class="btn small ghost" id="logoutBtn">Log out</button>
       </div>
-      <!-- MIGRATION BUTTON (improved) -->
-      <div id="migrationPanel" style="margin-bottom:12px; display:none;">
-        <button class="btn small ghost" id="migrateBtn">Run Migration (fix old entries)</button>
-        <div id="migrateStatus"></div>
-      </div>
       <div class="stats" style="grid-template-columns:1fr">
         <div class="stat" style="text-align:center;padding:18px 16px">
           <div class="k">Still to collect</div>
@@ -351,9 +337,12 @@
       </div>
       <div class="toolbar">
         <input id="adminSearch" type="text" placeholder="Search job card no. or name" />
-        <button class="btn small ghost" id="importBtn">Import</button>
-        <button class="btn small ghost" id="exportCsvBtn">Export CSV</button>
         <button class="btn small" id="addCitizenBtn">+ Add</button>
+      </div>
+      <div class="action-grid">
+        <button class="btn small ghost" id="importBtn">Import</button>
+        <button class="btn small ghost" id="exportCsvBtn">Export</button>
+        <button class="btn small ghost" id="backupMenuBtn">Backup</button>
       </div>
       <div id="pendingContainer" class="hidden" style="margin-bottom:12px;">
         <div class="panel" style="background:var(--surface);border:1px solid #f0d99a;">
@@ -375,7 +364,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.17.0</footer>
+<footer>New Serchhip North Village Council · v1.18.0</footer>
 
 <script type="module">
 /* ============================================================
@@ -1090,8 +1079,8 @@ function goBack(){
 }
 
 /* ---------- public list ---------- */
-let pubAll=[], pubShown=20, backTarget="list";
-const PUB_STEP=20;
+let pubAll=[], pubShown=10, backTarget="list";
+const PUB_STEP=10;
 
 function showList(){
   backTarget="list";
@@ -1224,16 +1213,6 @@ function onAuth(isIn){
     $("dashboard").classList.remove("hidden");
     subscribeCitizens();
     refreshPending();
-    if(!store.isLocal){
-      $("migrationPanel").style.display = "block";
-      // Reset button state when user logs in
-      const btn = $("migrateBtn");
-      btn.textContent = "Run Migration (fix old entries)";
-      btn.disabled = false;
-      $("migrateStatus").innerHTML = "";
-    } else {
-      $("migrationPanel").style.display = "none";
-    }
   } else {
     $("loginCard").classList.remove("hidden");
     $("dashboard").classList.add("hidden");
@@ -1243,50 +1222,12 @@ function onAuth(isIn){
 }
 
 /* ============================================================
-   MIGRATION BUTTON (fixed)
-   ============================================================ */
-$("migrateBtn").addEventListener("click", async ()=>{
-  if(!store.migrateEntries) {
-    toast("Migration not supported for this backend.");
-    return;
-  }
-  const btn = $("migrateBtn");
-  const status = $("migrateStatus");
-  btn.disabled = true;
-  btn.textContent = "Running...";
-  status.innerHTML = "";
-  let timeoutId = setTimeout(() => {
-    status.innerHTML = `<span class="error">⏱️ Migration is taking longer than expected. Please refresh and try again.</span>`;
-    btn.disabled = false;
-    btn.textContent = "Run Migration (fix old entries)";
-  }, 10000);
-
-  try{
-    const count = await store.migrateEntries();
-    clearTimeout(timeoutId);
-    status.innerHTML = `<span class="success">✅ Migration complete! ${count} entries updated.</span>`;
-    toast(`Migration complete: ${count} entries updated.`);
-    btn.textContent = "✅ Done!";
-    btn.disabled = false;
-    // Refresh the list
-    renderStats(); renderList();
-  }catch(err){
-    clearTimeout(timeoutId);
-    status.innerHTML = `<span class="error">❌ Migration failed: ${err.message}</span>`;
-    console.error(err);
-    btn.disabled = false;
-    btn.textContent = "Run Migration (fix old entries)";
-  }
-});
-
-/* ============================================================
    ADMIN — live citizen list + stats
    ============================================================ */
 function subscribeCitizens(){
   if(citizensUnsub) return;
   citizensUnsub = store.subscribe(list=>{
     allCitizens = list;
-    periodsReady=false;
     renderStats(); renderList(); refreshPending();
   });
 }
@@ -1345,6 +1286,7 @@ document.querySelectorAll("#adminFilter button").forEach(b=>
     renderList();
   }));
 $("periodSel").addEventListener("change", ()=>{ periodFilter=$("periodSel").value; adminShown=20; renderList(); });
+$("periodSel").addEventListener("focus", ()=>{ if(!periodsReady && !loadingPeriods) loadPendingPeriods(); });
 
 function renderList(){
   const term = $("adminSearch").value.trim().toLowerCase();
@@ -1356,8 +1298,10 @@ function renderList(){
     list = list.filter(c => (c.jobCard||c.id).toLowerCase().includes(term) || (c.name||"").toLowerCase().includes(term));
   } else if(adminFilter==="pending"){
     list = list.filter(c => getEffectiveBalance(c)>0);
-    if(!periodsReady && !loadingPeriods) loadPendingPeriods();
-    if(periodFilter) list = list.filter(c => (unpaidCache.get(c.id)||[]).includes(periodFilter));
+    if(periodFilter){
+      if(!periodsReady && !loadingPeriods) loadPendingPeriods();
+      list = list.filter(c => (unpaidCache.get(c.id)||[]).includes(periodFilter));
+    }
   } else if(adminFilter==="paid"){
     list = list.filter(c => getEffectiveBalance(c)<=0);
   }
@@ -1416,25 +1360,28 @@ async function refreshPending(){
    ADMIN — import (unchanged, but included for completeness)
    ============================================================ */
 $("importBtn").addEventListener("click", openImport);
+$("backupMenuBtn").addEventListener("click", openBackup);
 let pendingImport = null, pendingMonthly = null, pendingBank = null;
 
 function openImport(){
-  openSheet("Import & backup", `
+  openSheet("Import from Excel", `
     <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">What are you importing?</p>
     <button class="btn block" id="impHistBtn" style="margin-bottom:10px">First-time historical register</button>
     <button class="btn block ghost" id="impMonthBtn" style="margin-bottom:10px">Monthly update file (charges)</button>
-    <button class="btn block ghost" id="impBankBtn" style="margin-bottom:18px">Bank payment file</button>
-    <div style="border-top:1px solid var(--border);padding-top:16px">
-      <p style="font-size:13.5px;color:var(--muted);margin:0 0 10px"><b>Backup</b> — download everything, or restore from a saved file. Do this regularly.</p>
-      <button class="btn block ghost" id="backupBtn" style="margin-bottom:10px">⬇ Download backup (all data)</button>
-      <button class="btn block ghost" id="restoreBtn" style="color:var(--due);border-color:var(--due)">⬆ Restore from backup…</button>
-      <input id="restoreFile" type="file" accept=".json,application/json" style="display:none">
-      <div id="backupMsg" style="margin-top:10px"></div>
-    </div>
+    <button class="btn block ghost" id="impBankBtn">Bank payment file</button>
   `);
   $("impHistBtn").addEventListener("click", openHistorical);
   $("impMonthBtn").addEventListener("click", openMonthly);
   $("impBankBtn").addEventListener("click", openBank);
+}
+function openBackup(){
+  openSheet("Backup & restore", `
+    <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">Download a copy of all data, or restore from a saved backup file. Do this regularly.</p>
+    <button class="btn block" id="backupBtn" style="margin-bottom:10px">⬇ Download backup (all data)</button>
+    <button class="btn block ghost" id="restoreBtn" style="color:var(--due);border-color:var(--due)">⬆ Restore from backup…</button>
+    <input id="restoreFile" type="file" accept=".json,application/json" style="display:none">
+    <div id="backupMsg" style="margin-top:12px"></div>
+  `);
   $("backupBtn").addEventListener("click", doBackup);
   $("restoreBtn").addEventListener("click", ()=>$("restoreFile").click());
   $("restoreFile").addEventListener("change", doRestore);
