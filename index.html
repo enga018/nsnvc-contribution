@@ -5,9 +5,279 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
 <title>Contributions — New Serchhip North Village Council</title>
 <style>
-  /* ... (your existing CSS, keep it exactly as before) ... */
-  /* I'm omitting the full CSS for brevity, but it's the same as the last working version */
-  /* For the complete file, please copy from the final working version I provided earlier */
+  :root{
+    --green:#1b4d3e; --green-dark:#143a2f; --green-soft:#e8efe9;
+    --paper:#f7f6f2; --surface:#ffffff; --ink:#1c2724; --muted:#6b7672;
+    --border:#e3e1d8; --border-strong:#cfd0c7;
+    --paid:#15803d; --partial:#b45309; --due:#b91c1c;
+    --shadow:0 1px 2px rgba(20,40,30,.06),0 6px 20px rgba(20,40,30,.06);
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--paper); color:var(--ink); line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+  }
+  .money{font-variant-numeric:tabular-nums; font-feature-settings:"tnum"}
+  button{font-family:inherit; cursor:pointer}
+  input{font-family:inherit}
+
+  /* Header */
+  header{
+    background:var(--green); color:#fff; padding:14px 16px;
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    position:sticky; top:0; z-index:20;
+  }
+  .brand{display:flex; flex-direction:column; line-height:1.2}
+  .brand b{font-size:15px; font-weight:650; letter-spacing:.2px}
+  .brand span{font-size:11px; opacity:.8; text-transform:uppercase; letter-spacing:1px}
+  .mode-link{
+    background:rgba(255,255,255,.12); color:#fff; border:1px solid rgba(255,255,255,.25);
+    padding:7px 12px; border-radius:99px; font-size:12.5px; font-weight:600;
+  }
+  .mode-link:active{background:rgba(255,255,255,.22)}
+
+  main{max-width:680px; margin:0 auto; padding:18px 16px 60px}
+
+  /* Citizen lookup */
+  .lookup{ text-align:center; padding:14px 4px 6px; }
+  .lookup h1{ font-size:18px; font-weight:600; margin:0 0 16px; color:var(--ink); }
+  .searchbar{
+    display:flex; align-items:center; gap:10px;
+    max-width:420px; margin:0 auto;
+    background:var(--surface); border:1px solid var(--border-strong);
+    border-radius:999px; padding:5px 5px 5px 16px;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  .searchbar:focus-within{ border-color:var(--green); box-shadow:0 0 0 3px rgba(27,77,62,.08); }
+  .search-ico{ width:18px; height:18px; color:var(--muted); flex:none; }
+  .searchbar input{
+    flex:1; min-width:0; border:none; outline:none; background:transparent;
+    font-size:16px; padding:10px 0; color:var(--ink);
+  }
+  .search-go{
+    flex:none; width:40px; height:40px; border-radius:50%; border:none;
+    background:var(--green); color:#fff; display:flex; align-items:center; justify-content:center;
+  }
+  .search-go svg{ width:18px; height:18px; }
+  .search-go:active{ background:var(--green-dark); }
+  .btn{
+    background:var(--green); color:#fff; border:none; padding:13px 18px;
+    border-radius:10px; font-size:15px; font-weight:600; white-space:nowrap;
+  }
+  .btn:active{background:var(--green-dark)}
+  .btn.block{width:100%}
+  .btn.ghost{background:transparent; color:var(--green); border:1.5px solid var(--green)}
+  .btn.small{padding:9px 13px; font-size:13.5px}
+  .btn.danger{background:var(--due)}
+  .btn[disabled]{opacity:.5; pointer-events:none}
+
+  /* Statement / receipt */
+  .statement{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    box-shadow:var(--shadow); margin-top:18px; overflow:hidden; animation:rise .25s ease;
+  }
+  @keyframes rise{from{opacity:0; transform:translateY(8px)}to{opacity:1; transform:none}}
+  .statement .top{
+    padding:18px; border-bottom:1px dashed var(--border-strong);
+    display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
+  }
+  .statement .name{font-size:18px; font-weight:650; margin:0}
+  .statement .meta{font-size:12.5px; color:var(--muted); margin-top:3px}
+  .badge{font-size:11px; font-weight:700; padding:5px 10px; border-radius:99px; white-space:nowrap; text-transform:uppercase; letter-spacing:.5px}
+  .badge.paid{background:#e6f4ea; color:var(--paid)}
+  .badge.partial{background:#fdf1e3; color:var(--partial)}
+  .badge.due{background:#fdeaea; color:var(--due)}
+
+  .balance-block{padding:20px 18px; text-align:center; background:linear-gradient(180deg,#fbfbf8,transparent)}
+  .balance-block .label{font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted)}
+  .balance-block .amount{font-size:40px; font-weight:700; margin:4px 0 2px; letter-spacing:-1px}
+  .balance-block .amount.zero{color:var(--paid)}
+  .balance-block .amount.owing{color:var(--due)}
+  .split{display:flex; border-top:1px solid var(--border)}
+  .split div{flex:1; padding:13px; text-align:center}
+  .split div+div{border-left:1px solid var(--border)}
+  .split .k{font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px}
+  .split .v{font-size:17px; font-weight:650; margin-top:2px}
+
+  .ledger{border-top:1px solid var(--border)}
+  .ledger h3{font-size:12.5px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:0; padding:14px 18px 6px}
+  .row{
+    display:flex; align-items:center; gap:10px; padding:11px 18px; border-top:1px solid var(--border);
+  }
+  .row .desc{flex:1; min-width:0}
+  .row .desc b{font-size:14px; font-weight:600; display:block}
+  .row .desc small{font-size:12px; color:var(--muted)}
+  .row .amt{font-size:14.5px; font-weight:650; white-space:nowrap}
+  .amt.charge{color:var(--ink)}
+  .amt.payment{color:var(--paid)}
+  .empty{padding:18px; text-align:center; color:var(--muted); font-size:13.5px}
+
+  /* Search result card (step 1) */
+  .result-card{
+    display:flex; align-items:center; gap:12px; width:100%; text-align:left;
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:14px 18px; box-shadow:var(--shadow); margin-top:10px; animation:rise .2s ease;
+    transition:background .15s;
+  }
+  .result-card:active{background:var(--paper)}
+  .result-card .info{flex:1; min-width:0}
+  .result-card .info b{font-size:16px; display:block}
+  .result-card .info small{font-size:12.5px; color:var(--muted)}
+  .result-card .card-amt{font-size:15.5px; font-weight:700; white-space:nowrap; flex:none}
+  .result-card .card-amt.owe{color:var(--due)}
+  .result-card .card-amt.clear{color:var(--paid)}
+
+  /* Back link */
+  .back{background:none; border:none; color:var(--green); font-size:13.5px; font-weight:600;
+    padding:14px 4px 2px; display:inline-flex; align-items:center; gap:4px}
+
+  /* Monthly breakdown (step 2) */
+  .breakdown{padding:6px 18px 8px}
+  .brow{display:flex; justify-content:space-between; align-items:center; gap:12px;
+    padding:10px 0; font-size:14.5px; border-bottom:1px solid var(--border)}
+  .brow span{color:var(--muted)}
+  .brow b{font-weight:650; white-space:nowrap}
+  .brow.total{border-bottom:none; border-top:2px solid var(--border-strong); margin-top:2px; padding-top:13px; font-size:16.5px}
+  .brow.total span{color:var(--ink); font-weight:700}
+  .brow b.credit{color:var(--paid)}
+  .carry-note{font-size:12.5px; color:var(--paid); padding:0 18px 16px; text-align:center}
+
+  .notice{padding:16px; border-radius:10px; font-size:14px; margin-top:16px}
+  .notice.err{background:#fdeaea; color:#7a1d1d; border:1px solid #f3c4c4}
+  .notice.info{background:var(--green-soft); color:var(--green-dark); border:1px solid #cfe0d5}
+
+  /* Admin */
+  .hidden{display:none !important}
+  .login-card{max-width:360px; margin:30px auto; background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius); padding:24px 20px; box-shadow:var(--shadow)}
+  .login-card h2{margin:0 0 16px; font-size:18px}
+  .field{margin-bottom:12px}
+  .field label{display:block; font-size:12.5px; font-weight:600; color:var(--muted); margin-bottom:5px}
+  .field input{width:100%; padding:11px 12px; font-size:15px; border:1.5px solid var(--border-strong); border-radius:9px; outline:none}
+  .field input:focus{border-color:var(--green)}
+
+  .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px}
+  .stat{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 12px; box-shadow:var(--shadow)}
+  .stat .k{font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted)}
+  .stat .v{font-size:20px; font-weight:700; margin-top:3px}
+  .stat .v.due{color:var(--due)}
+  .stat .v.paid{color:var(--paid)}
+
+  .toolbar{display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap}
+  .toolbar input{flex:1; padding:11px 12px; font-size:15px; border:1.5px solid var(--border-strong); border-radius:9px; outline:none; min-width:0}
+  .toolbar input:focus{border-color:var(--green)}
+
+  .clist{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden}
+  .citizen-row{
+    display:flex; align-items:center; gap:10px; padding:12px 15px;
+    border-top:1px solid var(--border); width:100%; background:none;
+    border-left:none; border-right:none; text-align:left;
+    transition:background .15s;
+  }
+  .citizen-row:first-child{border-top:none}
+  .citizen-row:active{background:var(--paper)}
+  .citizen-row .info{flex:1; min-width:0}
+  .citizen-row .info b{font-size:15px; display:block; font-weight:600}
+  .citizen-row .info small{font-size:12px; color:var(--muted); display:block; margin-top:2px}
+  .citizen-row .bal{font-size:15px; font-weight:700; white-space:nowrap}
+  .dot{width:8px; height:8px; border-radius:50%; flex:none}
+  .dot.paid{background:var(--paid)} .dot.partial{background:var(--partial)} .dot.due{background:var(--due)}
+
+  /* Sheet modal */
+  .overlay{position:fixed; inset:0; background:rgba(20,30,25,.45); z-index:40; display:flex; align-items:flex-end; justify-content:center}
+  .sheet{background:var(--surface); width:100%; max-width:680px; max-height:92vh; overflow-y:auto;
+    border-radius:18px 18px 0 0; animation:slideup .25s ease}
+  @keyframes slideup{from{transform:translateY(100%)}to{transform:none}}
+  .sheet-head{position:sticky; top:0; background:var(--surface); padding:16px 18px; border-bottom:1px solid var(--border);
+    display:flex; justify-content:space-between; align-items:center; z-index:2}
+  .sheet-head h2{margin:0; font-size:17px}
+  .x{background:var(--paper); border:1px solid var(--border); width:34px; height:34px; border-radius:50%; font-size:18px; line-height:1; color:var(--muted)}
+  .sheet-body{padding:18px}
+  .panel{background:var(--paper); border:1px solid var(--border); border-radius:12px; padding:15px; margin-bottom:14px}
+  .panel h4{margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted)}
+  .inline{display:flex; gap:8px}
+  .inline .field{flex:1; margin-bottom:0}
+  .seg{display:flex; gap:8px; margin-bottom:12px}
+  .seg button{flex:1; padding:10px; border:1.5px solid var(--border-strong); background:var(--surface); border-radius:9px; font-weight:600; font-size:14px; color:var(--muted)}
+  .seg button.active{border-color:var(--green); background:var(--green-soft); color:var(--green-dark)}
+  .period-sel{width:100%; padding:11px 12px; border:1.5px solid var(--border-strong); border-radius:9px;
+    background:var(--surface); font-size:14px; color:var(--ink); -webkit-appearance:none; appearance:none}
+
+  .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff;
+    padding:12px 18px; border-radius:99px; font-size:14px; z-index:60; box-shadow:var(--shadow); animation:rise .2s ease}
+
+  .hist-toggle{width:100%; text-align:left; background:none; border:none; border-top:1px solid var(--border);
+    padding:14px 18px; font-size:13px; font-weight:650; color:var(--green); text-transform:uppercase; letter-spacing:.5px; cursor:pointer}
+  .dash-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px}
+  .dash-title{font-size:13px; font-weight:650; text-transform:uppercase; letter-spacing:1px; color:var(--muted)}
+  .card-amt{font-size:15.5px; font-weight:700; white-space:nowrap; flex:none}
+  .card-amt.owe{color:var(--due)}
+  .card-amt.clear{color:var(--paid)}
+  .pager{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:16px 2px 4px}
+  .pager .pageno{font-size:13px; color:var(--muted)}
+  .list-head{font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); padding:18px 4px 2px}
+  #citizenList .result-card{margin-top:10px}
+
+  footer{text-align:center; color:var(--muted); font-size:11.5px; padding:24px 16px}
+  .config-warn{background:#fff7e6; border:1px solid #f0d99a; color:#7a5a12; padding:14px 16px; border-radius:10px; font-size:13px; margin:16px; line-height:1.5}
+
+  /* New styles for indentation, inline actions, etc. */
+  .row.payment-indent .desc{ margin-left:24px; }
+  .row .actions{display:flex; gap:4px; flex-shrink:0;}
+  .row .actions button{background:transparent; border:none; font-size:14px; padding:2px 4px; color:var(--muted);}
+  .row .actions button:hover{color:var(--ink)}
+  .row.deferred{opacity:0.6; background:#f9f9f6;}
+  .row.deferred .desc b::after{content:" (deferred)"; font-weight:400; color:var(--muted); font-size:11px; margin-left:6px;}
+  .inline-buttons{display:flex; gap:8px; flex-wrap:wrap;}
+  .inline-buttons .btn{flex:1; min-width:80px;}
+  .pending-badge{background:#fef3c7; color:#92400e; padding:2px 10px; border-radius:99px; font-size:12px; font-weight:600;}
+  .pending-list .pending-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 0; border-bottom:1px solid var(--border);
+  }
+  .pending-list .pending-row:last-child{border-bottom:none;}
+  .pending-list .confirm-btn{background:var(--paid); color:#fff; border:none; padding:4px 12px; border-radius:99px; font-size:12px;}
+  /* UPI Pay Now button style */
+  .btn-upi {
+    background: #0f5c3e;
+    color: #fff;
+    border: none;
+    padding: 15px 20px;
+    width: 100%;
+    border-radius: 999px;
+    font-size: 18px;
+    font-weight: 700;
+    box-shadow: 0 4px 12px rgba(15, 92, 62, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn-upi:active { background: #0a4a31; transform: scale(0.97); }
+  .btn-upi svg { width: 24px; height: 24px; fill: currentColor; }
+
+  /* Migration panel */
+  #migrationPanel .btn {
+    background:#fef3c7; color:#92400e; border-color:#f0d99a;
+  }
+  #migrationPanel .btn:disabled {
+    opacity:0.6;
+    pointer-events:none;
+  }
+  #migrateStatus { font-size:13px; margin-top:6px; }
+  #migrateStatus .success { color:var(--paid); }
+  #migrateStatus .error { color:var(--due); }
+
+  /* Pending list improvements */
+  .pending-list .pending-row .info {
+    flex:1; min-width:0;
+  }
+  .pending-list .pending-row .info b { display:block; font-weight:600; }
+  .pending-list .pending-row .info small { font-size:12px; color:var(--muted); display:block; }
 </style>
 </head>
 <body>
@@ -57,10 +327,10 @@
         <span class="dash-title">Admin</span>
         <button class="btn small ghost" id="logoutBtn">Log out</button>
       </div>
-      <!-- MIGRATION BUTTON -->
+      <!-- MIGRATION BUTTON (improved) -->
       <div id="migrationPanel" style="margin-bottom:12px; display:none;">
-        <button class="btn small ghost" id="migrateBtn" style="background:#fef3c7;color:#92400e;border-color:#f0d99a;">Run Migration (fix old entries)</button>
-        <div id="migrateStatus" style="font-size:12px;color:var(--muted);margin-top:4px;"></div>
+        <button class="btn small ghost" id="migrateBtn">Run Migration (fix old entries)</button>
+        <div id="migrateStatus"></div>
       </div>
       <div class="stats">
         <div class="stat"><div class="k">Citizens</div><div class="v" id="stCount">0</div></div>
@@ -97,7 +367,7 @@
 
 <script type="module">
 /* ============================================================
-   FIREBASE CONFIG (your existing config)
+   FIREBASE CONFIG (paste your own)
    ============================================================ */
 const firebaseConfig = {
   apiKey: "AIzaSyARuyCACcu7-y0gYBFiDRnkEuIWTO_NJKA",
@@ -109,7 +379,7 @@ const firebaseConfig = {
 };
 
 /* ---------- helpers ---------- */
-const CURRENCY = "₹";
+const CURRENCY = "₹";  // force rupees
 const fmt = n => CURRENCY + (Number(n)||0).toLocaleString("en-IN");
 const $ = id => document.getElementById(id);
 const esc = s => String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -370,8 +640,7 @@ function makeLocalStore(){
       }
       return csv;
     },
-    // For local store, migration already done, so this is a no-op
-    async migrateEntries(){ return 0; }
+    async migrateEntries(){ return 0; } // no-op for local
   };
 }
 
@@ -413,7 +682,6 @@ async function loadFirebase(cfg){
 }
 
 function makeFirebaseStore({ auth, db, fs, au }){
-  // Add a migration function for Firebase
   async function migrateEntries(){
     const citizensSnap = await fs.getDocs(fs.collection(db,"citizens"));
     let updated = 0;
@@ -425,7 +693,6 @@ function makeFirebaseStore({ auth, db, fs, au }){
       for(const entryDoc of ledgerSnap.docs){
         const data = entryDoc.data();
         if(!data.entryId){
-          // update this document to add entryId = doc.id
           batch.update(entryDoc.ref, { entryId: entryDoc.id });
           batchCount++;
           updated++;
@@ -445,14 +712,14 @@ function makeFirebaseStore({ auth, db, fs, au }){
 
   return {
     isLocal:false,
-    migrateEntries, // expose the migration function
+    migrateEntries,
     async getCitizen(id){ const s=await fs.getDoc(fs.doc(db,"citizens",id)); return s.exists()? s.data() : null; },
     async getLedger(id){
       const q=fs.query(fs.collection(db,"citizens",id,"ledger"), fs.orderBy("createdAt","asc"));
       const snap = await fs.getDocs(q);
       return snap.docs.map(d=> {
         const data = d.data();
-        if(!data.entryId) data.entryId = d.id; // use doc ID as fallback
+        if(!data.entryId) data.entryId = d.id;
         return data;
       });
     },
@@ -509,7 +776,6 @@ function makeFirebaseStore({ auth, db, fs, au }){
     async toggleDefer(id, entryId, deferred){
       const ref = fs.doc(db, "citizens", id, "ledger", entryId);
       await fs.updateDoc(ref, { deferred });
-      // recalc totals
       const cRef=fs.doc(db,"citizens",id);
       const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
       let tc=0, tp=0, dt=0;
@@ -557,7 +823,6 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     async deleteEntry(id, entryId){
       await fs.deleteDoc(fs.doc(db,"citizens",id,"ledger",entryId));
-      // recalc totals
       const cRef=fs.doc(db,"citizens",id);
       const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
       let tc=0, tp=0, dt=0;
@@ -572,7 +837,6 @@ function makeFirebaseStore({ auth, db, fs, au }){
     async editEntry(id, entryId, updates){
       const ref=fs.doc(db,"citizens",id,"ledger",entryId);
       await fs.updateDoc(ref, updates);
-      // recalc totals
       const cRef=fs.doc(db,"citizens",id);
       const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
       let tc=0, tp=0, dt=0;
@@ -640,7 +904,7 @@ function addTestLoginHint(){
 }
 
 /* ============================================================
-   CITIZEN LOOKUP (public, no login)
+   CITIZEN LOOKUP
    ============================================================ */
 $("searchBtn").addEventListener("click", doSearch);
 $("searchId").addEventListener("keydown", e => { if(e.key==="Enter") doSearch(); });
@@ -710,8 +974,8 @@ function goBack(){
 }
 
 /* ---------- public list ---------- */
-let pubAll=[], pubShown=10, backTarget="list";
-const PUB_STEP=10;
+let pubAll=[], pubShown=20, backTarget="list";
+const PUB_STEP=20;
 
 function showList(){
   backTarget="list";
@@ -740,7 +1004,7 @@ function renderPubList(){
   const cards=pubAll.slice(0, shown).map(c=>personCardHTML(c.id, c)).join("");
   $("citizenList").innerHTML =
     `<div class="list-head">Pending payments (${total})</div>` + cards +
-    (shown<total ? `<button class="btn block ghost small" id="seeMore" style="margin-top:12px">See more (${total-shown} more)</button>` : ``);
+    (shown<total ? `<button class="btn block ghost small" id="seeMore" style="margin-top:12px">Show next ${Math.min(PUB_STEP, total-shown)}</button>` : ``);
   document.querySelectorAll("#citizenList .result-card").forEach(b=>
     b.addEventListener("click", ()=>openMatch(b.dataset.id, true)));
   if($("seeMore")) $("seeMore").addEventListener("click", ()=>{ pubShown+=PUB_STEP; renderPubList(); });
@@ -852,9 +1116,13 @@ function onAuth(isIn){
     $("dashboard").classList.remove("hidden");
     subscribeCitizens();
     refreshPending();
-    // Show migration panel for Firebase users
     if(!store.isLocal){
       $("migrationPanel").style.display = "block";
+      // Reset button state when user logs in
+      const btn = $("migrateBtn");
+      btn.textContent = "Run Migration (fix old entries)";
+      btn.disabled = false;
+      $("migrateStatus").innerHTML = "";
     } else {
       $("migrationPanel").style.display = "none";
     }
@@ -867,7 +1135,7 @@ function onAuth(isIn){
 }
 
 /* ============================================================
-   MIGRATION BUTTON
+   MIGRATION BUTTON (fixed)
    ============================================================ */
 $("migrateBtn").addEventListener("click", async ()=>{
   if(!store.migrateEntries) {
@@ -875,24 +1143,36 @@ $("migrateBtn").addEventListener("click", async ()=>{
     return;
   }
   const btn = $("migrateBtn");
+  const status = $("migrateStatus");
   btn.disabled = true;
   btn.textContent = "Running...";
-  const status = $("migrateStatus");
+  status.innerHTML = "";
+  let timeoutId = setTimeout(() => {
+    status.innerHTML = `<span class="error">⏱️ Migration is taking longer than expected. Please refresh and try again.</span>`;
+    btn.disabled = false;
+    btn.textContent = "Run Migration (fix old entries)";
+  }, 10000);
+
   try{
     const count = await store.migrateEntries();
-    status.innerHTML = `<span style="color:var(--paid)">✅ Migration complete! ${count} entries updated.</span>`;
+    clearTimeout(timeoutId);
+    status.innerHTML = `<span class="success">✅ Migration complete! ${count} entries updated.</span>`;
     toast(`Migration complete: ${count} entries updated.`);
+    btn.textContent = "✅ Done!";
+    btn.disabled = false;
+    // Refresh the list
+    renderStats(); renderList();
   }catch(err){
-    status.innerHTML = `<span style="color:var(--due)">❌ Migration failed: ${err.message}</span>`;
+    clearTimeout(timeoutId);
+    status.innerHTML = `<span class="error">❌ Migration failed: ${err.message}</span>`;
     console.error(err);
-  } finally {
     btn.disabled = false;
     btn.textContent = "Run Migration (fix old entries)";
   }
 });
 
 /* ============================================================
-   ADMIN — live citizen list + stats (unchanged)
+   ADMIN — live citizen list + stats
    ============================================================ */
 function subscribeCitizens(){
   if(citizensUnsub) return;
@@ -909,7 +1189,8 @@ function renderStats(){
   $("stOut").textContent = fmt(out);
   $("stPaid").textContent = fmt(paid);
 }
-let adminFilter="pending", adminShown=10;
+let adminFilter="pending", adminShown=20;
+const ADMIN_STEP=20;
 let periodFilter="", unpaidCache=new Map(), periodsReady=false, loadingPeriods=false;
 
 function periodKey(note){
@@ -948,15 +1229,15 @@ async function loadPendingPeriods(){
   renderList();
 }
 
-$("adminSearch").addEventListener("input", ()=>{ adminShown=10; renderList(); });
+$("adminSearch").addEventListener("input", ()=>{ adminShown=20; renderList(); });
 document.querySelectorAll("#adminFilter button").forEach(b=>
   b.addEventListener("click", ()=>{
-    adminFilter=b.dataset.f; adminShown=10;
+    adminFilter=b.dataset.f; adminShown=20;
     if(adminFilter!=="pending") periodFilter="";
     document.querySelectorAll("#adminFilter button").forEach(x=>x.classList.toggle("active", x===b));
     renderList();
   }));
-$("periodSel").addEventListener("change", ()=>{ periodFilter=$("periodSel").value; adminShown=10; renderList(); });
+$("periodSel").addEventListener("change", ()=>{ periodFilter=$("periodSel").value; adminShown=20; renderList(); });
 
 function renderList(){
   const term = $("adminSearch").value.trim().toLowerCase();
@@ -981,15 +1262,18 @@ function renderList(){
     const bal=getEffectiveBalance(c); const st=statusOf(c);
     return `<button class="citizen-row" data-id="${esc(c.id)}">
       <span class="dot ${st}"></span>
-      <span class="info"><b>${esc(c.name||"—")}</b><small>${esc(c.jobCard||c.id)}</small></span>
+      <span class="info">
+        <b>${esc(c.name||"—")}</b>
+        <small>${esc(c.jobCard||c.id)}</small>
+      </span>
       <span class="bal money" style="color:${bal>0?'var(--due)':'var(--paid)'}">${fmt(Math.max(0,bal))}</span>
     </button>`;
   }).join("");
   $("adminList").innerHTML = cards +
-    (shown<total ? `<button class="btn block ghost small" id="adminMore" style="margin-top:12px">See more (${total-shown} more)</button>` : ``);
+    (shown<total ? `<button class="btn block ghost small" id="adminMore" style="margin-top:12px">Show next ${Math.min(ADMIN_STEP, total-shown)}</button>` : ``);
   document.querySelectorAll("#adminList .citizen-row").forEach(b=>
     b.addEventListener("click",()=>openCitizen(b.dataset.id)));
-  if($("adminMore")) $("adminMore").addEventListener("click", ()=>{ adminShown+=10; renderList(); });
+  if($("adminMore")) $("adminMore").addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
 }
 
 /* ============================================================
@@ -1003,7 +1287,11 @@ async function refreshPending(){
   container.classList.remove("hidden");
   $("pendingCount").textContent = count;
   const list = pendings.map(p => `<div class="pending-row">
-    <span><b>${esc(p.name)}</b> (${esc(p.jobCard)}) — ${fmt(p.amount)}</span>
+    <span class="info">
+      <b>${esc(p.name)}</b>
+      <small>${esc(p.jobCard)}</small>
+    </span>
+    <span class="money">${fmt(p.amount)}</span>
     <button class="confirm-btn" data-citizen="${esc(p.citizenId)}" data-pending="${esc(p.id)}">Confirm</button>
   </div>`).join("");
   $("pendingList").innerHTML = list;
@@ -1018,13 +1306,10 @@ async function refreshPending(){
 }
 
 /* ============================================================
-   ADMIN — import from Excel (unchanged)
+   ADMIN — import (unchanged, but included for completeness)
    ============================================================ */
 $("importBtn").addEventListener("click", openImport);
-
-let pendingImport = null;
-let pendingMonthly = null;
-let pendingBank = null;
+let pendingImport = null, pendingMonthly = null, pendingBank = null;
 
 function openImport(){
   openSheet("Import from Excel", `
