@@ -228,6 +228,25 @@
   .pending-list .pending-row{display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);}
   .pending-list .pending-row:last-child{border-bottom:none;}
   .pending-list .confirm-btn{background:var(--paid); color:#fff; border:none; padding:4px 12px; border-radius:99px;}
+  /* UPI Pay Now button style */
+  .btn-upi {
+    background: #0f5c3e;
+    color: #fff;
+    border: none;
+    padding: 15px 20px;
+    width: 100%;
+    border-radius: 999px;
+    font-size: 18px;
+    font-weight: 700;
+    box-shadow: 0 4px 12px rgba(15, 92, 62, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn-upi:active { background: #0a4a31; transform: scale(0.97); }
+  .btn-upi svg { width: 24px; height: 24px; fill: currentColor; }
 </style>
 </head>
 <body>
@@ -339,14 +358,12 @@ function toast(msg){
   document.body.appendChild(t); setTimeout(()=>t.remove(),2200);
 }
 function statusOf(c){
-  // Exclude deferred charges from balance
   const bal = getEffectiveBalance(c);
   if(bal<=0) return "paid";
   if((c.totalPaid||0)>0) return "partial";
   return "due";
 }
 function getEffectiveBalance(c){
-  // Calculate balance excluding deferred charges
   const deferredTotal = (c.deferredTotal || 0);
   const charged = (c.totalCharged || 0) - deferredTotal;
   return charged - (c.totalPaid || 0);
@@ -390,11 +407,10 @@ function makeLocalStore(){
   let loggedIn=false;
   const persist=()=>{ try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){} };
   const sortedList=()=>Object.entries(data.citizens)
-    .map(([id,c])=>({ id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name, area:c.area, phone:c.phone,
+    .map(([id,c])=>({ id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name, phone:c.phone,
                       totalCharged:c.totalCharged, totalPaid:c.totalPaid, balance:c.balance, deferredTotal:c.deferredTotal||0 }))
     .sort((a,b)=>(a.name||"").localeCompare(b.name||""));
   const notify=()=>listeners.forEach(cb=>cb(sortedList()));
-  // Helper to recalc totals for a citizen
   function recalcTotals(c){
     let tc=0, tp=0, dt=0;
     for(const e of (c.ledger||[])){
@@ -404,11 +420,10 @@ function makeLocalStore(){
       } else if(e.type==="payment"){
         tp += e.amount;
       } else if(e.type==="forgive"){
-        // Treat as negative charge (reduces total charged)
         tc -= e.amount;
       }
     }
-    c.totalCharged = tc + dt; // store total charged including deferred
+    c.totalCharged = tc + dt;
     c.totalPaid = tp;
     c.deferredTotal = dt;
     c.balance = (tc + dt) - tp;
@@ -418,7 +433,7 @@ function makeLocalStore(){
     isLocal:true,
     async getCitizen(id){ const c=data.citizens[id]; return c? {...c, ledger:undefined} : null; },
     async getLedger(id){ const c=data.citizens[id]; if(!c) return [];
-      return [...(c.ledger||[])].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)); }, // oldest first
+      return [...(c.ledger||[])].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)); },
     async findByCard(typed){
       const suf=suffixOf(typed), fk=fullKey(typed);
       const out=[];
@@ -432,7 +447,7 @@ function makeLocalStore(){
       const list=[]; 
       for(const [id,c] of Object.entries(data.citizens)){
         const effBal = getEffectiveBalance(c);
-        if(effBal > 0) list.push({ id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name, area:c.area,
+        if(effBal > 0) list.push({ id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name,
                           totalCharged:c.totalCharged, totalPaid:c.totalPaid, balance:effBal, deferredTotal:c.deferredTotal||0 });
       }
       return list;
@@ -441,7 +456,8 @@ function makeLocalStore(){
     async addCitizen(id, d){ data.citizens[id]={...d, ledger:[], pendingPayments:[], createdAt:++clock, updatedAt:++clock}; persist(); notify(); },
     async addEntry(id, type, amount, note, date, deferred=false){
       const c=data.citizens[id]; if(!c) throw new Error("missing");
-      const entry = { type, amount, note, date, deferred: deferred || false, createdAt:++clock };
+      const entryId = String(++clock);
+      const entry = { entryId, type, amount, note, date, deferred: deferred || false, createdAt: clock };
       if(!c.ledger) c.ledger=[];
       c.ledger.push(entry);
       recalcTotals(c);
@@ -449,7 +465,7 @@ function makeLocalStore(){
     },
     async toggleDefer(id, entryId, deferred){
       const c=data.citizens[id]; if(!c) return;
-      const idx = c.ledger.findIndex(e=>e.createdAt===entryId);
+      const idx = c.ledger.findIndex(e => e.entryId === entryId);
       if(idx<0 || c.ledger[idx].type!=="charge") return;
       c.ledger[idx].deferred = deferred;
       recalcTotals(c);
@@ -457,7 +473,8 @@ function makeLocalStore(){
     },
     async forgiveDebt(id, amount, note){
       const c=data.citizens[id]; if(!c) throw new Error("missing");
-      const entry = { type:"forgive", amount, note, date:todayISO(), deferred:false, createdAt:++clock };
+      const entryId = String(++clock);
+      const entry = { entryId, type:"forgive", amount, note, date:todayISO(), deferred:false, createdAt:clock };
       c.ledger.push(entry);
       recalcTotals(c);
       c.updatedAt=++clock; persist(); notify();
@@ -465,7 +482,7 @@ function makeLocalStore(){
     async addPendingPayment(id, amount){
       const c=data.citizens[id]; if(!c) throw new Error("missing");
       if(!c.pendingPayments) c.pendingPayments=[];
-      const pp = { id:++clock, amount, date:todayISO(), status:"pending", createdAt:++clock };
+      const pp = { id:String(++clock), amount, date:todayISO(), status:"pending", createdAt:clock };
       c.pendingPayments.push(pp);
       c.updatedAt=++clock; persist(); notify();
       return pp;
@@ -476,8 +493,8 @@ function makeLocalStore(){
       if(idx<0) return;
       const pp = c.pendingPayments[idx];
       if(pp.status!=="pending") return;
-      // record as payment
-      const entry = { type:"payment", amount:pp.amount, note:"UPI", date:pp.date, deferred:false, createdAt:++clock };
+      const entryId = String(++clock);
+      const entry = { entryId, type:"payment", amount:pp.amount, note:"UPI", date:pp.date, deferred:false, createdAt:clock };
       c.ledger.push(entry);
       recalcTotals(c);
       pp.status="confirmed";
@@ -485,7 +502,7 @@ function makeLocalStore(){
     },
     async deleteEntry(id, entryId){
       const c=data.citizens[id]; if(!c) return;
-      const idx = c.ledger.findIndex(e=>e.createdAt===entryId);
+      const idx = c.ledger.findIndex(e => e.entryId === entryId);
       if(idx<0) return;
       c.ledger.splice(idx,1);
       recalcTotals(c);
@@ -493,7 +510,7 @@ function makeLocalStore(){
     },
     async editEntry(id, entryId, updates){
       const c=data.citizens[id]; if(!c) return;
-      const idx = c.ledger.findIndex(e=>e.createdAt===entryId);
+      const idx = c.ledger.findIndex(e => e.entryId === entryId);
       if(idx<0) return;
       const e = c.ledger[idx];
       if(updates.amount!==undefined) e.amount=updates.amount;
@@ -516,11 +533,11 @@ function makeLocalStore(){
       let n=0;
       for(const r of rows){
         data.citizens[r.id] = {
-          jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, area:r.area||"", phone:r.phone||"",
+          jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, phone:r.phone||"",
           totalCharged:r.totalCharged, totalPaid:r.totalPaid, balance:r.balance, deferredTotal:0,
           createdAt:++clock, updatedAt:++clock,
-          ledger:(r.ledger||[]).map(e=>({ type:e.type, amount:e.amount, note:e.note, date:e.date,
-                                          deferred:e.deferred||false, createdAt:(e.when? e.when.getTime() : ++clock) })),
+          ledger:(r.ledger||[]).map(e=>({ entryId:e.entryId || String(++clock), type:e.type, amount:e.amount, note:e.note, date:e.date,
+                                          deferred:e.deferred||false, createdAt:e.when? e.when.getTime() : ++clock })),
           pendingPayments:[]
         };
         recalcTotals(data.citizens[r.id]);
@@ -533,12 +550,12 @@ function makeLocalStore(){
       let n=0;
       for(const it of items){
         let c=data.citizens[it.id];
-        if(!c){ c={ jobCard:it.jobCard, cardNo:it.cardNo, name:it.name, area:"", phone:"",
+        if(!c){ c={ jobCard:it.jobCard, cardNo:it.cardNo, name:it.name, phone:"",
                     totalCharged:0, totalPaid:0, balance:0, deferredTotal:0, createdAt:++clock, updatedAt:++clock, ledger:[], pendingPayments:[] };
                 data.citizens[it.id]=c; }
-        // Use the deferred flag from the item, default to false
         const isDeferred = it.deferred || false;
-        c.ledger.push({ type:"charge", amount:it.amount, note:it.note, date:"", deferred:isDeferred, createdAt:(it.when? it.when.getTime() : ++clock) });
+        const entryId = String(++clock);
+        c.ledger.push({ entryId, type:"charge", amount:it.amount, note:it.note, date:"", deferred:isDeferred, createdAt:clock });
         recalcTotals(c);
         c.updatedAt=++clock;
         if((++n % 50)===0 && onProgress) onProgress(n, items.length);
@@ -550,7 +567,8 @@ function makeLocalStore(){
       let n=0;
       for(const it of items){
         const c=data.citizens[it.id]; if(!c) continue;
-        c.ledger.push({ type:"payment", amount:it.amount, note:it.note, date:it.date||"", deferred:false, createdAt:(it.when? it.when.getTime() : ++clock) });
+        const entryId = String(++clock);
+        c.ledger.push({ entryId, type:"payment", amount:it.amount, note:it.note, date:it.date||"", deferred:false, createdAt:clock });
         recalcTotals(c);
         c.updatedAt=++clock;
         if((++n % 50)===0 && onProgress) onProgress(n, items.length);
@@ -561,7 +579,6 @@ function makeLocalStore(){
     async signIn(){ loggedIn=true; authCbs.forEach(cb=>cb(true)); },
     signOut(){ loggedIn=false; authCbs.forEach(cb=>cb(false)); },
     onAuth(cb){ authCbs.add(cb); cb(loggedIn); },
-    // CSV export
     async exportOwingCsv(){
       const owing = await this.listOwing();
       let csv = "Name,Job Card,Outstanding (₹),Payment History\n";
@@ -579,25 +596,25 @@ function seedData(){
   let t=1;
   const k=()=>++t;
   return { citizens:{
-    "MZ-07-001-005-001%2F3":{ jobCard:"MZ-07-001-005-001/3", cardNo:"3", name:"Lalrinmawia", area:"Venghlui", phone:"",
+    "MZ-07-001-005-001%2F3":{ jobCard:"MZ-07-001-005-001/3", cardNo:"3", name:"Lalrinmawia", phone:"",
       totalCharged:1000, totalPaid:300, balance:700, deferredTotal:0, createdAt:k(), updatedAt:k(),
       ledger:[
-        { type:"charge",  amount:500, note:"April 2026", date:"2026-04-03", deferred:false, createdAt:k() },
-        { type:"payment", amount:300, note:"cash",       date:"2026-04-12", deferred:false, createdAt:k() },
-        { type:"charge",  amount:500, note:"MAY1",        date:"", deferred:false, createdAt:k() }
+        { entryId:String(k()), type:"charge",  amount:500, note:"April 2026", date:"2026-04-03", deferred:false, createdAt:k() },
+        { entryId:String(k()), type:"payment", amount:300, note:"cash",       date:"2026-04-12", deferred:false, createdAt:k() },
+        { entryId:String(k()), type:"charge",  amount:500, note:"MAY1",        date:"", deferred:false, createdAt:k() }
       ], pendingPayments:[] },
-    "MZ-07-001-005-001%2F18":{ jobCard:"MZ-07-001-005-001/18", cardNo:"18", name:"Lalduhawmi", area:"Chhimveng", phone:"",
+    "MZ-07-001-005-001%2F18":{ jobCard:"MZ-07-001-005-001/18", cardNo:"18", name:"Lalduhawmi", phone:"",
       totalCharged:1000, totalPaid:800, balance:200, deferredTotal:0, createdAt:k(), updatedAt:k(),
       ledger:[
-        { type:"charge",  amount:500, note:"April 2026", date:"2026-04-03", deferred:false, createdAt:k() },
-        { type:"payment", amount:800, note:"paid extra", date:"2026-04-10", deferred:false, createdAt:k() },
-        { type:"charge",  amount:500, note:"MAY1",        date:"", deferred:false, createdAt:k() }
+        { entryId:String(k()), type:"charge",  amount:500, note:"April 2026", date:"2026-04-03", deferred:false, createdAt:k() },
+        { entryId:String(k()), type:"payment", amount:800, note:"paid extra", date:"2026-04-10", deferred:false, createdAt:k() },
+        { entryId:String(k()), type:"charge",  amount:500, note:"MAY1",        date:"", deferred:false, createdAt:k() }
       ], pendingPayments:[] },
-    "MZ-07-001-005-001%2F22":{ jobCard:"MZ-07-001-005-001/22", cardNo:"22", name:"Vanlalruata", area:"Venghlui", phone:"",
+    "MZ-07-001-005-001%2F22":{ jobCard:"MZ-07-001-005-001/22", cardNo:"22", name:"Vanlalruata", phone:"",
       totalCharged:500, totalPaid:500, balance:0, deferredTotal:0, createdAt:k(), updatedAt:k(),
       ledger:[
-        { type:"charge",  amount:500, note:"April 2026", date:"2026-04-03", deferred:false, createdAt:k() },
-        { type:"payment", amount:500, note:"cash",       date:"2026-04-08", deferred:false, createdAt:k() }
+        { entryId:String(k()), type:"charge",  amount:500, note:"April 2026", date:"2026-04-03", deferred:false, createdAt:k() },
+        { entryId:String(k()), type:"payment", amount:500, note:"cash",       date:"2026-04-08", deferred:false, createdAt:k() }
       ], pendingPayments:[] }
   }};
 }
@@ -613,9 +630,6 @@ async function loadFirebase(cfg){
 }
 
 function makeFirebaseStore({ auth, db, fs, au }){
-  // Similar to local but with Firestore transactions
-  // For brevity, we'll implement the needed methods with Firestore.
-  // We'll keep the same interface.
   return {
     isLocal:false,
     async getCitizen(id){ const s=await fs.getDoc(fs.doc(db,"citizens",id)); return s.exists()? s.data() : null; },
@@ -639,7 +653,6 @@ function makeFirebaseStore({ auth, db, fs, au }){
       return fs.onSnapshot(q, snap=> cb(snap.docs.map(d=>({ id:d.id, ...d.data() }))));
     },
     async listOwing(){
-      // We'll fetch all and filter locally for simplicity
       const snap=await fs.getDocs(fs.collection(db,"citizens"));
       const out=[];
       for(const d of snap.docs){
@@ -657,37 +670,9 @@ function makeFirebaseStore({ auth, db, fs, au }){
       await fs.runTransaction(db, async tx=>{
         const cRef=fs.doc(db,"citizens",id);
         const s=await tx.get(cRef); if(!s.exists()) throw new Error("missing");
-        const d=s.data();
-        // We'll add the entry to a subcollection
         const eRef=fs.doc(fs.collection(db,"citizens",id,"ledger"));
-        const entry = { type, amount, note, date, deferred, createdAt:fs.serverTimestamp() };
+        const entry = { entryId: eRef.id, type, amount, note, date, deferred, createdAt:fs.serverTimestamp() };
         tx.set(eRef, entry);
-        // Recalculate totals: we need to fetch all ledger entries to recalc
-        const ledSnap = await tx.get(fs.collection(db,"citizens",id,"ledger"));
-        let tc=0, tp=0, dt=0;
-        ledSnap.docs.forEach(doc=>{
-          const e=doc.data();
-          if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
-          else if(e.type==="payment") tp+=e.amount;
-          else if(e.type==="forgive") tc-=e.amount;
-        });
-        // Also include the new entry (if not yet in snapshot)
-        if(type==="charge"){ if(deferred) dt+=amount; else tc+=amount; }
-        else if(type==="payment") tp+=amount;
-        else if(type==="forgive") tc-=amount;
-        tx.update(cRef,{ totalCharged:tc, totalPaid:tp, balance:tc - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
-      });
-    },
-    async toggleDefer(id, entryId, deferred){
-      // entryId is createdAt timestamp
-      await fs.runTransaction(db, async tx=>{
-        const cRef=fs.doc(db,"citizens",id);
-        // Find the ledger entry with that createdAt
-        const q=fs.query(fs.collection(db,"citizens",id,"ledger"), fs.where("createdAt","==",entryId));
-        const snap=await tx.get(q);
-        if(snap.empty) return;
-        const ref=snap.docs[0].ref;
-        tx.update(ref,{ deferred });
         // Recalc totals
         const ledSnap = await tx.get(fs.collection(db,"citizens",id,"ledger"));
         let tc=0, tp=0, dt=0;
@@ -697,17 +682,25 @@ function makeFirebaseStore({ auth, db, fs, au }){
           else if(e.type==="payment") tp+=e.amount;
           else if(e.type==="forgive") tc-=e.amount;
         });
+        // Include the new entry manually if not in snapshot (it won't be, since it's new)
+        if(type==="charge"){ if(deferred) dt+=amount; else tc+=amount; }
+        else if(type==="payment") tp+=amount;
+        else if(type==="forgive") tc-=amount;
         tx.update(cRef,{ totalCharged:tc, totalPaid:tp, balance:tc - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
       });
+    },
+    async toggleDefer(id, entryId, deferred){
+      const ref = fs.doc(db, "citizens", id, "ledger", entryId);
+      await fs.updateDoc(ref, { deferred });
+      await this._recalcTotals(id);
     },
     async forgiveDebt(id, amount, note){
       await this.addEntry(id, "forgive", amount, note, todayISO());
     },
     async addPendingPayment(id, amount){
-      const cRef=fs.doc(db,"citizens",id);
       const ppRef=fs.collection(db,"citizens",id,"pendingPayments");
       const newRef=fs.doc(ppRef);
-      await fs.setDoc(newRef, { amount, date:todayISO(), status:"pending", createdAt:fs.serverTimestamp() });
+      await fs.setDoc(newRef, { id:newRef.id, amount, date:todayISO(), status:"pending", createdAt:fs.serverTimestamp() });
       return { id:newRef.id, amount, status:"pending" };
     },
     async confirmPendingPayment(id, pendingId){
@@ -718,12 +711,10 @@ function makeFirebaseStore({ auth, db, fs, au }){
       if(pp.status!=="pending") return;
       await fs.runTransaction(db, async tx=>{
         tx.update(ppRef,{ status:"confirmed" });
-        // Add as payment
         await this.addEntry(id, "payment", pp.amount, "UPI", pp.date);
       });
     },
     async getPendingPayments(){
-      // Get all citizens and their pending payments
       const snap=await fs.getDocs(fs.collection(db,"citizens"));
       const all=[];
       for(const d of snap.docs){
@@ -738,10 +729,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
       return all;
     },
     async deleteEntry(id, entryId){
-      // entryId is doc ID or createdAt? We'll store doc ID in entry
-      // For simplicity, we'll assume entryId is the document ID
       await fs.deleteDoc(fs.doc(db,"citizens",id,"ledger",entryId));
-      // Recalc totals
       await this._recalcTotals(id);
     },
     async _recalcTotals(id){
@@ -762,28 +750,20 @@ function makeFirebaseStore({ auth, db, fs, au }){
       await this._recalcTotals(id);
     },
     async deleteCitizen(id){
-      // Delete ledger subcollection, pending payments, then doc
       const led=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
       await Promise.all(led.docs.map(d=>fs.deleteDoc(d.ref)));
       const pp=await fs.getDocs(fs.collection(db,"citizens",id,"pendingPayments"));
       await Promise.all(pp.docs.map(d=>fs.deleteDoc(d.ref)));
       await fs.deleteDoc(fs.doc(db,"citizens",id));
     },
-    async bulkImport(rows, onProgress){ /* similar to local but with batched writes */ },
+    async bulkImport(rows, onProgress){ /* similar to local with batched writes */ },
     async bulkAppendCharges(items, onProgress){
-      // Same as local but firestore transactions/batch
-      // Since we can't use increment with deferred easily here, we'll loop and use transactions.
-      // For production scale, better to use batched writes with transactions.
-      // Simplified version: sequential writes with recalculation
       let n=0;
       for(const it of items){
-        const isDeferred = it.deferred || false;
-        // We'll use addEntry to handle recalc
-        // But we need to ensure the citizen exists.
         if(!await this.exists(it.id)){
-          await this.addCitizen(it.id, { jobCard:it.jobCard, cardNo:it.cardNo, name:it.name, area:"", phone:"", totalCharged:0, totalPaid:0, balance:0, deferredTotal:0 });
+          await this.addCitizen(it.id, { jobCard:it.jobCard, cardNo:it.cardNo, name:it.name, phone:"", totalCharged:0, totalPaid:0, balance:0, deferredTotal:0 });
         }
-        await this.addEntry(it.id, "charge", it.amount, it.note, "", isDeferred);
+        await this.addEntry(it.id, "charge", it.amount, it.note, "", it.deferred || false);
         n++;
         if(onProgress && n%10===0) onProgress(n, items.length);
       }
@@ -966,12 +946,16 @@ function renderStatement(){
     </div>`;
   }).join("") : `<div class="empty">No entries yet.</div>`;
 
-  // UPI pay button
+  // UPI pay button - redesigned
   let upiButton = '';
   if(toPay > 0){
-    const upiUrl = `upi://pay?pa=9599898884@upi&pn=Council&am=${toPay.toFixed(2)}&cu=INR`;
-    upiButton = `<button class="btn" id="upiPayBtn" style="margin-top:8px;">Pay Now (UPI)</button>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px;">Opens your UPI app – payment will be confirmed by admin.</div>`;
+    upiButton = `
+      <button class="btn-upi" id="upiPayBtn">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="white"><path d="M6 4h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2zm0 1.5A.5.5 0 005.5 6v12a.5.5 0 00.5.5h12a.5.5 0 00.5-.5V6a.5.5 0 00-.5-.5H6zm6 1.5a.5.5 0 010 1h-2v4h2a.5.5 0 010 1h-2v2.5a.5.5 0 01-1 0V12a.5.5 0 010-1h2V7h-2a.5.5 0 010-1h2zm4 0a.5.5 0 010 1h-2v4h2a.5.5 0 010 1h-2v2.5a.5.5 0 01-1 0V12a.5.5 0 010-1h2V7h-2a.5.5 0 010-1h2z"/></svg>
+        Pay Now (UPI)
+      </button>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;">📲 Send screenshot to Admin via WhatsApp</div>
+    `;
   }
 
   $("citizenResult").innerHTML = `
@@ -1002,10 +986,8 @@ function renderStatement(){
   });
   if($("upiPayBtn")){
     $("upiPayBtn").addEventListener("click", ()=>{
-      // Create pending payment
       store.addPendingPayment(id, toPay).then(()=>{
         toast("UPI payment request sent. Admin will confirm.");
-        // Open UPI app
         const upiUrl = `upi://pay?pa=9599898884@upi&pn=Council&am=${toPay.toFixed(2)}&cu=INR`;
         window.location.href = upiUrl;
       }).catch(()=>toast("Failed to create pending payment."));
@@ -1051,7 +1033,7 @@ function onAuth(isIn){
     $("loginCard").classList.add("hidden");
     $("dashboard").classList.remove("hidden");
     subscribeCitizens();
-    refreshPending(); // load pending payments
+    refreshPending();
   } else {
     $("loginCard").classList.remove("hidden");
     $("dashboard").classList.add("hidden");
@@ -1179,7 +1161,7 @@ async function refreshPending(){
   document.querySelectorAll(".pending-list .confirm-btn").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
       const cid=btn.dataset.citizen, pid=btn.dataset.pending;
-      await store.confirmPendingPayment(cid, parseInt(pid));
+      await store.confirmPendingPayment(cid, pid);
       toast("Payment confirmed");
       refreshPending();
     });
@@ -1275,10 +1257,11 @@ async function handleHistorical(e){
       const up=unpaid[full]||{}; const ledger=[]; let tc=0,tp=0;
       for(const p of periods){ const due=_num(row[p.col]); if(due<=0) continue;
         const u=_num(up[p.key]); const paid=due-u; tc+=due; tp+=paid;
-        ledger.push({ type:"charge", amount:due, note:p.label, date:"", deferred:false, when:_when() });
-        if(paid>0) ledger.push({ type:"payment", amount:paid, note:p.label, date:"", deferred:false, when:_when() }); }
+        const eid1 = String(++_ord); ledger.push({ entryId:eid1, type:"charge", amount:due, note:p.label, date:"", deferred:false, when:_when() });
+        if(paid>0){ const eid2 = String(++_ord); ledger.push({ entryId:eid2, type:"payment", amount:paid, note:p.label, date:"", deferred:false, when:_when() }); }
+      }
       const bal=tc-tp; totC+=tc; totP+=tp; totO+=bal; (bal>0?owing++:fully++);
-      rows.push({ id:fullKey(full), jobCard:full, cardNo:suffixOf(full), name, area:"", phone:"",
+      rows.push({ id:fullKey(full), jobCard:full, cardNo:suffixOf(full), name, phone:"",
         totalCharged:tc, totalPaid:tp, balance:bal, ledger });
     }
     pendingImport=rows;
@@ -1506,7 +1489,7 @@ function openAddCitizen(){
 }
 async function saveNewCitizen(){
   const jobCard=$("ncId").value.trim(), name=$("ncName").value.trim();
-  const area="", phone=$("ncPhone").value.trim();
+  const phone=$("ncPhone").value.trim();
   if(!jobCard || !name){ $("ncErr").innerHTML=`<div class="notice err">Job card number and name are required.</div>`; return; }
   $("ncSave").disabled=true;
   const id=fullKey(jobCard);
@@ -1514,7 +1497,7 @@ async function saveNewCitizen(){
     if(await store.exists(id)){
       $("ncErr").innerHTML=`<div class="notice err">Job card ${esc(jobCard)} already exists.</div>`; $("ncSave").disabled=false; return;
     }
-    await store.addCitizen(id, { jobCard, cardNo:suffixOf(jobCard), name, area, phone, totalCharged:0, totalPaid:0, balance:0, deferredTotal:0 });
+    await store.addCitizen(id, { jobCard, cardNo:suffixOf(jobCard), name, phone, totalCharged:0, totalPaid:0, balance:0, deferredTotal:0 });
     closeSheet(); toast("Citizen added");
   }catch(err){ $("ncErr").innerHTML=`<div class="notice err">Couldn't save. Try again.</div>`; console.error(err); $("ncSave").disabled=false; }
 }
@@ -1532,9 +1515,8 @@ async function renderCitizenDetail(id){
   const c = allCitizens.find(x=>x.id===id);
   const entries = await store.getLedger(id);
   const bal = getEffectiveBalance(c);
-  const chrono = [...entries].sort((a,b)=>a.createdAt-b.createdAt); // oldest first
+  const chrono = [...entries].sort((a,b)=>a.createdAt-b.createdAt);
 
-  // Build rows with edit/delete for admin
   const rows = chrono.length ? chrono.map((e, idx)=>{
     const isPayment = e.type==="payment";
     const isForgive = e.type==="forgive";
@@ -1543,17 +1525,15 @@ async function renderCitizenDetail(id){
     let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
     let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
     let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "");
-    // Actions: edit/delete only for admin (we are in admin view)
     const actions = `<span class="actions">
-      <button class="edit-entry" data-id="${e.createdAt}" data-type="${e.type}">✏️</button>
-      <button class="del-entry" data-id="${e.createdAt}">🗑️</button>
+      <button class="edit-entry" data-id="${e.entryId}" data-type="${e.type}">✏️</button>
+      <button class="del-entry" data-id="${e.entryId}">🗑️</button>
     </span>`;
-    // Defer toggle for charges
     let deferToggle = '';
     if(e.type==="charge"){
       const checked = e.deferred ? 'checked' : '';
       deferToggle = `<label style="font-size:12px;color:var(--muted);margin-left:8px;">
-        <input type="checkbox" class="defer-chk" data-id="${e.createdAt}" ${checked}> Defer
+        <input type="checkbox" class="defer-chk" data-id="${e.entryId}" ${checked}> Defer
       </label>`;
     }
     return `<div class="${rowClass}">
@@ -1563,7 +1543,6 @@ async function renderCitizenDetail(id){
     </div>`;
   }).join("") : `<div class="empty">No entries yet.</div>`;
 
-  // Forgive button
   const forgiveBlock = `<div class="panel" style="margin-top:12px;">
     <h4>Forgive debt</h4>
     <div class="inline">
@@ -1613,37 +1592,33 @@ async function renderCitizenDetail(id){
     <button class="btn ghost block small" id="delCitizen" style="margin-top:16px;color:var(--due);border-color:var(--due)">Delete this citizen</button>
   </div>`;
 
-  // Attach events
   $("addCharge").addEventListener("click", ()=>addEntry(id,"charge"));
   $("addPayment").addEventListener("click", ()=>addEntry(id,"payment"));
   if($("markPaid")) $("markPaid").addEventListener("click", ()=>markFullyPaid(id, bal));
   $("delCitizen").addEventListener("click", ()=>deleteCitizen(id));
   $("forgiveBtn").addEventListener("click", ()=>forgiveDebt(id));
 
-  // Defer toggles
   document.querySelectorAll(".defer-chk").forEach(chk=>{
     chk.addEventListener("change", async ()=>{
-      const entryId = parseInt(chk.dataset.id);
+      const entryId = chk.dataset.id;
       await store.toggleDefer(id, entryId, chk.checked);
       toast("Deferral updated");
       await renderCitizenDetail(id);
     });
   });
 
-  // Edit entry
   document.querySelectorAll(".edit-entry").forEach(btn=>{
     btn.addEventListener("click", ()=>{
-      const entryId = parseInt(btn.dataset.id);
-      const entry = chrono.find(e=>e.createdAt===entryId);
+      const entryId = btn.dataset.id;
+      const entry = chrono.find(e=>e.entryId===entryId);
       if(!entry) return;
       openEditEntry(id, entryId, entry);
     });
   });
 
-  // Delete entry
   document.querySelectorAll(".del-entry").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
-      const entryId = parseInt(btn.dataset.id);
+      const entryId = btn.dataset.id;
       if(!confirm("Delete this entry?")) return;
       await store.deleteEntry(id, entryId);
       toast("Entry deleted");
@@ -1699,7 +1674,6 @@ async function deleteCitizen(id){
   }catch(err){ toast("Couldn't delete."); console.error(err); }
 }
 
-// Edit entry modal
 function openEditEntry(citizenId, entryId, entry){
   openSheet("Edit entry", `
     <div class="field"><label>Amount</label><input id="editAmt" type="number" step="0.01" value="${entry.amount}"></div>
