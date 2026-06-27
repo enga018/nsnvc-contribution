@@ -401,7 +401,7 @@ function makeLocalStore(){
   let data=null;
   try{ const raw=localStorage.getItem(KEY); if(raw) data=JSON.parse(raw); }catch(e){}
   if(!data) data=seedData();
-  // --- MIGRATION: ensure every ledger entry has an entryId ---
+  // --- MIGRATION: ensure every ledger entry has an entryId (if not already) ---
   let migrated = false;
   for(const [id, c] of Object.entries(data.citizens)){
     if(c.ledger){
@@ -451,8 +451,17 @@ function makeLocalStore(){
   return {
     isLocal:true,
     async getCitizen(id){ const c=data.citizens[id]; return c? {...c, ledger:undefined} : null; },
-    async getLedger(id){ const c=data.citizens[id]; if(!c) return [];
-      return [...(c.ledger||[])].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)); },
+    async getLedger(id){
+      const c=data.citizens[id]; if(!c) return [];
+      const ledger = [...(c.ledger||[])];
+      // Ensure every entry has an entryId (fallback)
+      for(let i=0; i<ledger.length; i++){
+        if(!ledger[i].entryId){
+          ledger[i].entryId = String(Date.now() + Math.random() * 10000) + '-' + i;
+        }
+      }
+      return ledger.sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+    },
     async findByCard(typed){
       const suf=suffixOf(typed), fk=fullKey(typed);
       const out=[];
@@ -657,7 +666,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
       const snap = await fs.getDocs(q);
       return snap.docs.map(d=> {
         const data = d.data();
-        if(!data.entryId) data.entryId = d.id;
+        if(!data.entryId) data.entryId = d.id; // use doc ID as fallback
         return data;
       });
     },
