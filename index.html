@@ -364,7 +364,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.20.0</footer>
+<footer>New Serchhip North Village Council · v1.21.0</footer>
 
 <script type="module">
 /* ============================================================
@@ -520,6 +520,7 @@ function makeLocalStore(){
       const idx = c.ledger.findIndex(e => e.entryId === entryId);
       if(idx<0 || c.ledger[idx].type!=="charge") return;
       c.ledger[idx].deferred = deferred;
+      c.ledger[idx].deferSource = deferred ? "manual" : null;
       recalcTotals(c);
       c.updatedAt=++clock; persist(); notify();
     },
@@ -607,7 +608,7 @@ function makeLocalStore(){
                 data.citizens[it.id]=c; }
         const isDeferred = it.deferred || false;
         const entryId = String(++clock);
-        c.ledger.push({ entryId, type:"charge", amount:it.amount, note:it.note, date:"", deferred:isDeferred, createdAt:clock });
+        c.ledger.push({ entryId, type:"charge", amount:it.amount, note:it.note, date:"", deferred:isDeferred, deferSource:it.deferSource||null, createdAt:clock });
         recalcTotals(c);
         c.updatedAt=++clock;
         if((++n % 50)===0 && onProgress) onProgress(n, items.length);
@@ -668,6 +669,24 @@ function makeLocalStore(){
     async getImportedPeriods(){ return (data.meta && data.meta.periods) ? data.meta.periods.slice() : []; },
     async recordImportedPeriod(p){ if(!data.meta) data.meta={periods:[]}; if(!data.meta.periods) data.meta.periods=[];
       if(!data.meta.periods.includes(p)) data.meta.periods.push(p); persist(); },
+    async getDeferredUploads(){ return (data.meta && data.meta.deferredUploads) ? data.meta.deferredUploads.slice() : []; },
+    async recordDeferredUpload(p){ if(!data.meta) data.meta={}; if(!data.meta.deferredUploads) data.meta.deferredUploads=[];
+      if(!data.meta.deferredUploads.includes(p)) data.meta.deferredUploads.push(p); persist(); },
+    async removeDeferredUpload(p){ if(data.meta && data.meta.deferredUploads) data.meta.deferredUploads=data.meta.deferredUploads.filter(x=>x!==p); persist(); },
+    async releaseUploadDeferred(period, onProgress){
+      const ids=Object.keys(data.citizens); let done=0, released=0;
+      for(const id of ids){ const c=data.citizens[id]; let changed=false;
+        for(const e of (c.ledger||[])){
+          if(e.type==="charge" && e.deferred===true && e.deferSource==="upload" && (!period || e.note===period)){
+            e.deferred=false; e.deferSource=null; changed=true; released++;
+          }
+        }
+        if(changed){ recalcTotals(c); c.updatedAt=++clock; }
+        if((++done%50)===0&&onProgress) onProgress(done, ids.length);
+      }
+      if(period) await this.removeDeferredUpload(period); else if(data.meta) data.meta.deferredUploads=[];
+      persist(); notify(); if(onProgress) onProgress(ids.length, ids.length); return released;
+    },
     async recalcAll(onProgress){
       const ids=Object.keys(data.citizens); let done=0;
       for(const id of ids){ recalcTotals(data.citizens[id]); if((++done%50)===0&&onProgress) onProgress(done, ids.length); }
@@ -800,7 +819,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     async toggleDefer(id, entryId, deferred){
       const ref = fs.doc(db, "citizens", id, "ledger", entryId);
-      await fs.updateDoc(ref, { deferred });
+      await fs.updateDoc(ref, { deferred, deferSource: deferred?"manual":null });
       const cRef=fs.doc(db,"citizens",id);
       const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
       let tc=0, tp=0, dt=0;
@@ -905,7 +924,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         const eRef=fs.doc(fs.collection(db,"citizens",it.id,"ledger"));
         const batch=fs.writeBatch(db);
         const def = it.deferred||false;
-        batch.set(eRef,{ entryId:eRef.id, type:"charge", amount:it.amount, note:it.note, date:"", deferred:def, createdAt:fs.serverTimestamp() });
+        batch.set(eRef,{ entryId:eRef.id, type:"charge", amount:it.amount, note:it.note, date:"", deferred:def, deferSource:it.deferSource||null, createdAt:fs.serverTimestamp() });
         batch.set(cRef,{ jobCard:it.jobCard, cardNo:it.cardNo, name:it.name,
           totalCharged:fs.increment(it.amount), balance:fs.increment(it.amount),
           deferredTotal:fs.increment(def?it.amount:0), updatedAt:fs.serverTimestamp() }, {merge:true});
@@ -984,6 +1003,32 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     async getImportedPeriods(){ const s=await fs.getDoc(fs.doc(db,"meta","imports")); return s.exists()? (s.data().periods||[]) : []; },
     async recordImportedPeriod(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { periods:fs.arrayUnion(p) }, {merge:true}); },
+    async getDeferredUploads(){ const s=await fs.getDoc(fs.doc(db,"meta","imports")); return s.exists()?(s.data().deferredUploads||[]):[]; },
+    async recordDeferredUpload(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { deferredUploads:fs.arrayUnion(p) }, {merge:true}); },
+    async removeDeferredUpload(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { deferredUploads:fs.arrayRemove(p) }, {merge:true}); },
+    async releaseUploadDeferred(period, onProgress){
+      const snap=await fs.getDocs(fs.collection(db,"citizens")); let done=0, released=0;
+      for(const d of snap.docs){
+        const led=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
+        const entries=led.docs.map(x=>({ ref:x.ref, e:x.data() }));
+        let changed=false; const batch=fs.writeBatch(db);
+        for(const {ref,e} of entries){
+          if(e.type==="charge" && e.deferred===true && e.deferSource==="upload" && (!period || e.note===period)){
+            e.deferred=false; batch.update(ref,{ deferred:false, deferSource:null }); changed=true; released++;
+          }
+        }
+        if(changed){
+          let tc=0,tp=0,dt=0;
+          for(const {e} of entries){ if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
+            else if(e.type==="payment") tp+=e.amount; else if(e.type==="forgive") tc-=e.amount; }
+          batch.update(fs.doc(db,"citizens",d.id),{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt)-tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+          await batch.commit();
+        }
+        if((++done%25)===0&&onProgress) onProgress(done, snap.size);
+      }
+      if(period) await this.removeDeferredUpload(period); else await fs.setDoc(fs.doc(db,"meta","imports"),{ deferredUploads:[] },{merge:true});
+      if(onProgress) onProgress(snap.size, snap.size); return released;
+    },
     async recalcAll(onProgress){
       const snap=await fs.getDocs(fs.collection(db,"citizens"));
       let done=0;
@@ -1345,11 +1390,45 @@ function renderList(){
       <span class="bal money" style="color:${bal>0?'var(--due)':'var(--paid)'}">${fmt(Math.max(0,bal))}</span>
     </button>`;
   }).join("");
-  $("adminList").innerHTML = cards +
+  const relBar = (adminFilter==="deferred" && !term)
+    ? `<button class="btn block ghost small" id="relDeferredBtn" style="margin-bottom:12px">Release upload-deferred charges…</button>` : ``;
+  $("adminList").innerHTML = relBar + cards +
     (shown<total ? `<button class="btn block ghost small" id="adminMore" style="margin-top:12px">Show next ${Math.min(ADMIN_STEP, total-shown)}</button>` : ``);
   document.querySelectorAll("#adminList .citizen-row").forEach(b=>
     b.addEventListener("click",()=>openCitizen(b.dataset.id)));
+  if($("relDeferredBtn")) $("relDeferredBtn").addEventListener("click", openReleaseDeferred);
   if($("adminMore")) $("adminMore").addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
+}
+
+async function openReleaseDeferred(){
+  let periods=[];
+  try{ periods=await store.getDeferredUploads(); }catch(e){}
+  openSheet("Release upload-deferred", `
+    <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">This un-defers only charges that were deferred by an upload's "defer all". Charges you deferred by hand from a person's view are left alone.</p>
+    ${periods.length ? `
+      <div class="field"><label>Release deferred charges from period</label>
+        <select id="relPeriod" class="period-sel">${periods.map(p=>`<option value="${esc(p)}">${esc(prettyPeriod(p))}</option>`).join("")}</select></div>
+      <button class="btn block" id="relOne" style="margin-bottom:10px">Release this period</button>
+      <button class="btn block ghost" id="relAll">Release all upload-deferred</button>
+    ` : `
+      <p style="font-size:13.5px;color:var(--muted)">No upload-deferred batches are on record, but you can still release any that exist.</p>
+      <button class="btn block ghost" id="relAll">Release all upload-deferred</button>`}
+    <div id="relProgress" style="margin-top:12px"></div>
+  `);
+  if($("relOne")) $("relOne").addEventListener("click", ()=>doRelease($("relPeriod").value));
+  if($("relAll")) $("relAll").addEventListener("click", ()=>doRelease(""));
+}
+async function doRelease(period){
+  const ok = await confirmAction(period
+    ? `Release all upload-deferred charges for "${period}"? They will count as owed again.`
+    : `Release ALL upload-deferred charges? They will count as owed again.`);
+  if(!ok) return;
+  const prog=$("relProgress"); prog.innerHTML=`<div class="notice info">Releasing…</div>`;
+  try{
+    const n=await store.releaseUploadDeferred(period, (d,t)=>{ prog.innerHTML=`<div class="notice info">Releasing… ${d} / ${t}</div>`; });
+    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Released ${n} deferred charge${n===1?"":"s"}.</div>`;
+    toast("Deferred charges released");
+  }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Release failed. Try again.</div>`; }
 }
 
 /* ============================================================
@@ -1687,12 +1766,13 @@ async function runMonthly(){
       if(!ok) return;
     }
   }catch(e){}
-  const items = pendingMonthly.items.map(it => ({...it, note:period, deferred: deferAll}));
+  const items = pendingMonthly.items.map(it => ({...it, note:period, deferred: deferAll, deferSource: deferAll?"upload":null}));
   const btn=$("impConfirm"); btn.disabled=true; const prog=$("impProgress");
   prog.innerHTML=`<div class="notice info">Adding "${esc(period)}"… 0 / ${items.length}</div>`;
   try{
     await store.bulkAppendCharges(items,(d,t)=>{ prog.innerHTML=`<div class="notice info">Adding… ${d} / ${t}</div>`; });
     try{ await store.recordImportedPeriod(period); }catch(e){}
+    if(deferAll){ try{ await store.recordDeferredUpload(period); }catch(e){} }
     prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — "${esc(period)}" added for ${items.length} (${deferAll ? 'all deferred' : 'active'}).</div>`;
     pendingMonthly=null; setTimeout(()=>{ closeSheet(); toast("Monthly update added"); },900);
   }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Update failed partway. Check connection and try again.</div>`; btn.disabled=false; }
