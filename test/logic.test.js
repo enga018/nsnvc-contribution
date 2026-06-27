@@ -2,13 +2,23 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 
-const {
-  computeTotals,
-  getEffectiveBalance,
-  statusOf,
-  unpaidPeriods
-} = require("../logic.js");
+/* The app ships as a single self-contained index.html. To keep one source of
+   truth, we pull the pure-logic block straight out of that file (between the
+   "BEGIN/END testable logic" markers) and evaluate it in isolation. The tests
+   therefore exercise the exact code that goes live. */
+function loadLogic() {
+  const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  const m = html.match(/=== BEGIN testable logic ===[\s\S]*?\*\/([\s\S]*?)\/\* === END testable logic ===/);
+  if (!m) throw new Error("testable logic block not found in index.html");
+  return new Function(
+    m[1] + "\nreturn { computeTotals, getEffectiveBalance, statusLabel, statusOf, unpaidPeriods };"
+  )();
+}
+
+const { computeTotals, getEffectiveBalance, statusOf, unpaidPeriods } = loadLogic();
 
 /* Small helpers to build ledger entries the way the app stores them. */
 const charge = (amount, opts = {}) => ({ type: "charge", amount, ...opts });

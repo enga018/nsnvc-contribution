@@ -366,7 +366,6 @@
 <div id="modalRoot"></div>
 <footer>New Serchhip North Village Council · v1.21.0</footer>
 
-<script src="logic.js"></script>
 <script type="module">
 /* ============================================================
    FIREBASE CONFIG (paste your own)
@@ -389,8 +388,46 @@ function toast(msg){
   const t=document.createElement("div"); t.className="toast"; t.textContent=msg;
   document.body.appendChild(t); setTimeout(()=>t.remove(),2200);
 }
-/* statusOf, getEffectiveBalance, statusLabel and unpaidPeriods now live in
-   logic.js (loaded above) so they can be unit-tested without a browser. */
+/* === BEGIN testable logic === (extracted verbatim by test/logic.test.js;
+   keep this block self-contained — no DOM/Firebase refs — so it can run in Node) */
+function computeTotals(ledger){
+  let tc=0, tp=0, dt=0;
+  for(const e of (ledger||[])){
+    if(e.type==="charge"){
+      if(e.deferred) dt += e.amount;
+      else tc += e.amount;
+    } else if(e.type==="payment"){
+      tp += e.amount;
+    } else if(e.type==="forgive"){
+      tc -= e.amount;
+    }
+  }
+  return { totalCharged: tc+dt, totalPaid: tp, deferredTotal: dt, balance: (tc+dt)-tp };
+}
+function getEffectiveBalance(c){
+  const deferredTotal = (c.deferredTotal || 0);
+  const charged = (c.totalCharged || 0) - deferredTotal;
+  return charged - (c.totalPaid || 0);
+}
+const statusLabel = {paid:"Cleared", partial:"Partly paid", due:"Due"};
+function statusOf(c){
+  const bal = getEffectiveBalance(c);
+  if(bal<=0) return "paid";
+  if((c.totalPaid||0)>0) return "partial";
+  return "due";
+}
+function unpaidPeriods(entries){
+  const chrono=[...entries].sort((a,b)=>a.createdAt-b.createdAt);
+  let pay=0; for(const e of chrono) if(e.type==="payment") pay+=(e.amount||0);
+  const owed=[];
+  for(const e of chrono){
+    if(e.type!=="charge" || e.deferred) continue;
+    if(pay>=(e.amount||0)){ pay-=(e.amount||0); }
+    else { if(e.note) owed.push(e.note); pay=0; }
+  }
+  return owed;
+}
+/* === END testable logic === */
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function monthLabel(){ return new Date().toLocaleString("en-IN",{month:"long",year:"numeric"}); }
 function prettyPeriod(note){
