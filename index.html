@@ -194,6 +194,8 @@
   .seg{display:flex; gap:8px; margin-bottom:12px}
   .seg button{flex:1; padding:10px; border:1.5px solid var(--border-strong); background:var(--surface); border-radius:9px; font-weight:600; font-size:14px; color:var(--muted)}
   .seg button.active{border-color:var(--green); background:var(--green-soft); color:var(--green-dark)}
+  .period-sel{width:100%; padding:11px 12px; border:1.5px solid var(--border-strong); border-radius:9px;
+    background:var(--surface); font-size:14px; color:var(--ink); -webkit-appearance:none; appearance:none}
 
   .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff;
     padding:12px 18px; border-radius:99px; font-size:14px; z-index:60; box-shadow:var(--shadow); animation:rise .2s ease}
@@ -278,13 +280,16 @@
         <button data-f="paid">Paid</button>
         <button data-f="all">All</button>
       </div>
+      <div id="periodWrap" style="margin-bottom:12px">
+        <select id="periodSel" class="period-sel"><option value="">Any period</option></select>
+      </div>
       <div class="clist" id="adminList"></div>
     </div>
   </section>
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.13.0</footer>
+<footer>New Serchhip North Village Council · v1.14.0</footer>
 
 <script type="module">
 /* ============================================================
@@ -852,6 +857,7 @@ function subscribeCitizens(){
   if(citizensUnsub) return;
   citizensUnsub = store.subscribe(list=>{
     allCitizens = list;
+    periodsReady=false;   // recompute unpaid-period cache after any change
     renderStats(); renderList();
   });
 }
@@ -863,21 +869,69 @@ function renderStats(){
   $("stPaid").textContent = fmt(paid);
 }
 let adminFilter="pending", adminShown=10;
+let periodFilter="", unpaidCache=new Map(), periodsReady=false, loadingPeriods=false;
+
+// chronological key so periods sort Jan→…→May1→May2
+function periodKey(note){
+  const s=String(note||"").trim().toUpperCase();
+  const m=s.match(/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s*([0-9]*)$/);
+  if(!m) return 9999;
+  const idx={JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12}[m[1]];
+  return idx*10 + (m[2]?parseInt(m[2],10):0);
+}
+// FIFO: total payments clear the oldest charges first; whatever charges are left
+// unpaid are the periods this person still owes (payments are all generic "Payment").
+function unpaidPeriods(entries){
+  const chrono=[...entries].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+  let pay=0; for(const e of chrono) if(e.type==="payment") pay+=(e.amount||0);
+  const owed=[];
+  for(const e of chrono){
+    if(e.type!=="charge") continue;
+    if(pay>=(e.amount||0)){ pay-=(e.amount||0); }
+    else { if(e.note) owed.push(e.note); pay=0; }
+  }
+  return owed;
+}
+async function loadPendingPeriods(){
+  if(loadingPeriods) return; loadingPeriods=true;
+  const pend=allCitizens.filter(c=>((c.totalCharged||0)-(c.totalPaid||0))>0);
+  const cache=new Map(), set=new Set();
+  for(const c of pend){
+    try{ const led=await store.getLedger(c.id); const up=unpaidPeriods(led);
+      cache.set(c.id, up); up.forEach(p=>set.add(p)); }catch(e){}
+  }
+  unpaidCache=cache; periodsReady=true; loadingPeriods=false;
+  const sel=$("periodSel");
+  if(sel){
+    const periods=[...set].sort((a,b)=>periodKey(a)-periodKey(b));
+    sel.innerHTML=`<option value="">Any period (still owing)</option>`+
+      periods.map(p=>`<option value="${esc(p)}"${p===periodFilter?" selected":""}>Behind on ${esc(prettyPeriod(p))}</option>`).join("");
+  }
+  renderList();
+}
+
 $("adminSearch").addEventListener("input", ()=>{ adminShown=10; renderList(); });
 document.querySelectorAll("#adminFilter button").forEach(b=>
   b.addEventListener("click", ()=>{
     adminFilter=b.dataset.f; adminShown=10;
+    if(adminFilter!=="pending") periodFilter="";
     document.querySelectorAll("#adminFilter button").forEach(x=>x.classList.toggle("active", x===b));
     renderList();
   }));
+$("periodSel").addEventListener("change", ()=>{ periodFilter=$("periodSel").value; adminShown=10; renderList(); });
+
 function renderList(){
   const term = $("adminSearch").value.trim().toLowerCase();
+  const showPeriod = (adminFilter==="pending" && !term);
+  $("periodWrap").classList.toggle("hidden", !showPeriod);
+
   let list = allCitizens.slice();
   if(term){
-    // searching looks across everyone, ignoring the filter
     list = list.filter(c => (c.jobCard||c.id).toLowerCase().includes(term) || (c.name||"").toLowerCase().includes(term));
   } else if(adminFilter==="pending"){
     list = list.filter(c => ((c.totalCharged||0)-(c.totalPaid||0))>0);
+    if(!periodsReady && !loadingPeriods) loadPendingPeriods();
+    if(periodFilter) list = list.filter(c => (unpaidCache.get(c.id)||[]).includes(periodFilter));
   } else if(adminFilter==="paid"){
     list = list.filter(c => ((c.totalCharged||0)-(c.totalPaid||0))<=0);
   }
@@ -1253,7 +1307,8 @@ async function renderCitizenDetail(id){
   const c = allCitizens.find(x=>x.id===id);
   const entries = await store.getLedger(id);
   const bal=(c.totalCharged||0)-(c.totalPaid||0);
-  const rows = entries.length ? entries.map(e=>`
+  const chrono=[...entries].reverse();   // oldest first (January at top)
+  const rows = chrono.length ? chrono.map(e=>`
     <div class="row">
       <div class="desc"><b>${esc(entryLabel(e))}</b><small>${esc(e.date||"")}</small></div>
       <div class="amt ${e.type==="payment"?"payment":"charge"}">${e.type==="payment"?"− ":"+ "}${fmt(e.amount)}</div>
@@ -1278,13 +1333,15 @@ async function renderCitizenDetail(id){
 
     <div class="panel">
       <h4>Record a payment</h4>
-      ${bal>0 ? `<button class="btn block small" id="markPaid" style="margin-bottom:12px">Mark fully paid (${fmt(bal)})</button>` : ``}
       <div class="field"><label>Amount paid (${CURRENCY})</label><input id="pyAmt" inputmode="decimal" placeholder="0"></div>
       <div class="inline">
         <div class="field"><label>Note</label><input id="pyNote" placeholder="optional (e.g. cash)"></div>
         <div class="field"><label>Date</label><input id="pyDate" type="date" value="${todayISO()}"></div>
       </div>
-      <button class="btn block small ghost" id="addPayment" style="margin-top:10px">Record this amount</button>
+      <div style="display:flex; gap:10px; margin-top:10px">
+        <button class="btn small ghost" id="addPayment" style="flex:1">Record this amount</button>
+        ${bal>0 ? `<button class="btn small" id="markPaid" style="flex:1">Mark fully paid (${fmt(bal)})</button>` : ``}
+      </div>
     </div>
 
     <div class="clist" style="box-shadow:none">
