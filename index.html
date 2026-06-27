@@ -649,10 +649,6 @@ async function loadFirebase(cfg){
 }
 
 function makeFirebaseStore({ auth, db, fs, au }){
-  // Simplified Firebase store with entryId handling
-  // (full implementation in previous version; we keep it similar)
-  // For brevity, we assume entryId is always present; if not, we generate one.
-  // But the migration only applies to local store. For Firebase, we handle on the fly.
   return {
     isLocal:false,
     async getCitizen(id){ const s=await fs.getDoc(fs.doc(db,"citizens",id)); return s.exists()? s.data() : null; },
@@ -661,7 +657,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
       const snap = await fs.getDocs(q);
       return snap.docs.map(d=> {
         const data = d.data();
-        if(!data.entryId) data.entryId = d.id; // use doc ID as fallback
+        if(!data.entryId) data.entryId = d.id;
         return data;
       });
     },
@@ -819,9 +815,937 @@ function makeFirebaseStore({ auth, db, fs, au }){
   };
 }
 
-// (rest of the code: choose backend, UI event handlers, etc. — unchanged from previous version)
-// ... [the remaining code is identical to the previous full version, with the migration added]
-// For brevity, I'm truncating here, but the full code above includes everything.
+/* ---------- choose backend ---------- */
+let citizensUnsub=null, allCitizens=[], loggedIn=false, store=null, isLocalMode=false, lastResult=null, matches=[];
+
+const notConfigured = Object.values(firebaseConfig).some(v => v === "PASTE_HERE");
+if(notConfigured){
+  isLocalMode=true; store=makeLocalStore();
+  showModeBanner("Test mode — running on this device with sample data. Add citizens, contributions and payments to try it out; everything is saved in this browser only. Paste your Firebase config into the file to go live.");
+} else {
+  try{
+    store=makeFirebaseStore(await loadFirebase(firebaseConfig));
+  }catch(err){
+    console.error(err);
+    isLocalMode=true; store=makeLocalStore();
+    showModeBanner("Couldn't reach the database, so the app is running in local test mode. Check your connection or Firebase settings.");
+  }
+}
+if(isLocalMode) addTestLoginHint();
+store.onAuth(onAuth);
+
+function showModeBanner(msg){
+  document.querySelector("main").insertAdjacentHTML("afterbegin", `<div class="config-warn">${msg}</div>`);
+}
+function addTestLoginHint(){
+  const btn=document.getElementById("loginBtn");
+  if(!btn || document.getElementById("testHint")) return;
+  btn.insertAdjacentHTML("afterend",
+    `<p id="testHint" style="font-size:12px;color:var(--muted);text-align:center;margin:12px 0 0">Test mode — any email and password will log you in.</p>`);
+}
+
+/* ============================================================
+   CITIZEN LOOKUP (public, no login)
+   ============================================================ */
+$("searchBtn").addEventListener("click", doSearch);
+$("searchId").addEventListener("keydown", e => { if(e.key==="Enter") doSearch(); });
+
+function personCardHTML(id, c){
+  const owe = Math.max(0, getEffectiveBalance(c));
+  return `<button class="result-card" data-id="${esc(id)}">
+    <span class="info">
+      <b>${esc(c.jobCard||id)}</b>
+      <small>${esc(c.name||"—")}</small>
+    </span>
+    <span class="card-amt money ${owe>0?"owe":"clear"}">${fmt(owe)}</span>
+  </button>`;
+}
+
+async function doSearch(){
+  const typed = $("searchId").value.trim();
+  const out = $("citizenResult");
+  if(!typed){ showList(); return; }
+  $("citizenList").classList.add("hidden");
+  out.innerHTML=`<div class="notice info">Looking up…</div>`;
+  try{
+    matches = await store.findByCard(typed);
+    if(!matches.length){
+      out.innerHTML=`<button class="back" id="toListBtn">‹ Back to list</button>
+        <div class="notice err">No record found for <b>${esc(typed)}</b>. Please check the number or contact the council office.</div>`;
+      $("toListBtn").addEventListener("click", ()=>{ $("searchId").value=""; showList(); });
+      return;
+    }
+    renderResults();
+  }catch(err){
+    out.innerHTML=`<div class="notice err">Couldn't load the record. Check your connection and try again.</div>`;
+    console.error(err);
+  }
+}
+
+function renderResults(){
+  $("lookupCard").classList.remove("hidden");
+  $("citizenList").classList.add("hidden");
+  const multi = matches.length>1;
+  const cards = matches.map(m=>personCardHTML(m.id, m.c)).join("");
+  $("citizenResult").innerHTML =
+    `<button class="back" id="toListBtn">‹ Back to list</button>` +
+    (multi ? `<div class="notice info">More than one person uses this number — tap your name.</div>` : ``) +
+    cards;
+  $("toListBtn").addEventListener("click", ()=>{ $("searchId").value=""; showList(); });
+  document.querySelectorAll("#citizenResult .result-card").forEach(b=>
+    b.addEventListener("click", ()=>openMatch(b.dataset.id, false)));
+}
+
+async function openMatch(id, fromList){
+  backTarget = fromList ? "list" : "results";
+  const c = (matches.find(x=>x.id===id)||{}).c || pubAll.find(x=>x.id===id) || await store.getCitizen(id);
+  if(!c) return;
+  $("lookupCard").classList.add("hidden");
+  $("citizenList").classList.add("hidden");
+  $("citizenResult").innerHTML = `<div class="notice info">Loading…</div>`;
+  const entries = await store.getLedger(id);
+  lastResult = { id, c, entries };
+  renderStatement();
+}
+
+function goBack(){
+  $("lookupCard").classList.remove("hidden");
+  if(backTarget==="results"){ renderResults(); }
+  else { $("citizenResult").innerHTML=""; $("citizenList").classList.remove("hidden"); }
+}
+
+/* ---------- public list: only those with a balance still to pay ---------- */
+let pubAll=[], pubShown=10, backTarget="list";
+const PUB_STEP=10;
+
+function showList(){
+  backTarget="list";
+  $("lookupCard").classList.remove("hidden");
+  $("citizenResult").innerHTML="";
+  $("citizenList").classList.remove("hidden");
+  loadOwing();
+}
+async function loadOwing(){
+  $("citizenList").innerHTML=`<div class="empty">Loading…</div>`;
+  try{
+    pubAll = await store.listOwing();
+    pubAll.sort(byCardNo);
+    pubShown=PUB_STEP;
+    renderPubList();
+  }catch(err){ console.error(err); $("citizenList").innerHTML=`<div class="notice err">Couldn't load the list.</div>`; }
+}
+function renderPubList(){
+  const total=pubAll.length;
+  if(!total){
+    $("citizenList").innerHTML=`<div class="list-head">Pending payments</div>
+      <div class="empty">Everyone is fully paid. Nothing pending.</div>`;
+    return;
+  }
+  const shown=Math.min(pubShown, total);
+  const cards=pubAll.slice(0, shown).map(c=>personCardHTML(c.id, c)).join("");
+  $("citizenList").innerHTML =
+    `<div class="list-head">Pending payments (${total})</div>` + cards +
+    (shown<total ? `<button class="btn block ghost small" id="seeMore" style="margin-top:12px">See more (${total-shown} more)</button>` : ``);
+  document.querySelectorAll("#citizenList .result-card").forEach(b=>
+    b.addEventListener("click", ()=>openMatch(b.dataset.id, true)));
+  if($("seeMore")) $("seeMore").addEventListener("click", ()=>{ pubShown+=PUB_STEP; renderPubList(); });
+}
+
+// Step 2: the payable detail, with UPI Pay Now button
+function renderStatement(){
+  const { id, c, entries } = lastResult;
+  const bal = getEffectiveBalance(c);
+  const toPay = Math.max(0, bal);
+  const st = statusOf(c);
+
+  const chrono = [...entries].sort((a,b)=>a.createdAt-b.createdAt);
+  let rows = chrono.length ? chrono.map((e, idx)=>{
+    const isPayment = e.type==="payment";
+    const isForgive = e.type==="forgive";
+    const isDeferred = e.deferred && e.type==="charge";
+    let label = entryLabel(e);
+    let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
+    let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
+    let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "");
+    return `<div class="${rowClass}">
+      <div class="desc"><b>${esc(label)}</b><small>${esc(e.date||"")}</small></div>
+      <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
+    </div>`;
+  }).join("") : `<div class="empty">No entries yet.</div>`;
+
+  let upiButton = '';
+  if(toPay > 0){
+    upiButton = `
+      <button class="btn-upi" id="upiPayBtn">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="white"><path d="M6 4h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2zm0 1.5A.5.5 0 005.5 6v12a.5.5 0 00.5.5h12a.5.5 0 00.5-.5V6a.5.5 0 00-.5-.5H6zm6 1.5a.5.5 0 010 1h-2v4h2a.5.5 0 010 1h-2v2.5a.5.5 0 01-1 0V12a.5.5 0 010-1h2V7h-2a.5.5 0 010-1h2zm4 0a.5.5 0 010 1h-2v4h2a.5.5 0 010 1h-2v2.5a.5.5 0 01-1 0V12a.5.5 0 010-1h2V7h-2a.5.5 0 010-1h2z"/></svg>
+        Pay Now (UPI)
+      </button>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;">📲 Send screenshot to Admin via WhatsApp</div>
+    `;
+  }
+
+  $("citizenResult").innerHTML = `
+  <button class="back" id="backBtn">‹ Back</button>
+  <div class="statement">
+    <div class="top">
+      <div>
+        <p class="name">${esc(c.name||"—")}</p>
+        <div class="meta">${esc(c.jobCard||id)}</div>
+      </div>
+      <span class="badge ${st}">${statusLabel[st]}</span>
+    </div>
+    <div class="balance-block">
+      <div class="label">Total to pay now</div>
+      <div class="amount money ${toPay<=0?"zero":"owing"}">${fmt(toPay)}</div>
+      ${toPay<=0 ? `<div class="meta">You're all paid up. Thank you.</div>` : upiButton}
+    </div>
+    <div class="ledger">
+      <button class="hist-toggle" id="histToggle">Show history (${chrono.length}) ▾</button>
+      <div id="histBody" class="hidden">${rows}</div>
+    </div>
+  </div>`;
+  $("backBtn").addEventListener("click", goBack);
+  $("histToggle").addEventListener("click", ()=>{
+    const body=$("histBody"); const open=!body.classList.contains("hidden");
+    body.classList.toggle("hidden", open);
+    $("histToggle").textContent = open ? `Show history (${chrono.length}) ▾` : `Hide history ▴`;
+  });
+  if($("upiPayBtn")){
+    $("upiPayBtn").addEventListener("click", ()=>{
+      store.addPendingPayment(id, toPay).then(()=>{
+        toast("UPI payment request sent. Admin will confirm.");
+        const upiUrl = `upi://pay?pa=9599898884@upi&pn=Council&am=${toPay.toFixed(2)}&cu=INR`;
+        window.location.href = upiUrl;
+      }).catch(()=>toast("Failed to create pending payment."));
+    });
+  }
+}
+
+/* ============================================================
+   MODE TOGGLE
+   ============================================================ */
+$("modeBtn").addEventListener("click", ()=>{
+  const adminHidden = $("adminView").classList.contains("hidden");
+  $("adminView").classList.toggle("hidden", !adminHidden);
+  $("citizenView").classList.toggle("hidden", adminHidden);
+  if(!adminHidden){ $("searchId").value=""; showList(); }
+  updateModeBtn();
+});
+function updateModeBtn(){
+  const adminShown = !$("adminView").classList.contains("hidden");
+  $("modeBtn").textContent = adminShown ? "Citizen view" : (loggedIn ? "Admin" : "Council login");
+}
+
+/* ============================================================
+   ADMIN — auth
+   ============================================================ */
+$("loginBtn").addEventListener("click", login);
+$("adminPass").addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
+$("logoutBtn").addEventListener("click", ()=>{ store.signOut(); });
+
+async function login(){
+  const email=$("adminEmail").value.trim(), pass=$("adminPass").value;
+  $("loginErr").innerHTML="";
+  try{ await store.signIn(email, pass); }
+  catch(err){
+    $("loginErr").innerHTML=`<div class="notice err">Login failed. Check email and password.</div>`;
+    console.error(err);
+  }
+}
+
+function onAuth(isIn){
+  loggedIn = isIn;
+  if(isIn){
+    $("loginCard").classList.add("hidden");
+    $("dashboard").classList.remove("hidden");
+    subscribeCitizens();
+    refreshPending();
+  } else {
+    $("loginCard").classList.remove("hidden");
+    $("dashboard").classList.add("hidden");
+    if(citizensUnsub){ citizensUnsub(); citizensUnsub=null; }
+  }
+  updateModeBtn();
+}
+
+/* ============================================================
+   ADMIN — live citizen list + stats
+   ============================================================ */
+function subscribeCitizens(){
+  if(citizensUnsub) return;
+  citizensUnsub = store.subscribe(list=>{
+    allCitizens = list;
+    periodsReady=false;
+    renderStats(); renderList(); refreshPending();
+  });
+}
+function renderStats(){
+  const out = allCitizens.reduce((s,c)=>s+Math.max(0,getEffectiveBalance(c)),0);
+  const paid = allCitizens.reduce((s,c)=>s+(c.totalPaid||0),0);
+  $("stCount").textContent = allCitizens.length;
+  $("stOut").textContent = fmt(out);
+  $("stPaid").textContent = fmt(paid);
+}
+let adminFilter="pending", adminShown=10;
+let periodFilter="", unpaidCache=new Map(), periodsReady=false, loadingPeriods=false;
+
+function periodKey(note){
+  const s=String(note||"").trim().toUpperCase();
+  const m=s.match(/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s*([0-9]*)$/);
+  if(!m) return 9999;
+  const idx={JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12}[m[1]];
+  return idx*10 + (m[2]?parseInt(m[2],10):0);
+}
+function unpaidPeriods(entries){
+  const chrono=[...entries].sort((a,b)=>a.createdAt-b.createdAt);
+  let pay=0; for(const e of chrono) if(e.type==="payment") pay+=(e.amount||0);
+  const owed=[];
+  for(const e of chrono){
+    if(e.type!=="charge" || e.deferred) continue;
+    if(pay>=(e.amount||0)){ pay-=(e.amount||0); }
+    else { if(e.note) owed.push(e.note); pay=0; }
+  }
+  return owed;
+}
+async function loadPendingPeriods(){
+  if(loadingPeriods) return; loadingPeriods=true;
+  const pend=allCitizens.filter(c=>getEffectiveBalance(c)>0);
+  const cache=new Map(), set=new Set();
+  for(const c of pend){
+    try{ const led=await store.getLedger(c.id); const up=unpaidPeriods(led);
+      cache.set(c.id, up); up.forEach(p=>set.add(p)); }catch(e){}
+  }
+  unpaidCache=cache; periodsReady=true; loadingPeriods=false;
+  const sel=$("periodSel");
+  if(sel){
+    const periods=[...set].sort((a,b)=>periodKey(a)-periodKey(b));
+    sel.innerHTML=`<option value="">Any period (still owing)</option>`+
+      periods.map(p=>`<option value="${esc(p)}"${p===periodFilter?" selected":""}>Behind on ${esc(prettyPeriod(p))}</option>`).join("");
+  }
+  renderList();
+}
+
+$("adminSearch").addEventListener("input", ()=>{ adminShown=10; renderList(); });
+document.querySelectorAll("#adminFilter button").forEach(b=>
+  b.addEventListener("click", ()=>{
+    adminFilter=b.dataset.f; adminShown=10;
+    if(adminFilter!=="pending") periodFilter="";
+    document.querySelectorAll("#adminFilter button").forEach(x=>x.classList.toggle("active", x===b));
+    renderList();
+  }));
+$("periodSel").addEventListener("change", ()=>{ periodFilter=$("periodSel").value; adminShown=10; renderList(); });
+
+function renderList(){
+  const term = $("adminSearch").value.trim().toLowerCase();
+  const showPeriod = (adminFilter==="pending" && !term);
+  $("periodWrap").classList.toggle("hidden", !showPeriod);
+
+  let list = allCitizens.slice();
+  if(term){
+    list = list.filter(c => (c.jobCard||c.id).toLowerCase().includes(term) || (c.name||"").toLowerCase().includes(term));
+  } else if(adminFilter==="pending"){
+    list = list.filter(c => getEffectiveBalance(c)>0);
+    if(!periodsReady && !loadingPeriods) loadPendingPeriods();
+    if(periodFilter) list = list.filter(c => (unpaidCache.get(c.id)||[]).includes(periodFilter));
+  } else if(adminFilter==="paid"){
+    list = list.filter(c => getEffectiveBalance(c)<=0);
+  }
+  list.sort(byCardNo);
+  const total=list.length;
+  if(!total){ $("adminList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet. Tap + Add to begin."}</div>`; return; }
+  const shown=Math.min(adminShown, total);
+  const cards = list.slice(0, shown).map(c=>{
+    const bal=getEffectiveBalance(c); const st=statusOf(c);
+    return `<button class="citizen-row" data-id="${esc(c.id)}">
+      <span class="dot ${st}"></span>
+      <span class="info"><b>${esc(c.name||"—")}</b><small>${esc(c.jobCard||c.id)}</small></span>
+      <span class="bal money" style="color:${bal>0?'var(--due)':'var(--paid)'}">${fmt(Math.max(0,bal))}</span>
+    </button>`;
+  }).join("");
+  $("adminList").innerHTML = cards +
+    (shown<total ? `<button class="btn block ghost small" id="adminMore" style="margin-top:12px">See more (${total-shown} more)</button>` : ``);
+  document.querySelectorAll("#adminList .citizen-row").forEach(b=>
+    b.addEventListener("click",()=>openCitizen(b.dataset.id)));
+  if($("adminMore")) $("adminMore").addEventListener("click", ()=>{ adminShown+=10; renderList(); });
+}
+
+/* ============================================================
+   ADMIN — pending UPI payments
+   ============================================================ */
+async function refreshPending(){
+  const pendings = await store.getPendingPayments();
+  const container = $("pendingContainer");
+  const count = pendings.length;
+  if(count===0){ container.classList.add("hidden"); return; }
+  container.classList.remove("hidden");
+  $("pendingCount").textContent = count;
+  const list = pendings.map(p => `<div class="pending-row">
+    <span><b>${esc(p.name)}</b> (${esc(p.jobCard)}) — ${fmt(p.amount)}</span>
+    <button class="confirm-btn" data-citizen="${esc(p.citizenId)}" data-pending="${esc(p.id)}">Confirm</button>
+  </div>`).join("");
+  $("pendingList").innerHTML = list;
+  document.querySelectorAll(".pending-list .confirm-btn").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const cid=btn.dataset.citizen, pid=btn.dataset.pending;
+      await store.confirmPendingPayment(cid, pid);
+      toast("Payment confirmed");
+      refreshPending();
+    });
+  });
+}
+
+/* ============================================================
+   ADMIN — import from Excel (all the import functions are the same as before)
+   ============================================================ */
+$("importBtn").addEventListener("click", openImport);
+
+let pendingImport = null;
+let pendingMonthly = null;
+let pendingBank = null;
+
+function openImport(){
+  openSheet("Import from Excel", `
+    <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">What are you importing?</p>
+    <button class="btn block" id="impHistBtn" style="margin-bottom:10px">First-time historical register</button>
+    <button class="btn block ghost" id="impMonthBtn" style="margin-bottom:10px">Monthly update file (charges)</button>
+    <button class="btn block ghost" id="impBankBtn">Bank payment file</button>
+  `);
+  $("impHistBtn").addEventListener("click", openHistorical);
+  $("impMonthBtn").addEventListener("click", openMonthly);
+  $("impBankBtn").addEventListener("click", openBank);
+}
+
+async function ensureXLSX(){
+  if(window.XLSX) return window.XLSX;
+  await new Promise((res,rej)=>{
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload=res; s.onerror=()=>rej(new Error("xlsx load failed"));
+    document.head.appendChild(s);
+  });
+  return window.XLSX;
+}
+
+const _num = v => { const n=parseFloat(v); return isNaN(n)?0:n; };
+const _norm = h => String(h||"").toUpperCase().replace(/\s+/g,"").trim();
+function _findCol(header, re){ for(let i=0;i<header.length;i++){ if(re.test(String(header[i]||"").trim())) return i; } return -1; }
+function _periodCols(header){
+  const re=/(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/i;
+  const out=[];
+  header.forEach((h,i)=>{ if(h!=null && re.test(String(h))) out.push({ label:String(h).trim(), key:_norm(h), col:i }); });
+  return out;
+}
+let _ord=0;
+const _when = () => new Date(Date.UTC(2026,0,1) + (++_ord)*60000);
+
+function openHistorical(){
+  openSheet("Historical register", `
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5">
+      3-sheet file. Sheet 2 = amount to pay per period, Sheet 3 = those still owing.
+      Everyone not on Sheet 3 is treated as fully paid. Periods are read by their
+      column names, so MAY1 / MAY2 etc. are kept as-is.</p>
+    <div class="field"><label>Excel file (.xlsx)</label>
+      <input id="impFile" type="file" accept=".xlsx,.xls"></div>
+    <div id="impMsg"></div><div id="impPreview"></div>
+  `);
+  $("impFile").addEventListener("change", handleHistorical);
+}
+
+async function handleHistorical(e){
+  const file=e.target.files[0]; if(!file) return;
+  $("impMsg").innerHTML=`<div class="notice info">Reading…</div>`; $("impPreview").innerHTML="";
+  let XLSX; try{ XLSX=await ensureXLSX(); }catch(err){ $("impMsg").innerHTML=`<div class="notice err">Couldn't load the Excel reader. Connect to the internet and try again.</div>`; return; }
+  try{
+    _ord=0;
+    const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
+    const dueWs=wb.Sheets["Sheet2"]||wb.Sheets[wb.SheetNames[1]];
+    const defWs=wb.Sheets["Sheet3"]||wb.Sheets[wb.SheetNames[2]];
+    if(!dueWs){ $("impMsg").innerHTML=`<div class="notice err">Couldn't find the "amount to pay" sheet (Sheet 2).</div>`; return; }
+    const dueRows=XLSX.utils.sheet_to_json(dueWs,{header:1,raw:true,defval:null});
+    const defRows=defWs?XLSX.utils.sheet_to_json(defWs,{header:1,raw:true,defval:null}):[];
+    const dh=dueRows[0]||[];
+    const dFull=_findCol(dh,/job\s*card/i);
+    const dName=_findCol(dh,/head of house|holder|name/i);
+    const periods=_periodCols(dh);
+    if(dFull<0 || !periods.length){ $("impMsg").innerHTML=`<div class="notice err">This sheet doesn't look right — need a Job card column and month columns.</div>`; return; }
+
+    const unpaid={};
+    if(defRows.length){
+      const fh=defRows[0]||[]; const fFull=_findCol(fh,/job\s*card/i); const fp=_periodCols(fh);
+      for(let r=1;r<defRows.length;r++){ const row=defRows[r]; if(!row) continue;
+        const full=String(row[fFull]||"").trim(); if(!full) continue;
+        const mm={}; fp.forEach(p=>{ mm[p.key]=_num(row[p.col]); }); unpaid[full]=mm; }
+    }
+
+    const rows=[]; let fully=0,owing=0,totC=0,totP=0,totO=0;
+    for(let r=1;r<dueRows.length;r++){ const row=dueRows[r]; if(!row) continue;
+      const full=String(row[dFull]||"").trim(); if(!full) continue;
+      const name=String(row[dName>=0?dName:2]||"").trim();
+      const up=unpaid[full]||{}; const ledger=[]; let tc=0,tp=0;
+      for(const p of periods){ const due=_num(row[p.col]); if(due<=0) continue;
+        const u=_num(up[p.key]); const paid=due-u; tc+=due; tp+=paid;
+        const eid1 = String(++_ord); ledger.push({ entryId:eid1, type:"charge", amount:due, note:p.label, date:"", deferred:false, when:_when() });
+        if(paid>0){ const eid2 = String(++_ord); ledger.push({ entryId:eid2, type:"payment", amount:paid, note:p.label, date:"", deferred:false, when:_when() }); }
+      }
+      const bal=tc-tp; totC+=tc; totP+=tp; totO+=bal; (bal>0?owing++:fully++);
+      rows.push({ id:fullKey(full), jobCard:full, cardNo:suffixOf(full), name, phone:"",
+        totalCharged:tc, totalPaid:tp, balance:bal, ledger });
+    }
+    pendingImport=rows;
+    $("impMsg").innerHTML=`<div class="notice info">Periods found: ${periods.map(p=>esc(p.label)).join(", ")}. Review and confirm.</div>`;
+    $("impPreview").innerHTML=`
+      <div class="panel" style="margin-top:12px">
+        <div class="brow"><span>Households</span><b>${rows.length}</b></div>
+        <div class="brow"><span>Fully paid</span><b>${fully}</b></div>
+        <div class="brow"><span>Still owing</span><b>${owing}</b></div>
+        <div class="brow"><span>Total charged</span><b class="money">${fmt(totC)}</b></div>
+        <div class="brow"><span>Total paid</span><b class="money">${fmt(totP)}</b></div>
+        <div class="brow total"><span>Total outstanding</span><b class="money">${fmt(totO)}</b></div>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Run once on a fresh database. Re-importing may duplicate history.</p>
+      <button class="btn block" id="impConfirm">Import ${rows.length} households</button>
+      <div id="impProgress" style="margin-top:10px"></div>`;
+    $("impConfirm").addEventListener("click", runHistorical);
+  }catch(err){ console.error(err); $("impMsg").innerHTML=`<div class="notice err">Couldn't read that file.</div>`; }
+}
+
+async function runHistorical(){
+  if(!pendingImport) return;
+  const btn=$("impConfirm"); btn.disabled=true; const prog=$("impProgress");
+  prog.innerHTML=`<div class="notice info">Importing… 0 / ${pendingImport.length}</div>`;
+  try{
+    await store.bulkImport(pendingImport,(d,t)=>{ prog.innerHTML=`<div class="notice info">Importing… ${d} / ${t}</div>`; });
+    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${pendingImport.length} households imported.</div>`;
+    pendingImport=null; setTimeout(()=>{ closeSheet(); toast("Import complete"); },900);
+  }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Import failed partway. Try again on a fresh database.</div>`; btn.disabled=false; }
+}
+
+function openMonthly(){
+  openSheet("Monthly update", `
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5">
+      One sheet with Job card, Holder name, amount received and payable amount.
+      People are matched by job card; new job cards are added. Rows with 0 received are skipped.</p>
+    <div class="field"><label>Period name — what this shows as in history</label>
+      <input id="impPeriod" placeholder="e.g. MAY2"></div>
+    <div class="field" style="margin-top:8px;">
+      <label style="display:flex;align-items:center;gap:8px;font-weight:400;color:var(--ink);cursor:pointer;">
+        <input type="checkbox" id="impDefer"> Defer all charges in this upload (they won't appear in public pending lists until you uncheck them later)
+      </label>
+    </div>
+    <div class="field"><label>Excel file (.xlsx)</label>
+      <input id="impFile" type="file" accept=".xlsx,.xls"></div>
+    <div id="impMsg"></div><div id="impPreview"></div>
+  `);
+  $("impFile").addEventListener("change", handleMonthly);
+}
+
+async function handleMonthly(e){
+  const file=e.target.files[0]; if(!file) return;
+  $("impMsg").innerHTML=`<div class="notice info">Reading…</div>`; $("impPreview").innerHTML="";
+  let XLSX; try{ XLSX=await ensureXLSX(); }catch(err){ $("impMsg").innerHTML=`<div class="notice err">Couldn't load the Excel reader. Connect to the internet and try again.</div>`; return; }
+  try{
+    const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+    const h=rows[0]||[];
+    const cFull=_findCol(h,/job\s*card/i);
+    const cName=_findCol(h,/holder|head of house|name/i);
+    const cRecv=_findCol(h,/receiv/i);
+    let cPay=_findCol(h,/payable/i); if(cPay<0) cPay=_findCol(h,/pay/i);
+    if(cFull<0 || cPay<0){ $("impMsg").innerHTML=`<div class="notice err">Need a Job card column and a payable amount column.</div>`; return; }
+
+    const items=[]; let newCount=0, existCount=0, skipped=0, totAmt=0;
+    for(let r=1;r<rows.length;r++){ const row=rows[r]; if(!row) continue;
+      const full=String(row[cFull]||"").trim(); if(!full) continue;
+      const recv = cRecv>=0 ? _num(row[cRecv]) : 1;
+      const pay = _num(row[cPay]);
+      if(recv<=0 || pay<=0){ skipped++; continue; }
+      const id=fullKey(full); const known = allCitizens.some(c=>c.id===id);
+      known ? existCount++ : newCount++;
+      totAmt+=pay;
+      items.push({ id, jobCard:full, cardNo:suffixOf(full), name:String(row[cName>=0?cName:2]||"").trim(),
+        amount:pay, when:new Date() });
+    }
+    if(!items.length){ $("impMsg").innerHTML=`<div class="notice err">No rows with a payable amount found.</div>`; return; }
+    pendingMonthly={items};
+    $("impMsg").innerHTML=`<div class="notice info">Found ${items.length} households. Set the period name above, then add.</div>`;
+    $("impPreview").innerHTML=`
+      <div class="panel" style="margin-top:12px">
+        <div class="brow"><span>New charges to add</span><b>${items.length}</b></div>
+        <div class="brow"><span>Existing people</span><b>${existCount}</b></div>
+        <div class="brow"><span>New people added</span><b>${newCount}</b></div>
+        <div class="brow"><span>Skipped (0 received)</span><b>${skipped}</b></div>
+        <div class="brow total"><span>Total added this period</span><b class="money">${fmt(totAmt)}</b></div>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Import each period's file only once.</p>
+      <button class="btn block" id="impConfirm">Add for ${items.length} households</button>
+      <div id="impProgress" style="margin-top:10px"></div>`;
+    $("impConfirm").addEventListener("click", runMonthly);
+  }catch(err){ console.error(err); $("impMsg").innerHTML=`<div class="notice err">Couldn't read that file.</div>`; }
+}
+
+async function runMonthly(){
+  if(!pendingMonthly) return;
+  const period=$("impPeriod").value.trim();
+  if(!period){
+    $("impMsg").innerHTML=`<div class="notice err">Please type the period name above (e.g. MAY2) before adding.</div>`;
+    $("impPeriod").focus();
+    return;
+  }
+  const deferAll = $("impDefer") ? $("impDefer").checked : false;
+  const items = pendingMonthly.items.map(it => ({...it, note:period, deferred: deferAll}));
+  const btn=$("impConfirm"); btn.disabled=true; const prog=$("impProgress");
+  prog.innerHTML=`<div class="notice info">Adding "${esc(period)}"… 0 / ${items.length}</div>`;
+  try{
+    await store.bulkAppendCharges(items,(d,t)=>{ prog.innerHTML=`<div class="notice info">Adding… ${d} / ${t}</div>`; });
+    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — "${esc(period)}" added for ${items.length} (${deferAll ? 'all deferred' : 'active'}).</div>`;
+    pendingMonthly=null; setTimeout(()=>{ closeSheet(); toast("Monthly update added"); },900);
+  }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Update failed partway. Check connection and try again.</div>`; btn.disabled=false; }
+}
+
+function openBank(){
+  openSheet("Bank payment file", `
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5">
+      One sheet with Job Card No., Name and amount — the list of who paid through the bank.
+      Each row is recorded as a payment ("Payment (Bank)") and lowers that person's balance.
+      People are matched by job card; rows that don't match anyone are skipped and listed.</p>
+    <div class="field"><label>Payment date</label><input id="impDate" type="date" value="${todayISO()}"></div>
+    <div class="field"><label>Excel file (.xlsx)</label>
+      <input id="impFile" type="file" accept=".xlsx,.xls"></div>
+    <div id="impMsg"></div><div id="impPreview"></div>
+  `);
+  $("impFile").addEventListener("change", handleBank);
+}
+
+function resolveCitizen(value){
+  const fk=fullKey(value);
+  let cand=allCitizens.filter(c=>c.id===fk);
+  if(!cand.length){ const suf=suffixOf(value); cand=allCitizens.filter(c=>(c.cardNo||"")===suf); }
+  return cand;
+}
+
+async function handleBank(e){
+  const file=e.target.files[0]; if(!file) return;
+  $("impMsg").innerHTML=`<div class="notice info">Reading…</div>`; $("impPreview").innerHTML="";
+  let XLSX; try{ XLSX=await ensureXLSX(); }catch(err){ $("impMsg").innerHTML=`<div class="notice err">Couldn't load the Excel reader. Connect to the internet and try again.</div>`; return; }
+  try{
+    const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+    const h=rows[0]||[];
+    const cFull=_findCol(h,/job\s*card/i);
+    const cName=_findCol(h,/name|holder/i);
+    let cAmt=_findCol(h,/amount|paid|payable|pay/i);
+    if(cFull<0 || cAmt<0){ $("impMsg").innerHTML=`<div class="notice err">Need a Job card column and an amount column.</div>`; return; }
+
+    const items=[]; const notFound=[]; const ambiguous=[];
+    let totAmt=0;
+    for(let r=1;r<rows.length;r++){ const row=rows[r]; if(!row) continue;
+      const val=String(row[cFull]||"").trim(); if(!val) continue;
+      const amt=_num(row[cAmt]); if(amt<=0) continue;
+      const nm=String(row[cName>=0?cName:1]||"").trim();
+      const cand=resolveCitizen(val);
+      if(cand.length===1){ items.push({ id:cand[0].id, amount:amt }); totAmt+=amt; }
+      else if(cand.length>1){ ambiguous.push(val+(nm?" ("+nm+")":"")); }
+      else { notFound.push(val+(nm?" ("+nm+")":"")); }
+    }
+    if(!items.length && !notFound.length && !ambiguous.length){ $("impMsg").innerHTML=`<div class="notice err">No rows with an amount found.</div>`; return; }
+    pendingBank={items};
+    const issues = [...ambiguous.map(x=>"⚠︎ "+x+" — number matches more than one person"),
+                    ...notFound.map(x=>"• "+x+" — not found")];
+    $("impMsg").innerHTML=`<div class="notice info">Review and confirm the bank payments.</div>`;
+    $("impPreview").innerHTML=`
+      <div class="panel" style="margin-top:12px">
+        <div class="brow"><span>Payments to record</span><b>${items.length}</b></div>
+        <div class="brow"><span>Not matched (skipped)</span><b>${notFound.length}</b></div>
+        <div class="brow"><span>Ambiguous (skipped)</span><b>${ambiguous.length}</b></div>
+        <div class="brow total"><span>Total being paid</span><b class="money">${fmt(totAmt)}</b></div>
+      </div>
+      ${issues.length?`<div class="panel" style="max-height:160px;overflow:auto"><h4>Skipped rows</h4>
+        <div style="font-size:12.5px;color:var(--muted);line-height:1.7">${issues.map(esc).join("<br>")}</div></div>`:``}
+      <button class="btn block" id="impConfirm" ${items.length?"":"disabled"}>Record ${items.length} bank payments</button>
+      <div id="impProgress" style="margin-top:10px"></div>`;
+    if($("impConfirm")) $("impConfirm").addEventListener("click", runBank);
+  }catch(err){ console.error(err); $("impMsg").innerHTML=`<div class="notice err">Couldn't read that file.</div>`; }
+}
+
+async function runBank(){
+  if(!pendingBank) return;
+  const dateStr=$("impDate").value || todayISO();
+  const when=new Date(dateStr+"T12:00:00");
+  const items=pendingBank.items.map(it=>({...it, note:"Bank", date:dateStr, when}));
+  const btn=$("impConfirm"); btn.disabled=true; const prog=$("impProgress");
+  prog.innerHTML=`<div class="notice info">Recording… 0 / ${items.length}</div>`;
+  try{
+    await store.bulkAppendPayments(items,(d,t)=>{ prog.innerHTML=`<div class="notice info">Recording… ${d} / ${t}</div>`; });
+    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${items.length} bank payments recorded.</div>`;
+    pendingBank=null; setTimeout(()=>{ closeSheet(); toast("Bank payments recorded"); },900);
+  }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Recording failed partway. Check connection and try again.</div>`; btn.disabled=false; }
+}
+
+/* ============================================================
+   ADMIN — add citizen
+   ============================================================ */
+$("addCitizenBtn").addEventListener("click", openAddCitizen);
+
+function openSheet(title, bodyHTML){
+  $("modalRoot").innerHTML = `
+    <div class="overlay" id="overlay">
+      <div class="sheet">
+        <div class="sheet-head"><h2>${esc(title)}</h2><button class="x" id="closeSheet">×</button></div>
+        <div class="sheet-body">${bodyHTML}</div>
+      </div>
+    </div>`;
+  document.body.style.overflow="hidden";
+  $("overlay").addEventListener("click", e=>{ if(e.target.id==="overlay") closeSheet(); });
+  $("closeSheet").addEventListener("click", closeSheet);
+}
+function closeSheet(){ $("modalRoot").innerHTML=""; document.body.style.overflow=""; }
+
+function openAddCitizen(){
+  openSheet("Add citizen", `
+    <div class="field"><label>Job card number (unique)</label><input id="ncId" placeholder="e.g. MZ-07-001-005-001/3">
+      <small style="display:block;color:var(--muted);font-size:11.5px;margin-top:5px">Type the full number exactly as printed (not zero-padded). Citizens look up by the part after the slash (e.g. 3).</small></div>
+    <div class="field"><label>Name</label><input id="ncName" placeholder="Owner / household name"></div>
+    <div class="field"><label>Phone</label><input id="ncPhone" inputmode="tel" placeholder="optional"></div>
+    <div id="ncErr"></div>
+    <button class="btn block" id="ncSave" style="margin-top:6px">Save citizen</button>
+  `);
+  $("ncSave").addEventListener("click", saveNewCitizen);
+}
+async function saveNewCitizen(){
+  const jobCard=$("ncId").value.trim(), name=$("ncName").value.trim();
+  const phone=$("ncPhone").value.trim();
+  if(!jobCard || !name){ $("ncErr").innerHTML=`<div class="notice err">Job card number and name are required.</div>`; return; }
+  $("ncSave").disabled=true;
+  const id=fullKey(jobCard);
+  try{
+    if(await store.exists(id)){
+      $("ncErr").innerHTML=`<div class="notice err">Job card ${esc(jobCard)} already exists.</div>`; $("ncSave").disabled=false; return;
+    }
+    await store.addCitizen(id, { jobCard, cardNo:suffixOf(jobCard), name, phone, totalCharged:0, totalPaid:0, balance:0, deferredTotal:0 });
+    closeSheet(); toast("Citizen added");
+  }catch(err){ $("ncErr").innerHTML=`<div class="notice err">Couldn't save. Try again.</div>`; console.error(err); $("ncSave").disabled=false; }
+}
+
+/* ============================================================
+   ADMIN — citizen detail: all actions
+   ============================================================ */
+async function openCitizen(id){
+  const c = allCitizens.find(x=>x.id===id); if(!c) return;
+  openSheet(c.name||"Citizen", `<div id="cDetail" class="empty">Loading…</div>`);
+  await renderCitizenDetail(id);
+}
+
+async function renderCitizenDetail(id){
+  const c = allCitizens.find(x=>x.id===id);
+  const entries = await store.getLedger(id);
+  const bal = getEffectiveBalance(c);
+  const chrono = [...entries].sort((a,b)=>a.createdAt-b.createdAt);
+
+  const rows = chrono.length ? chrono.map((e, idx)=>{
+    const isPayment = e.type==="payment";
+    const isForgive = e.type==="forgive";
+    const isDeferred = e.deferred && e.type==="charge";
+    let label = entryLabel(e);
+    let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
+    let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
+    let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "");
+    const actions = `<span class="actions">
+      <button class="edit-entry" data-id="${e.entryId}" data-type="${e.type}">✏️</button>
+      <button class="del-entry" data-id="${e.entryId}">🗑️</button>
+    </span>`;
+    let deferToggle = '';
+    if(e.type==="charge"){
+      const checked = e.deferred ? 'checked' : '';
+      deferToggle = `<label style="font-size:12px;color:var(--muted);margin-left:8px;">
+        <input type="checkbox" class="defer-chk" data-id="${e.entryId}" ${checked}> Defer
+      </label>`;
+    }
+    return `<div class="${rowClass}">
+      <div class="desc"><b>${esc(label)}</b><small>${esc(e.date||"")}</small> ${deferToggle}</div>
+      <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
+      ${actions}
+    </div>`;
+  }).join("") : `<div class="empty">No entries yet.</div>`;
+
+  const forgiveBlock = `<div class="panel" style="margin-top:12px;">
+    <h4>Forgive debt</h4>
+    <div class="inline">
+      <div class="field"><label>Amount</label><input id="forgiveAmt" placeholder="0" value="${bal>0?bal:''}"></div>
+      <div class="field"><label>Note</label><input id="forgiveNote" placeholder="optional"></div>
+    </div>
+    <button class="btn small" id="forgiveBtn" ${bal<=0?'disabled':''}>Forgive</button>
+  </div>`;
+
+  $("cDetail").outerHTML = `<div id="cDetail">
+    <div class="balance-block" style="padding-top:0">
+      <div class="label">Remaining balance</div>
+      <div class="amount money ${bal<=0?'zero':'owing'}">${fmt(Math.max(0,bal))}</div>
+      <div class="meta">${esc(c.jobCard||id)}${c.phone?" · "+esc(c.phone):""}</div>
+    </div>
+
+    <div class="panel">
+      <h4>Add this month's contribution</h4>
+      <div class="field"><label>Amount (${CURRENCY})</label><input id="chAmt" inputmode="decimal" placeholder="0"></div>
+      <div class="inline">
+        <div class="field"><label>For</label><input id="chNote" value="${esc(monthLabel())}"></div>
+        <div class="field"><label>Date</label><input id="chDate" type="date" value="${todayISO()}"></div>
+      </div>
+      <button class="btn block small" id="addCharge" style="margin-top:10px">Add contribution</button>
+    </div>
+
+    <div class="panel">
+      <h4>Record a payment</h4>
+      <div class="field"><label>Amount paid (${CURRENCY})</label><input id="pyAmt" inputmode="decimal" placeholder="0"></div>
+      <div class="inline">
+        <div class="field"><label>Note</label><input id="pyNote" placeholder="optional (e.g. cash)"></div>
+        <div class="field"><label>Date</label><input id="pyDate" type="date" value="${todayISO()}"></div>
+      </div>
+      <div class="inline-buttons" style="margin-top:10px;">
+        <button class="btn small ghost" id="addPayment" style="flex:1">Record this amount</button>
+        ${bal>0 ? `<button class="btn small" id="markPaid" style="flex:1">Mark fully paid (${fmt(bal)})</button>` : ``}
+      </div>
+    </div>
+
+    ${forgiveBlock}
+
+    <div class="clist" style="box-shadow:none">
+      <h3 style="font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:0;padding:14px 15px 4px">History</h3>
+      ${rows}
+    </div>
+
+    <button class="btn ghost block small" id="delCitizen" style="margin-top:16px;color:var(--due);border-color:var(--due)">Delete this citizen</button>
+  </div>`;
+
+  // Attach event listeners
+  $("addCharge").addEventListener("click", ()=>addEntry(id,"charge"));
+  $("addPayment").addEventListener("click", ()=>addEntry(id,"payment"));
+  if($("markPaid")) $("markPaid").addEventListener("click", ()=>markFullyPaid(id, bal));
+  $("delCitizen").addEventListener("click", ()=>deleteCitizen(id));
+  $("forgiveBtn").addEventListener("click", ()=>forgiveDebt(id));
+
+  // Defer toggles
+  document.querySelectorAll(".defer-chk").forEach(chk=>{
+    chk.addEventListener("change", async ()=>{
+      const entryId = chk.dataset.id;
+      await store.toggleDefer(id, entryId, chk.checked);
+      toast("Deferral updated");
+      await renderCitizenDetail(id);
+    });
+  });
+
+  // Edit entry
+  document.querySelectorAll(".edit-entry").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const entryId = btn.dataset.id;
+      const entry = chrono.find(e=>e.entryId===entryId);
+      if(!entry) return;
+      openEditEntry(id, entryId, entry);
+    });
+  });
+
+  // Delete entry
+  document.querySelectorAll(".del-entry").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const entryId = btn.dataset.id;
+      if(!confirm("Delete this entry?")) return;
+      await store.deleteEntry(id, entryId);
+      toast("Entry deleted");
+      await renderCitizenDetail(id);
+    });
+  });
+}
+
+async function markFullyPaid(id, bal){
+  if(!(bal>0)) return;
+  const btn=$("markPaid"); if(btn) btn.disabled=true;
+  try{
+    await store.addEntry(id, "payment", bal, "Paid in full", todayISO());
+    toast("Marked fully paid");
+    await renderCitizenDetail(id);
+  }catch(err){ toast("Couldn't save. Try again."); console.error(err); if(btn) btn.disabled=false; }
+}
+
+async function addEntry(id, type){
+  const amtEl = type==="charge" ? $("chAmt") : $("pyAmt");
+  const noteEl = type==="charge" ? $("chNote") : $("pyNote");
+  const dateEl = type==="charge" ? $("chDate") : $("pyDate");
+  const amount = parseFloat(amtEl.value);
+  if(!(amount>0)){ toast("Enter a valid amount"); return; }
+  const btn = type==="charge" ? $("addCharge") : $("addPayment");
+  btn.disabled=true;
+  try{
+    await store.addEntry(id, type, amount, noteEl.value.trim(), dateEl.value||todayISO());
+    toast(type==="charge"?"Contribution added":"Payment recorded");
+    await renderCitizenDetail(id);
+  }catch(err){ toast("Couldn't save. Try again."); console.error(err); btn.disabled=false; }
+}
+
+async function forgiveDebt(id){
+  const amtInput = $("forgiveAmt");
+  const noteInput = $("forgiveNote");
+  const amount = parseFloat(amtInput.value);
+  if(!(amount>0)){ toast("Enter a valid amount"); return; }
+  const note = noteInput.value.trim() || "Forgiven";
+  if(!confirm(`Forgive ${fmt(amount)} for this citizen?`)) return;
+  try{
+    await store.forgiveDebt(id, amount, note);
+    toast("Debt forgiven");
+    await renderCitizenDetail(id);
+  }catch(err){ toast("Failed"); console.error(err); }
+}
+
+async function deleteCitizen(id){
+  if(!confirm("Delete this citizen and all their records? This cannot be undone.")) return;
+  try{
+    await store.deleteCitizen(id);
+    closeSheet(); toast("Citizen deleted");
+  }catch(err){ toast("Couldn't delete."); console.error(err); }
+}
+
+function openEditEntry(citizenId, entryId, entry){
+  openSheet("Edit entry", `
+    <div class="field"><label>Amount</label><input id="editAmt" type="number" step="0.01" value="${entry.amount}"></div>
+    <div class="field"><label>Note</label><input id="editNote" value="${esc(entry.note||"")}"></div>
+    <div class="field"><label>Date</label><input id="editDate" type="date" value="${entry.date||todayISO()}"></div>
+    <button class="btn block" id="saveEdit">Save</button>
+  `);
+  $("saveEdit").addEventListener("click", async ()=>{
+    const amt = parseFloat($("editAmt").value);
+    if(!(amt>0)){ toast("Enter valid amount"); return; }
+    const note = $("editNote").value.trim();
+    const date = $("editDate").value;
+    try{
+      await store.editEntry(citizenId, entryId, { amount:amt, note, date });
+      toast("Entry updated");
+      closeSheet();
+      await renderCitizenDetail(citizenId);
+    }catch(err){ toast("Failed to update"); console.error(err); }
+  });
+}
+
+/* ============================================================
+   ADMIN — CSV Export
+   ============================================================ */
+$("exportCsvBtn").addEventListener("click", async ()=>{
+  try{
+    const csv = await store.exportOwingCsv();
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `owing_${todayISO()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast("CSV exported");
+  }catch(err){ toast("Export failed"); console.error(err); }
+});
+
+// Initial public browse list (citizen view is the default screen)
+showList();
 </script>
 </body>
 </html>
