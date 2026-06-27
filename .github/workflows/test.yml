@@ -1,0 +1,18 @@
+name: tests
+
+# Free on GitHub-hosted runners for public repositories.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # No dependencies to install — tests use Node's built-in test runner.
+      - run: npm test

@@ -366,6 +366,7 @@
 <div id="modalRoot"></div>
 <footer>New Serchhip North Village Council · v1.21.0</footer>
 
+<script src="logic.js"></script>
 <script type="module">
 /* ============================================================
    FIREBASE CONFIG (paste your own)
@@ -388,18 +389,8 @@ function toast(msg){
   const t=document.createElement("div"); t.className="toast"; t.textContent=msg;
   document.body.appendChild(t); setTimeout(()=>t.remove(),2200);
 }
-function statusOf(c){
-  const bal = getEffectiveBalance(c);
-  if(bal<=0) return "paid";
-  if((c.totalPaid||0)>0) return "partial";
-  return "due";
-}
-function getEffectiveBalance(c){
-  const deferredTotal = (c.deferredTotal || 0);
-  const charged = (c.totalCharged || 0) - deferredTotal;
-  return charged - (c.totalPaid || 0);
-}
-const statusLabel = {paid:"Cleared", partial:"Partly paid", due:"Due"};
+/* statusOf, getEffectiveBalance, statusLabel and unpaidPeriods now live in
+   logic.js (loaded above) so they can be unit-tested without a browser. */
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function monthLabel(){ return new Date().toLocaleString("en-IN",{month:"long",year:"numeric"}); }
 function prettyPeriod(note){
@@ -464,21 +455,11 @@ function makeLocalStore(){
     .sort((a,b)=>(a.name||"").localeCompare(b.name||""));
   const notify=()=>listeners.forEach(cb=>cb(sortedList()));
   function recalcTotals(c){
-    let tc=0, tp=0, dt=0;
-    for(const e of (c.ledger||[])){
-      if(e.type==="charge"){
-        if(e.deferred) dt += e.amount;
-        else tc += e.amount;
-      } else if(e.type==="payment"){
-        tp += e.amount;
-      } else if(e.type==="forgive"){
-        tc -= e.amount;
-      }
-    }
-    c.totalCharged = tc + dt;
-    c.totalPaid = tp;
-    c.deferredTotal = dt;
-    c.balance = (tc + dt) - tp;
+    const t = computeTotals(c.ledger);
+    c.totalCharged = t.totalCharged;
+    c.totalPaid = t.totalPaid;
+    c.deferredTotal = t.deferredTotal;
+    c.balance = t.balance;
     return c;
   }
   return {
@@ -1018,10 +999,8 @@ function makeFirebaseStore({ auth, db, fs, au }){
           }
         }
         if(changed){
-          let tc=0,tp=0,dt=0;
-          for(const {e} of entries){ if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
-            else if(e.type==="payment") tp+=e.amount; else if(e.type==="forgive") tc-=e.amount; }
-          batch.update(fs.doc(db,"citizens",d.id),{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt)-tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+          const t=computeTotals(entries.map(x=>x.e));
+          batch.update(fs.doc(db,"citizens",d.id),{ totalCharged:t.totalCharged, totalPaid:t.totalPaid, balance:t.balance, deferredTotal:t.deferredTotal, updatedAt:fs.serverTimestamp() });
           await batch.commit();
         }
         if((++done%25)===0&&onProgress) onProgress(done, snap.size);
@@ -1034,12 +1013,8 @@ function makeFirebaseStore({ auth, db, fs, au }){
       let done=0;
       for(const d of snap.docs){
         const led=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
-        let tc=0,tp=0,dt=0;
-        led.docs.forEach(x=>{ const e=x.data();
-          if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
-          else if(e.type==="payment") tp+=e.amount;
-          else if(e.type==="forgive") tc-=e.amount; });
-        await fs.updateDoc(fs.doc(db,"citizens",d.id),{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt)-tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+        const t=computeTotals(led.docs.map(x=>x.data()));
+        await fs.updateDoc(fs.doc(db,"citizens",d.id),{ totalCharged:t.totalCharged, totalPaid:t.totalPaid, balance:t.balance, deferredTotal:t.deferredTotal, updatedAt:fs.serverTimestamp() });
         if((++done%25)===0&&onProgress) onProgress(done, snap.size);
       }
       if(onProgress) onProgress(snap.size, snap.size); return snap.size;
@@ -1315,17 +1290,6 @@ function periodKey(note){
   if(!m) return 9999;
   const idx={JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12}[m[1]];
   return idx*10 + (m[2]?parseInt(m[2],10):0);
-}
-function unpaidPeriods(entries){
-  const chrono=[...entries].sort((a,b)=>a.createdAt-b.createdAt);
-  let pay=0; for(const e of chrono) if(e.type==="payment") pay+=(e.amount||0);
-  const owed=[];
-  for(const e of chrono){
-    if(e.type!=="charge" || e.deferred) continue;
-    if(pay>=(e.amount||0)){ pay-=(e.amount||0); }
-    else { if(e.note) owed.push(e.note); pay=0; }
-  }
-  return owed;
 }
 async function loadPendingPeriods(){
   if(loadingPeriods) return; loadingPeriods=true;

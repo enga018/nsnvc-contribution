@@ -1,0 +1,9 @@
+{
+  "name": "nsnvc-contribution",
+  "version": "1.0.0",
+  "description": "NSNVC Citizen Contribution Tracker",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  }
+}
