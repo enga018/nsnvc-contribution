@@ -339,10 +339,9 @@
         <input id="adminSearch" type="text" placeholder="Search job card no. or name" />
         <button class="btn small" id="addCitizenBtn">+ Add</button>
       </div>
-      <div class="action-grid">
-        <button class="btn small ghost" id="importBtn">Import</button>
-        <button class="btn small ghost" id="exportCsvBtn">Export</button>
-        <button class="btn small ghost" id="backupMenuBtn">Backup</button>
+      <div class="action-grid" style="grid-template-columns:repeat(2,1fr)">
+        <button class="btn small ghost" id="impExpBtn">Import / Export</button>
+        <button class="btn small ghost" id="backupMenuBtn">Backup / Restore</button>
       </div>
       <div id="pendingContainer" class="hidden" style="margin-bottom:12px;">
         <div class="panel" style="background:var(--surface);border:1px solid #f0d99a;">
@@ -353,6 +352,7 @@
       <div class="seg" id="adminFilter" style="margin-bottom:12px">
         <button data-f="pending" class="active">Pending</button>
         <button data-f="paid">Paid</button>
+        <button data-f="deferred">Deferred</button>
         <button data-f="all">All</button>
       </div>
       <div id="periodWrap" style="margin-bottom:12px">
@@ -364,7 +364,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.18.0</footer>
+<footer>New Serchhip North Village Council · v1.20.0</footer>
 
 <script type="module">
 /* ============================================================
@@ -668,6 +668,11 @@ function makeLocalStore(){
     async getImportedPeriods(){ return (data.meta && data.meta.periods) ? data.meta.periods.slice() : []; },
     async recordImportedPeriod(p){ if(!data.meta) data.meta={periods:[]}; if(!data.meta.periods) data.meta.periods=[];
       if(!data.meta.periods.includes(p)) data.meta.periods.push(p); persist(); },
+    async recalcAll(onProgress){
+      const ids=Object.keys(data.citizens); let done=0;
+      for(const id of ids){ recalcTotals(data.citizens[id]); if((++done%50)===0&&onProgress) onProgress(done, ids.length); }
+      persist(); notify(); if(onProgress) onProgress(ids.length, ids.length); return ids.length;
+    },
     async migrateEntries(){ return 0; } // no-op for local
   };
 }
@@ -791,7 +796,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         else if(e.type==="payment") tp+=e.amount;
         else if(e.type==="forgive") tc-=e.amount;
       });
-      await fs.updateDoc(fs.doc(db,"citizens",id),{ totalCharged:tc, totalPaid:tp, balance:tc - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+      await fs.updateDoc(fs.doc(db,"citizens",id),{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt) - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
     },
     async toggleDefer(id, entryId, deferred){
       const ref = fs.doc(db, "citizens", id, "ledger", entryId);
@@ -805,7 +810,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         else if(e.type==="payment") tp+=e.amount;
         else if(e.type==="forgive") tc-=e.amount;
       });
-      await fs.updateDoc(cRef,{ totalCharged:tc, totalPaid:tp, balance:tc - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt) - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
     },
     async forgiveDebt(id, amount, note){
       await this.addEntry(id, "forgive", amount, note, todayISO());
@@ -850,7 +855,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         else if(e.type==="payment") tp+=e.amount;
         else if(e.type==="forgive") tc-=e.amount;
       });
-      await fs.updateDoc(cRef,{ totalCharged:tc, totalPaid:tp, balance:tc - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt) - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
     },
     async editEntry(id, entryId, updates){
       const ref=fs.doc(db,"citizens",id,"ledger",entryId);
@@ -864,7 +869,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         else if(e.type==="payment") tp+=e.amount;
         else if(e.type==="forgive") tc-=e.amount;
       });
-      await fs.updateDoc(cRef,{ totalCharged:tc, totalPaid:tp, balance:tc - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt) - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
     },
     async deleteCitizen(id){
       const led=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
@@ -938,18 +943,21 @@ function makeFirebaseStore({ auth, db, fs, au }){
       return csv;
     },
     async exportAll(onProgress){
-      const snap=await fs.getDocs(fs.collection(db,"citizens"));
-      const citizens=[]; let done=0;
-      for(const d of snap.docs){
-        const c=d.data();
-        const led=await fs.getDocs(fs.query(fs.collection(db,"citizens",d.id,"ledger"), fs.orderBy("createdAt","asc")));
-        citizens.push({ id:d.id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name, phone:c.phone||"",
-          totalCharged:c.totalCharged||0, totalPaid:c.totalPaid||0, balance:c.balance||0, deferredTotal:c.deferredTotal||0,
-          ledger: led.docs.map(x=>{ const e=x.data(); return { entryId:e.entryId||x.id, type:e.type, amount:e.amount, note:e.note,
-            date:e.date||"", deferred:e.deferred||false, createdAtMs: (e.createdAt&&e.createdAt.toMillis)? e.createdAt.toMillis() : null }; }) });
-        if((++done % 25)===0 && onProgress) onProgress(done, snap.size);
-      }
-      if(onProgress) onProgress(snap.size, snap.size);
+      if(onProgress) onProgress(0, 2);
+      const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
+      const byId={};
+      cSnap.docs.forEach(d=>{ const c=d.data(); byId[d.id]={ id:d.id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name, phone:c.phone||"",
+        totalCharged:c.totalCharged||0, totalPaid:c.totalPaid||0, balance:c.balance||0, deferredTotal:c.deferredTotal||0, ledger:[] }; });
+      if(onProgress) onProgress(1, 2);
+      const ledSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
+      ledSnap.docs.forEach(x=>{
+        const pid = x.ref.parent.parent && x.ref.parent.parent.id;
+        if(pid && byId[pid]){ const e=x.data(); byId[pid].ledger.push({ entryId:e.entryId||x.id, type:e.type, amount:e.amount, note:e.note,
+          date:e.date||"", deferred:e.deferred||false, createdAtMs:(e.createdAt&&e.createdAt.toMillis)?e.createdAt.toMillis():null }); }
+      });
+      const citizens=Object.values(byId);
+      citizens.forEach(c=> c.ledger.sort((a,b)=>(a.createdAtMs||0)-(b.createdAtMs||0)));
+      if(onProgress) onProgress(2, 2);
       return { app:"nsnvc-contribution", version:1, exportedAt:new Date().toISOString(), count:citizens.length, citizens };
     },
     async importAll(backup, onProgress){
@@ -975,7 +983,22 @@ function makeFirebaseStore({ auth, db, fs, au }){
       return backup.citizens.length;
     },
     async getImportedPeriods(){ const s=await fs.getDoc(fs.doc(db,"meta","imports")); return s.exists()? (s.data().periods||[]) : []; },
-    async recordImportedPeriod(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { periods:fs.arrayUnion(p) }, {merge:true}); }
+    async recordImportedPeriod(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { periods:fs.arrayUnion(p) }, {merge:true}); },
+    async recalcAll(onProgress){
+      const snap=await fs.getDocs(fs.collection(db,"citizens"));
+      let done=0;
+      for(const d of snap.docs){
+        const led=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
+        let tc=0,tp=0,dt=0;
+        led.docs.forEach(x=>{ const e=x.data();
+          if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
+          else if(e.type==="payment") tp+=e.amount;
+          else if(e.type==="forgive") tc-=e.amount; });
+        await fs.updateDoc(fs.doc(db,"citizens",d.id),{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt)-tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+        if((++done%25)===0&&onProgress) onProgress(done, snap.size);
+      }
+      if(onProgress) onProgress(snap.size, snap.size); return snap.size;
+    }
   };
 }
 
@@ -1303,7 +1326,9 @@ function renderList(){
       list = list.filter(c => (unpaidCache.get(c.id)||[]).includes(periodFilter));
     }
   } else if(adminFilter==="paid"){
-    list = list.filter(c => getEffectiveBalance(c)<=0);
+    list = list.filter(c => getEffectiveBalance(c)<=0 && (c.deferredTotal||0)<=0);
+  } else if(adminFilter==="deferred"){
+    list = list.filter(c => (c.deferredTotal||0)>0);
   }
   list.sort(byCardNo);
   const total=list.length;
@@ -1359,34 +1384,59 @@ async function refreshPending(){
 /* ============================================================
    ADMIN — import (unchanged, but included for completeness)
    ============================================================ */
-$("importBtn").addEventListener("click", openImport);
+$("impExpBtn").addEventListener("click", openImportExport);
 $("backupMenuBtn").addEventListener("click", openBackup);
 let pendingImport = null, pendingMonthly = null, pendingBank = null;
 
-function openImport(){
-  openSheet("Import from Excel", `
-    <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">What are you importing?</p>
+function openImportExport(){
+  openSheet("Import / Export", `
+    <p style="font-size:13.5px;color:var(--muted);margin:0 0 12px"><b>Import</b> from Excel:</p>
     <button class="btn block" id="impHistBtn" style="margin-bottom:10px">First-time historical register</button>
     <button class="btn block ghost" id="impMonthBtn" style="margin-bottom:10px">Monthly update file (charges)</button>
-    <button class="btn block ghost" id="impBankBtn">Bank payment file</button>
+    <button class="btn block ghost" id="impBankBtn" style="margin-bottom:18px">Bank payment file</button>
+    <div style="border-top:1px solid var(--border);padding-top:16px">
+      <p style="font-size:13.5px;color:var(--muted);margin:0 0 10px"><b>Export</b>:</p>
+      <button class="btn block ghost" id="exportCsvBtn2">Export owing list (CSV)</button>
+    </div>
   `);
   $("impHistBtn").addEventListener("click", openHistorical);
   $("impMonthBtn").addEventListener("click", openMonthly);
   $("impBankBtn").addEventListener("click", openBank);
+  $("exportCsvBtn2").addEventListener("click", doExportCsv);
 }
 function openBackup(){
-  openSheet("Backup & restore", `
+  openSheet("Backup / Restore", `
     <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">Download a copy of all data, or restore from a saved backup file. Do this regularly.</p>
     <button class="btn block" id="backupBtn" style="margin-bottom:10px">⬇ Download backup (all data)</button>
-    <button class="btn block ghost" id="restoreBtn" style="color:var(--due);border-color:var(--due)">⬆ Restore from backup…</button>
+    <button class="btn block ghost" id="restoreBtn" style="margin-bottom:18px;color:var(--due);border-color:var(--due)">⬆ Restore from backup…</button>
     <input id="restoreFile" type="file" accept=".json,application/json" style="display:none">
+    <div style="border-top:1px solid var(--border);padding-top:16px">
+      <p style="font-size:12.5px;color:var(--muted);margin:0 0 10px">If any balance looks wrong, this rebuilds every total from its history.</p>
+      <button class="btn block ghost" id="recalcBtn">Recalculate all balances</button>
+    </div>
     <div id="backupMsg" style="margin-top:12px"></div>
   `);
   $("backupBtn").addEventListener("click", doBackup);
   $("restoreBtn").addEventListener("click", ()=>$("restoreFile").click());
   $("restoreFile").addEventListener("change", doRestore);
+  $("recalcBtn").addEventListener("click", doRecalcAll);
 }
+async function doRecalcAll(){
+  const ok = await confirmAction("Recalculate every household's balance from its history? This is safe and fixes any wrong totals.");
+  if(!ok) return;
+  const msg=$("backupMsg"); const btn=$("recalcBtn"); btn.disabled=true;
+  msg.innerHTML=`<div class="notice info">Recalculating…</div>`;
+  try{
+    const n=await store.recalcAll((d,t)=>{ msg.innerHTML=`<div class="notice info">Recalculating… ${d} / ${t}</div>`; });
+    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${n} households recalculated.</div>`;
+    toast("Balances recalculated");
+  }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Recalculate failed. Try again.</div>`; }
+  finally{ btn.disabled=false; }
+}
+let backupBusy=false;
 async function doBackup(){
+  if(backupBusy) return; backupBusy=true;
+  const btn=$("backupBtn"); if(btn){ btn.disabled=true; }
   const msg=$("backupMsg"); msg.innerHTML=`<div class="notice info">Preparing backup…</div>`;
   try{
     const data = await store.exportAll((d,t)=>{ msg.innerHTML=`<div class="notice info">Reading… ${d} / ${t}</div>`; });
@@ -1396,6 +1446,7 @@ async function doBackup(){
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
     msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Backup downloaded — ${data.count} households. Keep it somewhere safe.</div>`;
   }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Backup failed. Check connection and try again.</div>`; }
+  finally{ backupBusy=false; if(btn) btn.disabled=false; }
 }
 async function doRestore(e){
   const file=e.target.files[0]; if(!file) return;
@@ -1525,8 +1576,8 @@ async function runHistorical(){
 function openMonthly(){
   openSheet("Monthly update", `
     <p style="font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5">
-      One sheet with Job card, Holder name, amount received and payable amount.
-      People are matched by job card; new job cards are added. Rows with 0 received are skipped.</p>
+      Pick your file in any layout — you'll confirm which column is the job card, name and amount.
+      People are matched by job card; new job cards are added.</p>
     <div class="field"><label>Period name — what this shows as in history</label>
       <input id="impPeriod" placeholder="e.g. MAY2"></div>
     <div class="field" style="margin-top:8px;">
@@ -1541,6 +1592,7 @@ function openMonthly(){
   $("impFile").addEventListener("change", handleMonthly);
 }
 
+let monthlyRaw=null;
 async function handleMonthly(e){
   const file=e.target.files[0]; if(!file) return;
   $("impMsg").innerHTML=`<div class="notice info">Reading…</div>`; $("impPreview").innerHTML="";
@@ -1549,41 +1601,74 @@ async function handleMonthly(e){
     const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
     const ws=wb.Sheets[wb.SheetNames[0]];
     const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+    if(rows.length<2){ $("impMsg").innerHTML=`<div class="notice err">That sheet looks empty.</div>`; return; }
     const h=rows[0]||[];
-    const cFull=_findCol(h,/job\s*card/i);
-    const cName=_findCol(h,/holder|head of house|name/i);
-    const cRecv=_findCol(h,/receiv/i);
-    let cPay=_findCol(h,/payable/i); if(cPay<0) cPay=_findCol(h,/pay/i);
-    if(cFull<0 || cPay<0){ $("impMsg").innerHTML=`<div class="notice err">Need a Job card column and a payable amount column.</div>`; return; }
-
-    const items=[]; let newCount=0, existCount=0, skipped=0, totAmt=0;
-    for(let r=1;r<rows.length;r++){ const row=rows[r]; if(!row) continue;
-      const full=String(row[cFull]||"").trim(); if(!full) continue;
-      const recv = cRecv>=0 ? _num(row[cRecv]) : 1;
-      const pay = _num(row[cPay]);
-      if(recv<=0 || pay<=0){ skipped++; continue; }
-      const id=fullKey(full); const known = allCitizens.some(c=>c.id===id);
-      known ? existCount++ : newCount++;
-      totAmt+=pay;
-      items.push({ id, jobCard:full, cardNo:suffixOf(full), name:String(row[cName>=0?cName:2]||"").trim(),
-        amount:pay, when:new Date() });
-    }
-    if(!items.length){ $("impMsg").innerHTML=`<div class="notice err">No rows with a payable amount found.</div>`; return; }
-    pendingMonthly={items};
-    $("impMsg").innerHTML=`<div class="notice info">Found ${items.length} households. Set the period name above, then add.</div>`;
+    const guessJob=_findCol(h,/job\s*card/i);
+    const guessName=_findCol(h,/holder|head of house|name/i);
+    const guessRecv=_findCol(h,/receiv/i);
+    let guessPay=_findCol(h,/payable/i); if(guessPay<0) guessPay=_findCol(h,/pay|amount/i);
+    const sample = rows.find((r,i)=> i>0 && r && r.some(v=>v!=null)) || rows[1];
+    monthlyRaw={ rows };
+    $("impMsg").innerHTML=`<div class="notice info">Confirm which column is which, then Continue.</div>`;
     $("impPreview").innerHTML=`
       <div class="panel" style="margin-top:12px">
-        <div class="brow"><span>New charges to add</span><b>${items.length}</b></div>
-        <div class="brow"><span>Existing people</span><b>${existCount}</b></div>
-        <div class="brow"><span>New people added</span><b>${newCount}</b></div>
-        <div class="brow"><span>Skipped (0 received)</span><b>${skipped}</b></div>
-        <div class="brow total"><span>Total added this period</span><b class="money">${fmt(totAmt)}</b></div>
+        <div class="field"><label>Job card number column *</label><select id="mapJob" class="period-sel">${colOptions(h,sample,guessJob)}</select></div>
+        <div class="field"><label>Name column</label><select id="mapName" class="period-sel">${colOptions(h,sample,guessName)}</select></div>
+        <div class="field"><label>Amount to charge column *</label><select id="mapPay" class="period-sel">${colOptions(h,sample,guessPay)}</select></div>
+        <div class="field"><label>Amount received column (optional — skips rows with 0)</label><select id="mapRecv" class="period-sel">${colOptions(h,sample,guessRecv)}</select></div>
       </div>
-      <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Import each period's file only once.</p>
-      <button class="btn block" id="impConfirm">Add for ${items.length} households</button>
-      <div id="impProgress" style="margin-top:10px"></div>`;
-    $("impConfirm").addEventListener("click", runMonthly);
+      <button class="btn block" id="mapContinue">Continue</button>
+      <div id="mapMsg" style="margin-top:10px"></div>`;
+    $("mapContinue").addEventListener("click", buildMonthlyItems);
   }catch(err){ console.error(err); $("impMsg").innerHTML=`<div class="notice err">Couldn't read that file.</div>`; }
+}
+
+function colOptions(header, sample, selected){
+  const n=Math.max(header.length, sample?sample.length:0);
+  let opts=`<option value="-1"${selected<0?" selected":""}>— none —</option>`;
+  for(let i=0;i<n;i++){
+    const raw=header[i];
+    const name=(raw!=null && String(raw).trim()) ? String(raw).trim() : `Column ${String.fromCharCode(65+(i%26))}`;
+    const s=(sample && sample[i]!=null) ? String(sample[i]).slice(0,20) : "";
+    opts+=`<option value="${i}"${i===selected?" selected":""}>${esc(name)}${s?` — e.g. ${esc(s)}`:""}</option>`;
+  }
+  return opts;
+}
+
+function buildMonthlyItems(){
+  if(!monthlyRaw) return;
+  const cFull=parseInt($("mapJob").value,10);
+  const cName=parseInt($("mapName").value,10);
+  const cPay=parseInt($("mapPay").value,10);
+  const cRecv=parseInt($("mapRecv").value,10);
+  if(!(cFull>=0) || !(cPay>=0)){ $("mapMsg").innerHTML=`<div class="notice err">Choose at least the Job card column and the Amount to charge column.</div>`; return; }
+  const rows=monthlyRaw.rows;
+  const items=[]; let newCount=0, existCount=0, skipped=0, totAmt=0;
+  for(let r=1;r<rows.length;r++){ const row=rows[r]; if(!row) continue;
+    const full=String(row[cFull]||"").trim(); if(!full) continue;
+    const recv = cRecv>=0 ? _num(row[cRecv]) : 1;
+    const pay = _num(row[cPay]);
+    if(recv<=0 || pay<=0){ skipped++; continue; }
+    const id=fullKey(full); const known=allCitizens.some(c=>c.id===id);
+    known?existCount++:newCount++;
+    totAmt+=pay;
+    items.push({ id, jobCard:full, cardNo:suffixOf(full), name:(cName>=0?String(row[cName]||"").trim():""), amount:pay, when:new Date() });
+  }
+  if(!items.length){ $("mapMsg").innerHTML=`<div class="notice err">No usable rows with that mapping — check your column choices.</div>`; return; }
+  pendingMonthly={items};
+  $("impMsg").innerHTML=`<div class="notice info">Found ${items.length} households. Set the period name above, then add.</div>`;
+  $("impPreview").innerHTML=`
+    <div class="panel" style="margin-top:12px">
+      <div class="brow"><span>New charges to add</span><b>${items.length}</b></div>
+      <div class="brow"><span>Existing people</span><b>${existCount}</b></div>
+      <div class="brow"><span>New people added</span><b>${newCount}</b></div>
+      <div class="brow"><span>Skipped (0 received)</span><b>${skipped}</b></div>
+      <div class="brow total"><span>Total added this period</span><b class="money">${fmt(totAmt)}</b></div>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Import each period's file only once.</p>
+    <button class="btn block" id="impConfirm">Add for ${items.length} households</button>
+    <div id="impProgress" style="margin-top:10px"></div>`;
+  $("impConfirm").addEventListener("click", runMonthly);
 }
 
 async function runMonthly(){
@@ -1957,21 +2042,21 @@ function openEditEntry(citizenId, entryId, entry){
 /* ============================================================
    ADMIN — CSV Export
    ============================================================ */
-$("exportCsvBtn").addEventListener("click", async ()=>{
+let exportBusy=false;
+async function doExportCsv(){
+  if(exportBusy) return; exportBusy=true;
+  const btn=$("exportCsvBtn2"); if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
   try{
     const csv = await store.exportOwingCsv();
     const blob = new Blob([csv], {type:"text/csv"});
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `owing_${todayISO()}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const a = document.createElement("a"); a.href = url; a.download = `owing_${todayISO()}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
     toast("CSV exported");
   }catch(err){ toast("Export failed"); console.error(err); }
-});
+  finally{ exportBusy=false; if(btn){ btn.disabled=false; btn.textContent="Export owing list (CSV)"; } }
+}
 
 // Initial public browse list
 showList();
