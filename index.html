@@ -345,8 +345,7 @@
         <button class="btn small" id="addCitizenBtn">+ Add</button>
         <button class="btn small ghost" id="settingsBtn">⚙️</button>
       </div>
-      <div class="action-grid" style="grid-template-columns:repeat(2,1fr)">
-        <button class="btn small ghost" id="impExpBtn">Import / Export</button>
+      <div class="action-grid" style="grid-template-columns:1fr">
         <button class="btn small ghost" id="backupMenuBtn">Backup / Restore</button>
       </div>
       <div id="pendingContainer" class="hidden" style="margin-bottom:12px;">
@@ -404,7 +403,7 @@ function getEffectiveBalance(c){
   if(!c.ledger) return (c.totalCharged||0) - (c.totalPaid||0);
   let includedCharged=0;
   for(const e of c.ledger){
-    if(e.type==="charge" && !e.deferred && e.note && !excludedPeriods.includes(e.note)){
+    if(e.type==="charge" && e.note && !excludedPeriods.includes(e.note)){
       includedCharged += e.amount;
     }
   }
@@ -832,7 +831,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         let includedCharged=0;
         ledSnap.docs.forEach(doc=>{
           const e=doc.data();
-          if(e.type==="charge" && !e.deferred && e.note && !excludedPeriods.includes(e.note)){
+          if(e.type==="charge" && e.note && !excludedPeriods.includes(e.note)){
             includedCharged += e.amount;
           }
         });
@@ -1554,7 +1553,6 @@ async function refreshPending(){
 /* ============================================================
    ADMIN — import (unchanged, but included for completeness)
    ============================================================ */
-$("impExpBtn").addEventListener("click", openImportExport);
 $("backupMenuBtn").addEventListener("click", openBackup);
 let pendingImport = null, pendingMonthly = null, pendingBank = null, pendingUpload = null;
 
@@ -1670,6 +1668,7 @@ async function loadPeriods(){
   try{
     const periods = await store.getAllPeriods();
     const excluded = await store.getExcludedPeriods();
+    console.log("Periods:", periods, "Excluded:", excluded);
     const list = periods.map(p => `
       <div class="brow" style="padding:8px 0;border-bottom:1px solid var(--border)">
         <span>${esc(p)}</span>
@@ -1677,7 +1676,7 @@ async function loadPeriods(){
       </div>
     `).join('');
     $("periodsList").innerHTML = list || '<div style="color:var(--muted)">No periods found yet.</div>';
-  }catch(err){ console.error(err); $("periodsList").innerHTML=`<div class="notice err">Failed to load periods.</div>`; }
+  }catch(err){ console.error("Load periods error:", err); $("periodsList").innerHTML=`<div class="notice err">Failed to load periods: ${err.message||err}</div>`; }
 }
 async function savePeriods(){
   const toggles = document.querySelectorAll(".period-toggle");
