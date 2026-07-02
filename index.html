@@ -356,6 +356,7 @@
       </div>
       <div class="seg" id="adminFilter" style="margin-bottom:12px">
         <button data-f="pending" class="active">Pending</button>
+        <button data-f="deferred">Deferred</button>
         <button data-f="paid">Paid</button>
         <button data-f="all">All</button>
       </div>
@@ -400,14 +401,25 @@ function statusOf(c){
   return "due";
 }
 function getEffectiveBalance(c){
-  if(!c.ledger) return (c.totalCharged||0) - (c.totalPaid||0);
+  if(!c.ledger){
+    return Number(c.balance ?? ((c.totalCharged||0) - (c.totalPaid||0)));
+  }
   let includedCharged=0;
   for(const e of c.ledger){
-    if(e.type==="charge" && e.note && !excludedPeriods.includes(e.note)){
+    if(e.type==="charge" && e.note && !excludedPeriods.includes(e.note) && !e.deferred){
       includedCharged += e.amount;
     }
   }
   return includedCharged - (c.totalPaid||0);
+}
+function getDeferredAmount(c){
+  if(typeof c.deferredTotal === "number") return Number(c.deferredTotal || 0);
+  if(!c.ledger) return 0;
+  let total=0;
+  for(const e of c.ledger){
+    if(e.type==="charge" && e.deferred) total += Number(e.amount || 0);
+  }
+  return total;
 }
 const statusLabel = {paid:"Cleared", partial:"Partly paid", due:"Due"};
 function todayISO(){ return new Date().toISOString().slice(0,10); }
@@ -488,7 +500,7 @@ function makeLocalStore(){
     c.totalCharged = tc + dt;
     c.totalPaid = tp;
     c.deferredTotal = dt;
-    c.balance = (tc + dt) - tp;
+    c.balance = tc - tp;
     return c;
   }
   return {
@@ -831,7 +843,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         let includedCharged=0;
         ledSnap.docs.forEach(doc=>{
           const e=doc.data();
-          if(e.type==="charge" && e.note && !excludedPeriods.includes(e.note)){
+          if(e.type==="charge" && e.note && !excludedPeriods.includes(e.note) && !e.deferred){
             includedCharged += e.amount;
           }
         });
@@ -855,7 +867,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         else if(e.type==="payment") tp+=e.amount;
         else if(e.type==="forgive") tc-=e.amount;
       });
-      await fs.updateDoc(fs.doc(db,"citizens",id),{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt) - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+      await fs.updateDoc(fs.doc(db,"citizens",id),{ totalCharged:tc+dt, totalPaid:tp, balance:tc - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
     },
     async toggleDefer(id, entryId, deferred){
       const ref = fs.doc(db, "citizens", id, "ledger", entryId);
@@ -869,7 +881,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         else if(e.type==="payment") tp+=e.amount;
         else if(e.type==="forgive") tc-=e.amount;
       });
-      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt) - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:tc - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
     },
     async forgiveDebt(id, amount, note){
       await this.addEntry(id, "forgive", amount, note, todayISO());
@@ -914,7 +926,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         else if(e.type==="payment") tp+=e.amount;
         else if(e.type==="forgive") tc-=e.amount;
       });
-      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt) - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:tc - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
     },
     async editEntry(id, entryId, updates){
       const ref=fs.doc(db,"citizens",id,"ledger",entryId);
@@ -928,7 +940,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         else if(e.type==="payment") tp+=e.amount;
         else if(e.type==="forgive") tc-=e.amount;
       });
-      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt) - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:tc - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
     },
     async deleteCitizen(id){
       const led=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
@@ -966,7 +978,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         const def = it.deferred||false;
         batch.set(eRef,{ entryId:eRef.id, type:"charge", amount:it.amount, note:it.note, date:"", deferred:def, deferSource:it.deferSource||null, createdAt:fs.serverTimestamp() });
         batch.set(cRef,{ jobCard:it.jobCard, cardNo:it.cardNo, name:it.name,
-          totalCharged:fs.increment(it.amount), balance:fs.increment(it.amount),
+          totalCharged:fs.increment(it.amount), balance:fs.increment(def?0:it.amount),
           deferredTotal:fs.increment(def?it.amount:0), updatedAt:fs.serverTimestamp() }, {merge:true});
         if(++ops>=400) await flush();
         if((++done % 50)===0 && onProgress) onProgress(done, items.length);
@@ -1459,6 +1471,8 @@ function renderList(){
       if(!periodsReady && !loadingPeriods) loadPendingPeriods();
       list = list.filter(c => (unpaidCache.get(c.id)||[]).includes(periodFilter));
     }
+  } else if(adminFilter==="deferred"){
+    list = list.filter(c => getDeferredAmount(c)>0);
   } else if(adminFilter==="paid"){
     list = list.filter(c => getEffectiveBalance(c)<=0);
   }
@@ -1467,14 +1481,17 @@ function renderList(){
   if(!total){ $("adminList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet. Tap + Add to begin."}</div>`; return; }
   const shown=Math.min(adminShown, total);
   const cards = list.slice(0, shown).map(c=>{
-    const bal=getEffectiveBalance(c); const st=statusOf(c);
+    const bal=getEffectiveBalance(c); const deferred=getDeferredAmount(c); const st=statusOf(c);
+    const small = adminFilter==="deferred"
+      ? `${esc(c.jobCard||c.id)} · Deferred ${fmt(deferred)}`
+      : esc(c.jobCard||c.id);
     return `<button class="citizen-row" data-id="${esc(c.id)}">
       <span class="dot ${st}"></span>
       <span class="info">
         <b>${esc(c.name||"—")}</b>
-        <small>${esc(c.jobCard||c.id)}</small>
+        <small>${small}</small>
       </span>
-      <span class="bal money" style="color:${bal>0?'var(--due)':'var(--paid)'}">${fmt(Math.max(0,bal))}</span>
+      <span class="bal money" style="color:${adminFilter==="deferred"?'var(--partial)':(bal>0?'var(--due)':'var(--paid)')}">${adminFilter==="deferred" ? fmt(deferred) : fmt(Math.max(0,bal))}</span>
     </button>`;
   }).join("");
   $("adminList").innerHTML = cards +
@@ -2116,6 +2133,9 @@ async function renderCitizenDetail(id){
         <div class="field"><label>For</label><input id="chNote" value="${esc(monthLabel())}"></div>
         <div class="field"><label>Date</label><input id="chDate" type="date" value="${todayISO()}"></div>
       </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);margin-top:10px">
+        <input id="chDeferred" type="checkbox"> <span>Mark as deferred</span>
+      </label>
       <button class="btn block small" id="addCharge" style="margin-top:10px">Add contribution</button>
     </div>
 
@@ -2200,8 +2220,9 @@ async function addEntry(id, type){
   const btn = type==="charge" ? $("addCharge") : $("addPayment");
   btn.disabled=true;
   try{
-    await store.addEntry(id, type, amount, noteEl.value.trim(), dateEl.value||todayISO());
-    toast(type==="charge"?"Contribution added":"Payment recorded");
+    const deferred = type==="charge" && $("chDeferred") && $("chDeferred").checked;
+    await store.addEntry(id, type, amount, noteEl.value.trim(), dateEl.value||todayISO(), deferred);
+    toast(type==="charge" ? (deferred ? "Deferred contribution added" : "Contribution added") : "Payment recorded");
     await renderCitizenDetail(id);
   }catch(err){ toast("Couldn't save. Try again."); console.error(err); btn.disabled=false; }
 }
