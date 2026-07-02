@@ -343,6 +343,7 @@
       <div class="toolbar">
         <input id="adminSearch" type="text" placeholder="Search job card no. or name" />
         <button class="btn small" id="addCitizenBtn">+ Add</button>
+        <button class="btn small ghost" id="settingsBtn">⚙️</button>
       </div>
       <div class="action-grid" style="grid-template-columns:repeat(2,1fr)">
         <button class="btn small ghost" id="impExpBtn">Import / Export</button>
@@ -1482,6 +1483,39 @@ function renderList(){
   document.querySelectorAll("#adminList .citizen-row").forEach(b=>
     b.addEventListener("click",()=>openCitizen(b.dataset.id)));
   if($("adminMore")) $("adminMore").addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
+}
+$("settingsBtn").addEventListener("click", openSettings);
+
+function openSettings(){
+  openSheet("Settings", `
+    <div class="panel" style="margin-bottom:16px">
+      <h4>Quick Actions</h4>
+      <button class="btn block ghost" id="settingsPeriods">Manage periods</button>
+      <button class="btn block ghost" id="settingsBackup" style="margin-top:8px">Backup / Restore</button>
+      <button class="btn block ghost" id="settingsImport" style="margin-top:8px">Import / Export</button>
+    </div>
+    <div class="panel" style="margin-bottom:16px">
+      <h4>Account</h4>
+      <button class="btn block ghost" id="settingsLogout" style="color:var(--due);border-color:var(--due)">Sign out</button>
+    </div>
+    <div class="panel">
+      <h4>App Info</h4>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6">
+        <div>Version: 1.0</div>
+        <div>NSNVC Contribution Tracker</div>
+      </div>
+    </div>
+  `);
+  $("settingsPeriods").addEventListener("click", ()=>{ closeSheet(); openPeriods(); });
+  $("settingsBackup").addEventListener("click", ()=>{ closeSheet(); openBackup(); });
+  $("settingsImport").addEventListener("click", ()=>{ closeSheet(); openImportExport(); });
+  $("settingsLogout").addEventListener("click", doLogout);
+}
+
+function doLogout(){
+  store.signOut();
+  toast("Signed out");
+  setTimeout(()=>location.reload(),1000);
 }
 
 /* ============================================================
