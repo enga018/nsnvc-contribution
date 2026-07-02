@@ -345,9 +345,6 @@
         <button class="btn small" id="addCitizenBtn">+ Add</button>
         <button class="btn small ghost" id="settingsBtn">⚙️</button>
       </div>
-      <div class="action-grid" style="grid-template-columns:1fr">
-        <button class="btn small ghost" id="backupMenuBtn">Backup / Restore</button>
-      </div>
       <div id="pendingContainer" class="hidden" style="margin-bottom:12px;">
         <div class="panel" style="background:var(--surface);border:1px solid #f0d99a;">
           <h4>Pending UPI payments <span id="pendingCount" class="pending-badge">0</span></h4>
@@ -401,16 +398,20 @@ function statusOf(c){
   return "due";
 }
 function getEffectiveBalance(c){
+  const cachedBalance = Number(c.balance ?? 0);
+  if(typeof c.balance === "number" && !excludedPeriods.length && (!c.ledger || !c.ledger.some(e => e.deferred))){
+    return cachedBalance;
+  }
   if(!c.ledger){
-    return Number(c.balance ?? ((c.totalCharged||0) - (c.totalPaid||0)));
+    return cachedBalance;
   }
   let includedCharged=0;
   for(const e of c.ledger){
     if(e.type==="charge" && e.note && !excludedPeriods.includes(e.note) && !e.deferred){
-      includedCharged += e.amount;
+      includedCharged += Number(e.amount || 0);
     }
   }
-  return includedCharged - (c.totalPaid||0);
+  return includedCharged - Number(c.totalPaid || 0);
 }
 function getDeferredAmount(c){
   if(typeof c.deferredTotal === "number") return Number(c.deferredTotal || 0);
@@ -839,15 +840,20 @@ function makeFirebaseStore({ auth, db, fs, au }){
       const out=[];
       for(const d of snap.docs){
         const c=d.data();
+        if(!excludedPeriods.length){
+          const effBal = Number(c.balance || 0);
+          if(effBal>0) out.push({ id:d.id, ...c, balance:effBal });
+          continue;
+        }
         const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
         let includedCharged=0;
         ledSnap.docs.forEach(doc=>{
           const e=doc.data();
           if(e.type==="charge" && e.note && !excludedPeriods.includes(e.note) && !e.deferred){
-            includedCharged += e.amount;
+            includedCharged += Number(e.amount || 0);
           }
         });
-        const effBal = includedCharged - (c.totalPaid||0);
+        const effBal = includedCharged - Number(c.totalPaid || 0);
         if(effBal>0) out.push({ id:d.id, ...c, balance:effBal });
       }
       return out;
@@ -1248,8 +1254,8 @@ function goBack(){
 }
 
 /* ---------- public list ---------- */
-let pubAll=[], pubShown=10, backTarget="list";
-const PUB_STEP=10;
+let pubAll=[], pubShown=6, backTarget="list";
+const PUB_STEP=6;
 
 function showList(){
   backTarget="list";
@@ -1265,6 +1271,19 @@ async function loadOwing(){
     pubAll.sort(byCardNo);
     pubShown=PUB_STEP;
     renderPubList();
+    if(pubAll.length>pubShown){
+      requestAnimationFrame(()=>{
+        const more = pubAll.slice(pubShown, Math.min(pubShown + PUB_STEP, pubAll.length));
+        if(more.length){
+          const current = $("citizenList").innerHTML;
+          const extra = more.map(c=>personCardHTML(c.id, c)).join("");
+          const marker = current.includes('id="seeMore"') ? '<button class="btn block ghost small" id="seeMore" style="margin-top:12px">Show next 6</button>' : '';
+          $("citizenList").innerHTML = current.replace(marker, marker + extra);
+          document.querySelectorAll("#citizenList .result-card").forEach(b=>
+            b.addEventListener("click", ()=>openMatch(b.dataset.id, true)));
+        }
+      });
+    }
   }catch(err){ console.error(err); $("citizenList").innerHTML=`<div class="notice err">Couldn't load the list.</div>`; }
 }
 function renderPubList(){
@@ -1507,6 +1526,7 @@ function openSettings(){
     <div class="panel" style="margin-bottom:16px">
       <h4>Quick Actions</h4>
       <button class="btn block ghost" id="settingsPeriods">Manage periods</button>
+      <button class="btn block ghost" id="settingsRename" style="margin-top:8px">Rename period</button>
       <button class="btn block ghost" id="settingsBackup" style="margin-top:8px">Backup / Restore</button>
       <button class="btn block ghost" id="settingsImport" style="margin-top:8px">Import / Export</button>
     </div>
@@ -1523,6 +1543,7 @@ function openSettings(){
     </div>
   `);
   $("settingsPeriods").addEventListener("click", ()=>{ closeSheet(); openPeriods(); });
+  $("settingsRename").addEventListener("click", ()=>{ closeSheet(); openRenamePeriod(); });
   $("settingsBackup").addEventListener("click", ()=>{ closeSheet(); openBackup(); });
   $("settingsImport").addEventListener("click", ()=>{ closeSheet(); openImportExport(); });
   $("settingsLogout").addEventListener("click", doLogout);
@@ -1570,7 +1591,6 @@ async function refreshPending(){
 /* ============================================================
    ADMIN — import (unchanged, but included for completeness)
    ============================================================ */
-$("backupMenuBtn").addEventListener("click", openBackup);
 let pendingImport = null, pendingMonthly = null, pendingBank = null, pendingUpload = null;
 
 function openImportExport(){
@@ -1600,11 +1620,6 @@ function openBackup(){
       <button class="btn block ghost" id="recalcBtn">Recalculate all balances</button>
     </div>
     <div style="border-top:1px solid var(--border);padding-top:16px">
-      <p style="font-size:12.5px;color:var(--muted);margin:0 0 10px">Bulk operations</p>
-      <button class="btn block ghost" id="renamePeriodBtn">Rename period</button>
-      <button class="btn block ghost" id="periodsBtn" style="margin-top:8px">Manage periods</button>
-    </div>
-    <div style="border-top:1px solid var(--border);padding-top:16px">
       <p style="font-size:12.5px;color:var(--muted);margin:0 0 10px">Danger zone - these actions cannot be undone.</p>
       <button class="btn block ghost" id="deleteAllBtn" style="color:var(--due);border-color:var(--due)">Delete all data</button>
     </div>
@@ -1614,8 +1629,6 @@ function openBackup(){
   $("restoreBtn").addEventListener("click", ()=>$("restoreFile").click());
   $("restoreFile").addEventListener("change", doRestore);
   $("recalcBtn").addEventListener("click", doRecalcAll);
-  $("renamePeriodBtn").addEventListener("click", openRenamePeriod);
-  $("periodsBtn").addEventListener("click", openPeriods);
   $("deleteAllBtn").addEventListener("click", doDeleteAll);
 }
 async function doRecalcAll(){
@@ -1685,20 +1698,19 @@ async function loadPeriods(){
   try{
     const periods = await store.getAllPeriods();
     const excluded = await store.getExcludedPeriods();
-    console.log("Periods:", periods, "Excluded:", excluded);
-    const list = periods.map(p => `
-      <div class="brow" style="padding:8px 0;border-bottom:1px solid var(--border)">
+    const list = periods.map((p, index) => `
+      <label class="brow" style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px">
         <span>${esc(p)}</span>
-        <input type="checkbox" class="period-toggle" data-period="${esc(p)}" ${!excluded.includes(p)?"checked":""}>
-      </div>
+        <input type="checkbox" class="period-toggle" name="period-toggle" value="${esc(p)}" ${!excluded.includes(p)?"checked":""}>
+      </label>
     `).join('');
     $("periodsList").innerHTML = list || '<div style="color:var(--muted)">No periods found yet.</div>';
   }catch(err){ console.error("Load periods error:", err); $("periodsList").innerHTML=`<div class="notice err">Failed to load periods: ${err.message||err}</div>`; }
 }
 async function savePeriods(){
-  const toggles = document.querySelectorAll(".period-toggle");
+  const toggles = document.querySelectorAll('input[name="period-toggle"]');
   const excluded = [];
-  toggles.forEach(t => { if(!t.checked) excluded.push(t.dataset.period); });
+  toggles.forEach(t => { if(!t.checked) excluded.push(t.value); });
   const msg=$("periodsMsg"); const btn=$("savePeriodsBtn"); btn.disabled=true;
   msg.innerHTML=`<div class="notice info">Saving…</div>`;
   try{
