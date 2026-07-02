@@ -662,6 +662,22 @@ function makeLocalStore(){
       persist(); notify();
       if(onProgress) onProgress(1, 1);
     },
+    async renamePeriod(oldPeriod, newPeriod, onProgress){
+      let count=0;
+      for(const [id,c] of Object.entries(data.citizens)){
+        if(c.ledger){
+          for(const e of c.ledger){
+            if(e.type==="charge" && e.note===oldPeriod){
+              e.note=newPeriod;
+              count++;
+            }
+          }
+        }
+      }
+      persist(); notify();
+      if(onProgress) onProgress(count, count);
+      return count;
+    },
     async importAll(backup, onProgress){
       if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
       let done=0;
@@ -1009,6 +1025,22 @@ function makeFirebaseStore({ auth, db, fs, au }){
       }
       await flush();
       if(onProgress) onProgress(2, 2);
+    },
+    async renamePeriod(oldPeriod, newPeriod, onProgress){
+      const ledSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
+      let batch=fs.writeBatch(db), ops=0, count=0;
+      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
+      for(const d of ledSnap.docs){
+        const e=d.data();
+        if(e.type==="charge" && e.note===oldPeriod){
+          batch.update(d.ref, { note:newPeriod });
+          ops++; count++;
+          if(ops>=400) await flush();
+        }
+      }
+      await flush();
+      if(onProgress) onProgress(count, count);
+      return count;
     },
     async importAll(backup, onProgress){
       if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
@@ -1560,6 +1592,10 @@ function openBackup(){
       <button class="btn block ghost" id="recalcBtn">Recalculate all balances</button>
     </div>
     <div style="border-top:1px solid var(--border);padding-top:16px">
+      <p style="font-size:12.5px;color:var(--muted);margin:0 0 10px">Bulk operations</p>
+      <button class="btn block ghost" id="renamePeriodBtn">Rename period</button>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:16px">
       <p style="font-size:12.5px;color:var(--muted);margin:0 0 10px">Danger zone - these actions cannot be undone.</p>
       <button class="btn block ghost" id="deleteAllBtn" style="color:var(--due);border-color:var(--due)">Delete all data</button>
     </div>
@@ -1569,6 +1605,7 @@ function openBackup(){
   $("restoreBtn").addEventListener("click", ()=>$("restoreFile").click());
   $("restoreFile").addEventListener("change", doRestore);
   $("recalcBtn").addEventListener("click", doRecalcAll);
+  $("renamePeriodBtn").addEventListener("click", openRenamePeriod);
   $("deleteAllBtn").addEventListener("click", doDeleteAll);
 }
 async function doRecalcAll(){
@@ -1596,6 +1633,32 @@ async function doDeleteAll(){
     toast("All data deleted");
     setTimeout(()=>location.reload(),1500);
   }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Delete failed. Try again.</div>`; }
+  finally{ btn.disabled=false; }
+}
+function openRenamePeriod(){
+  openSheet("Rename Period", `
+    <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">Change the name of a period for all charges that currently use it.</p>
+    <div class="field"><label>Current period name</label><input id="oldPeriod" placeholder="e.g. MAY2"></div>
+    <div class="field"><label>New period name</label><input id="newPeriod" placeholder="e.g. MAY-2024"></div>
+    <button class="btn block" id="renameConfirm">Rename period</button>
+    <div id="renameMsg" style="margin-top:12px"></div>
+  `);
+  $("renameConfirm").addEventListener("click", doRenamePeriod);
+}
+async function doRenamePeriod(){
+  const oldPeriod=$("oldPeriod").value.trim();
+  const newPeriod=$("newPeriod").value.trim();
+  if(!oldPeriod || !newPeriod){ $("renameMsg").innerHTML=`<div class="notice err">Please enter both current and new period names.</div>`; return; }
+  if(oldPeriod===newPeriod){ $("renameMsg").innerHTML=`<div class="notice err">New period name must be different from current.</div>`; return; }
+  const ok=await confirmAction(`Rename all charges from "${oldPeriod}" to "${newPeriod}"? This cannot be undone.`);
+  if(!ok) return;
+  const msg=$("renameMsg"); const btn=$("renameConfirm"); btn.disabled=true;
+  msg.innerHTML=`<div class="notice info">Renaming period…</div>`;
+  try{
+    const count=await store.renamePeriod(oldPeriod, newPeriod, (d,t)=>{ msg.innerHTML=`<div class="notice info">Renaming… ${d} / ${t}</div>`; });
+    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${count} charges renamed from "${oldPeriod}" to "${newPeriod}".</div>`;
+    toast("Period renamed");
+  }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Rename failed. Try again.</div>`; }
   finally{ btn.disabled=false; }
 }
 let backupBusy=false;
