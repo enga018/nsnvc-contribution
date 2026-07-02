@@ -1,0 +1,2258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+<title>Contributions — New Serchhip North Village Council</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="NSNVC Tracker">
+<style>
+  :root{
+    --green:#1b4d3e; --green-dark:#143a2f; --green-soft:#e8efe9;
+    --paper:#f7f6f2; --surface:#ffffff; --ink:#1c2724; --muted:#6b7672;
+    --border:#e3e1d8; --border-strong:#cfd0c7;
+    --paid:#15803d; --partial:#b45309; --due:#b91c1c;
+    --shadow:0 1px 2px rgba(20,40,30,.06),0 6px 20px rgba(20,40,30,.06);
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--paper); color:var(--ink); line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+  }
+  .money{font-variant-numeric:tabular-nums; font-feature-settings:"tnum"}
+  button{font-family:inherit; cursor:pointer}
+  input{font-family:inherit}
+
+  /* Header */
+  header{
+    background:var(--green); color:#fff; padding:14px 16px;
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    position:sticky; top:0; z-index:20;
+  }
+  .brand{display:flex; flex-direction:column; line-height:1.2}
+  .brand b{font-size:15px; font-weight:650; letter-spacing:.2px}
+  .brand span{font-size:11px; opacity:.8; text-transform:uppercase; letter-spacing:1px}
+  .mode-link{
+    background:rgba(255,255,255,.12); color:#fff; border:1px solid rgba(255,255,255,.25);
+    padding:7px 12px; border-radius:99px; font-size:12.5px; font-weight:600;
+  }
+  .mode-link:active{background:rgba(255,255,255,.22)}
+
+  main{max-width:680px; margin:0 auto; padding:18px 16px 60px}
+
+  /* Citizen lookup */
+  .lookup{ text-align:center; padding:14px 4px 6px; }
+  .lookup h1{ font-size:18px; font-weight:600; margin:0 0 16px; color:var(--ink); }
+  .searchbar{
+    display:flex; align-items:center; gap:10px;
+    max-width:420px; margin:0 auto;
+    background:var(--surface); border:1px solid var(--border-strong);
+    border-radius:999px; padding:5px 5px 5px 16px;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  .searchbar:focus-within{ border-color:var(--green); box-shadow:0 0 0 3px rgba(27,77,62,.08); }
+  .search-ico{ width:18px; height:18px; color:var(--muted); flex:none; }
+  .searchbar input{
+    flex:1; min-width:0; border:none; outline:none; background:transparent;
+    font-size:16px; padding:10px 0; color:var(--ink);
+  }
+  .search-go{
+    flex:none; width:40px; height:40px; border-radius:50%; border:none;
+    background:var(--green); color:#fff; display:flex; align-items:center; justify-content:center;
+  }
+  .search-go svg{ width:18px; height:18px; }
+  .search-go:active{ background:var(--green-dark); }
+  .btn{
+    background:var(--green); color:#fff; border:none; padding:13px 18px;
+    border-radius:10px; font-size:15px; font-weight:600; white-space:nowrap;
+  }
+  .btn:active{background:var(--green-dark)}
+  .btn.block{width:100%}
+  .btn.ghost{background:transparent; color:var(--green); border:1.5px solid var(--green)}
+  .btn.small{padding:9px 13px; font-size:13.5px}
+  .btn.danger{background:var(--due)}
+  .btn[disabled]{opacity:.5; pointer-events:none}
+
+  /* Statement / receipt */
+  .statement{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    box-shadow:var(--shadow); margin-top:18px; overflow:hidden; animation:rise .25s ease;
+  }
+  @keyframes rise{from{opacity:0; transform:translateY(8px)}to{opacity:1; transform:none}}
+  .statement .top{
+    padding:18px; border-bottom:1px dashed var(--border-strong);
+    display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
+  }
+  .statement .name{font-size:18px; font-weight:650; margin:0}
+  .statement .meta{font-size:12.5px; color:var(--muted); margin-top:3px}
+  .badge{font-size:11px; font-weight:700; padding:5px 10px; border-radius:99px; white-space:nowrap; text-transform:uppercase; letter-spacing:.5px}
+  .badge.paid{background:#e6f4ea; color:var(--paid)}
+  .badge.partial{background:#fdf1e3; color:var(--partial)}
+  .badge.due{background:#fdeaea; color:var(--due)}
+
+  .balance-block{padding:20px 18px; text-align:center; background:linear-gradient(180deg,#fbfbf8,transparent)}
+  .balance-block .label{font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted)}
+  .balance-block .amount{font-size:40px; font-weight:700; margin:4px 0 2px; letter-spacing:-1px}
+  .balance-block .amount.zero{color:var(--paid)}
+  .balance-block .amount.owing{color:var(--due)}
+  .split{display:flex; border-top:1px solid var(--border)}
+  .split div{flex:1; padding:13px; text-align:center}
+  .split div+div{border-left:1px solid var(--border)}
+  .split .k{font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px}
+  .split .v{font-size:17px; font-weight:650; margin-top:2px}
+
+  .ledger{border-top:1px solid var(--border)}
+  .ledger h3{font-size:12.5px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:0; padding:14px 18px 6px}
+  .row{
+    display:flex; align-items:center; gap:10px; padding:11px 18px; border-top:1px solid var(--border);
+  }
+  .row .desc{flex:1; min-width:0}
+  .row .desc b{font-size:14px; font-weight:600; display:block}
+  .row .desc small{font-size:12px; color:var(--muted)}
+  .row .amt{font-size:14.5px; font-weight:650; white-space:nowrap}
+  .amt.charge{color:var(--ink)}
+  .amt.payment{color:var(--paid)}
+  .empty{padding:18px; text-align:center; color:var(--muted); font-size:13.5px}
+
+  /* Search result card (step 1) */
+  .result-card{
+    display:flex; align-items:center; gap:12px; width:100%; text-align:left;
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:14px 18px; box-shadow:var(--shadow); margin-top:10px; animation:rise .2s ease;
+    transition:background .15s;
+  }
+  .result-card:active{background:var(--paper)}
+  .result-card .info{flex:1; min-width:0}
+  .result-card .info b{font-size:16px; display:block}
+  .result-card .info small{font-size:12.5px; color:var(--muted)}
+  .result-card .card-amt{font-size:15.5px; font-weight:700; white-space:nowrap; flex:none}
+  .result-card .card-amt.owe{color:var(--due)}
+  .result-card .card-amt.clear{color:var(--paid)}
+
+  /* Back link */
+  .back{background:none; border:none; color:var(--green); font-size:13.5px; font-weight:600;
+    padding:14px 4px 2px; display:inline-flex; align-items:center; gap:4px}
+
+  /* Monthly breakdown (step 2) */
+  .breakdown{padding:6px 18px 8px}
+  .brow{display:flex; justify-content:space-between; align-items:center; gap:12px;
+    padding:10px 0; font-size:14.5px; border-bottom:1px solid var(--border)}
+  .brow span{color:var(--muted)}
+  .brow b{font-weight:650; white-space:nowrap}
+  .brow.total{border-bottom:none; border-top:2px solid var(--border-strong); margin-top:2px; padding-top:13px; font-size:16.5px}
+  .brow.total span{color:var(--ink); font-weight:700}
+  .brow b.credit{color:var(--paid)}
+  .carry-note{font-size:12.5px; color:var(--paid); padding:0 18px 16px; text-align:center}
+
+  .notice{padding:16px; border-radius:10px; font-size:14px; margin-top:16px}
+  .notice.err{background:#fdeaea; color:#7a1d1d; border:1px solid #f3c4c4}
+  .notice.info{background:var(--green-soft); color:var(--green-dark); border:1px solid #cfe0d5}
+
+  /* Admin */
+  .hidden{display:none !important}
+  .login-card{max-width:360px; margin:30px auto; background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius); padding:24px 20px; box-shadow:var(--shadow)}
+  .login-card h2{margin:0 0 16px; font-size:18px}
+  .field{margin-bottom:12px}
+  .field label{display:block; font-size:12.5px; font-weight:600; color:var(--muted); margin-bottom:5px}
+  .field input{width:100%; padding:11px 12px; font-size:15px; border:1.5px solid var(--border-strong); border-radius:9px; outline:none}
+  .field input:focus{border-color:var(--green)}
+
+  .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px}
+  .stat{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 12px; box-shadow:var(--shadow)}
+  .stat .k{font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted)}
+  .stat .v{font-size:20px; font-weight:700; margin-top:3px}
+  .stat .v.due{color:var(--due)}
+  .stat .v.paid{color:var(--paid)}
+
+  .toolbar{display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap}
+  .toolbar input{flex:1; padding:11px 12px; font-size:15px; border:1.5px solid var(--border-strong); border-radius:9px; outline:none; min-width:0}
+  .toolbar input:focus{border-color:var(--green)}
+
+  .clist{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden}
+  .citizen-row{
+    display:flex; align-items:center; gap:10px; padding:12px 15px;
+    border-top:1px solid var(--border); width:100%; background:none;
+    border-left:none; border-right:none; text-align:left;
+    transition:background .15s;
+  }
+  .citizen-row:first-child{border-top:none}
+  .citizen-row:active{background:var(--paper)}
+  .citizen-row .info{flex:1; min-width:0}
+  .citizen-row .info b{font-size:15px; display:block; font-weight:600}
+  .citizen-row .info small{font-size:12px; color:var(--muted); display:block; margin-top:2px}
+  .citizen-row .bal{font-size:15px; font-weight:700; white-space:nowrap}
+  .dot{width:8px; height:8px; border-radius:50%; flex:none}
+  .dot.paid{background:var(--paid)} .dot.partial{background:var(--partial)} .dot.due{background:var(--due)}
+
+  /* Sheet modal */
+  .overlay{position:fixed; inset:0; background:rgba(20,30,25,.45); z-index:40; display:flex; align-items:flex-end; justify-content:center}
+  .sheet{background:var(--surface); width:100%; max-width:680px; max-height:92vh; overflow-y:auto;
+    border-radius:18px 18px 0 0; animation:slideup .25s ease}
+  @keyframes slideup{from{transform:translateY(100%)}to{transform:none}}
+  .sheet-head{position:sticky; top:0; background:var(--surface); padding:16px 18px; border-bottom:1px solid var(--border);
+    display:flex; justify-content:space-between; align-items:center; z-index:2}
+  .sheet-head h2{margin:0; font-size:17px}
+  .x{background:var(--paper); border:1px solid var(--border); width:34px; height:34px; border-radius:50%; font-size:18px; line-height:1; color:var(--muted)}
+  .sheet-body{padding:18px}
+  .panel{background:var(--paper); border:1px solid var(--border); border-radius:12px; padding:15px; margin-bottom:14px}
+  .panel h4{margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted)}
+  .inline{display:flex; gap:8px}
+  .inline .field{flex:1; margin-bottom:0}
+  .seg{display:flex; gap:8px; margin-bottom:12px}
+  .seg button{flex:1; padding:10px; border:1.5px solid var(--border-strong); background:var(--surface); border-radius:9px; font-weight:600; font-size:14px; color:var(--muted)}
+  .seg button.active{border-color:var(--green); background:var(--green-soft); color:var(--green-dark)}
+  .period-sel{width:100%; padding:11px 12px; border:1.5px solid var(--border-strong); border-radius:9px;
+    background:var(--surface); font-size:14px; color:var(--ink); -webkit-appearance:none; appearance:none}
+  .action-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px; }
+  .action-grid .btn{ width:100%; }
+
+  .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff;
+    padding:12px 18px; border-radius:99px; font-size:14px; z-index:60; box-shadow:var(--shadow); animation:rise .2s ease}
+
+  .hist-toggle{width:100%; text-align:left; background:none; border:none; border-top:1px solid var(--border);
+    padding:14px 18px; font-size:13px; font-weight:650; color:var(--green); text-transform:uppercase; letter-spacing:.5px; cursor:pointer}
+  .dash-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px}
+  .dash-title{font-size:13px; font-weight:650; text-transform:uppercase; letter-spacing:1px; color:var(--muted)}
+  .card-amt{font-size:15.5px; font-weight:700; white-space:nowrap; flex:none}
+  .card-amt.owe{color:var(--due)}
+  .card-amt.clear{color:var(--paid)}
+  .pager{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:16px 2px 4px}
+  .pager .pageno{font-size:13px; color:var(--muted)}
+  .list-head{font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); padding:18px 4px 2px}
+  #citizenList .result-card{margin-top:10px}
+
+  footer{text-align:center; color:var(--muted); font-size:11.5px; padding:24px 16px}
+  .config-warn{background:#fff7e6; border:1px solid #f0d99a; color:#7a5a12; padding:14px 16px; border-radius:10px; font-size:13px; margin:16px; line-height:1.5}
+
+  /* New styles for indentation, inline actions, etc. */
+  .row.payment-indent .desc{ margin-left:24px; }
+  .row .actions{display:flex; gap:4px; flex-shrink:0;}
+  .row .actions button{background:transparent; border:none; font-size:14px; padding:2px 4px; color:var(--muted);}
+  .row .actions button:hover{color:var(--ink)}
+  .row.deferred{opacity:0.6; background:#f9f9f6;}
+  .row.deferred .desc b::after{content:" (deferred)"; font-weight:400; color:var(--muted); font-size:11px; margin-left:6px;}
+  .inline-buttons{display:flex; gap:8px; flex-wrap:wrap;}
+  .inline-buttons .btn{flex:1; min-width:80px;}
+  .pending-badge{background:#fef3c7; color:#92400e; padding:2px 10px; border-radius:99px; font-size:12px; font-weight:600;}
+  .pending-list .pending-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 0; border-bottom:1px solid var(--border);
+  }
+  .pending-list .pending-row:last-child{border-bottom:none;}
+  .pending-list .confirm-btn{background:var(--paid); color:#fff; border:none; padding:4px 12px; border-radius:99px; font-size:12px;}
+  /* UPI Pay Now button style */
+  .btn-upi {
+    background: var(--green);
+    color: #fff;
+    border: none;
+    padding: 11px 22px;
+    border-radius: 999px;
+    font-size: 15px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 12px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(27,77,62,0.25);
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn-upi:active { background: var(--green-dark); transform: scale(0.97); }
+  .btn-upi svg { width: 18px; height: 18px; fill: currentColor; }
+  .btn-upi, .btn-upi:hover, .btn-upi:visited { text-decoration: none; color: #fff; }
+  /* styled confirm dialog */
+  .confirm-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex;
+    align-items:center; justify-content:center; z-index:9999; padding:24px; }
+  .confirm-box{ background:var(--surface); border-radius:16px; padding:20px; max-width:340px;
+    width:100%; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+  .confirm-msg{ font-size:15px; color:var(--ink); margin-bottom:18px; line-height:1.5; }
+  .confirm-btns{ display:flex; gap:10px; }
+  .confirm-btns .btn{ flex:1; }
+
+
+  /* Pending list improvements */
+  .pending-list .pending-row .info {
+    flex:1; min-width:0;
+  }
+  .pending-list .pending-row .info b { display:block; font-weight:600; }
+  .pending-list .pending-row .info small { font-size:12px; color:var(--muted); display:block; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <b>Contributions</b>
+    <span>New Serchhip North · Village Council</span>
+  </div>
+  <button class="mode-link" id="modeBtn">Council login</button>
+</header>
+
+<main>
+  <!-- ============ CITIZEN VIEW ============ -->
+  <section id="citizenView">
+    <div class="lookup" id="lookupCard">
+      <h1>Check your contribution balance</h1>
+      <div class="searchbar">
+        <svg class="search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input id="searchId" type="text" inputmode="text" placeholder="Enter your job card no" autocomplete="off" />
+        <button class="search-go" id="searchBtn" aria-label="Search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+        </button>
+      </div>
+    </div>
+    <div id="citizenResult"></div>
+    <div id="citizenList"></div>
+  </section>
+
+  <!-- ============ ADMIN VIEW ============ -->
+  <section id="adminView" class="hidden">
+    <div id="loginCard" class="login-card">
+      <h2>Council login</h2>
+      <div class="field">
+        <label>Email</label>
+        <input id="adminEmail" type="email" autocomplete="username" placeholder="you@council.in" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input id="adminPass" type="password" autocomplete="current-password" placeholder="••••••••" />
+      </div>
+      <div id="loginErr"></div>
+      <button class="btn block" id="loginBtn">Log in</button>
+    </div>
+
+    <div id="dashboard" class="hidden">
+      <div class="dash-head">
+        <span class="dash-title">Admin</span>
+        <button class="btn small ghost" id="logoutBtn">Log out</button>
+      </div>
+      <div class="stats" style="grid-template-columns:1fr">
+        <div class="stat" style="text-align:center;padding:18px 16px">
+          <div class="k">Still to collect</div>
+          <div class="v due" id="stOut" style="font-size:30px">₹0</div>
+          <div class="sub" id="stPendingCount" style="font-size:13px;color:var(--muted);margin-top:4px">—</div>
+        </div>
+      </div>
+      <div class="toolbar">
+        <input id="adminSearch" type="text" placeholder="Search job card no. or name" />
+        <button class="btn small" id="addCitizenBtn">+ Add</button>
+      </div>
+      <div class="action-grid" style="grid-template-columns:repeat(2,1fr)">
+        <button class="btn small ghost" id="impExpBtn">Import / Export</button>
+        <button class="btn small ghost" id="backupMenuBtn">Backup / Restore</button>
+      </div>
+      <div id="pendingContainer" class="hidden" style="margin-bottom:12px;">
+        <div class="panel" style="background:var(--surface);border:1px solid #f0d99a;">
+          <h4>Pending UPI payments <span id="pendingCount" class="pending-badge">0</span></h4>
+          <div id="pendingList" class="pending-list"></div>
+        </div>
+      </div>
+      <div class="seg" id="adminFilter" style="margin-bottom:12px">
+        <button data-f="pending" class="active">Pending</button>
+        <button data-f="paid">Paid</button>
+        <button data-f="deferred">Deferred</button>
+        <button data-f="all">All</button>
+      </div>
+      <div id="periodWrap" style="margin-bottom:12px">
+        <select id="periodSel" class="period-sel"><option value="">All pending (any period)</option></select>
+      </div>
+      <div class="clist" id="adminList"></div>
+    </div>
+  </section>
+</main>
+
+<div id="modalRoot"></div>
+<footer>New Serchhip North Village Council · v1.21.0</footer>
+
+<script type="module">
+/* ============================================================
+   FIREBASE CONFIG (paste your own)
+   ============================================================ */
+const firebaseConfig = {
+  apiKey: "AIzaSyARuyCACcu7-y0gYBFiDRnkEuIWTO_NJKA",
+  authDomain: "nsnvc-contribution.firebaseapp.com",
+  projectId: "nsnvc-contribution",
+  storageBucket: "nsnvc-contribution.firebasestorage.app",
+  messagingSenderId: "686034384332",
+  appId: "1:686034384332:web:06e629117b63ba615c5969"
+};
+
+/* ---------- helpers ---------- */
+const CURRENCY = "₹";  // force rupees
+const fmt = n => CURRENCY + (Number(n)||0).toLocaleString("en-IN");
+const $ = id => document.getElementById(id);
+const esc = s => String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function toast(msg){
+  const t=document.createElement("div"); t.className="toast"; t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(),2200);
+}
+function statusOf(c){
+  const bal = getEffectiveBalance(c);
+  if(bal<=0) return "paid";
+  if((c.totalPaid||0)>0) return "partial";
+  return "due";
+}
+function getEffectiveBalance(c){
+  const deferredTotal = (c.deferredTotal || 0);
+  const charged = (c.totalCharged || 0) - deferredTotal;
+  return charged - (c.totalPaid || 0);
+}
+const statusLabel = {paid:"Cleared", partial:"Partly paid", due:"Due"};
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function monthLabel(){ return new Date().toLocaleString("en-IN",{month:"long",year:"numeric"}); }
+function prettyPeriod(note){
+  const s=String(note||"").trim();
+  if(!/^[A-Z0-9 ]+$/.test(s)) return note;
+  const m=s.match(/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s*([0-9]*)$/);
+  if(!m) return note;
+  const M={JAN:"January",FEB:"February",MAR:"March",APR:"April",MAY:"May",JUN:"June",JUL:"July",AUG:"August",SEP:"September",OCT:"October",NOV:"November",DEC:"December"};
+  return M[m[1]] + (m[2]?" "+m[2]:"") + " 2026";
+}
+function entryLabel(e){
+  if(e.type==="payment"){
+    const note=e.note;
+    const isPeriod = note && prettyPeriod(note)!==note;
+    return (note && !isPeriod) ? `Payment (${note})` : "Payment";
+  }
+  if(e.type==="forgive") return "Forgiven";
+  return prettyPeriod(e.note) || "Contribution";
+}
+function suffixOf(s){ s=String(s||"").trim(); const i=s.lastIndexOf("/"); return (i>=0?s.slice(i+1):s).trim().toLowerCase(); }
+function fullKey(s){ return (String(s||"").trim().replace(/\//g,"%2F").replace(/^\.+$/,"_")) || "_"; }
+function seqNum(s){ const n=parseInt(String(s==null?"":s).replace(/[^0-9]/g,""),10); return isNaN(n)?Number.MAX_SAFE_INTEGER:n; }
+function byCardNo(a,b){ const d=seqNum(a.cardNo)-seqNum(b.cardNo); return d!==0?d:String(a.jobCard||a.id).localeCompare(String(b.jobCard||b.id)); }
+
+/* ============================================================
+   DATA LAYER with PERMANENT MIGRATION
+   ============================================================ */
+function makeLocalStore(){
+  const KEY="nsn_contrib_v1";
+  let data=null;
+  try{ const raw=localStorage.getItem(KEY); if(raw) data=JSON.parse(raw); }catch(e){}
+  if(!data) data=seedData();
+
+  // --- PERMANENT MIGRATION: add entryId and save ---
+  let migrated = false;
+  for(const [id, c] of Object.entries(data.citizens)){
+    if(c.ledger){
+      let needPersist = false;
+      for(let i=0; i<c.ledger.length; i++){
+        if(!c.ledger[i].entryId){
+          c.ledger[i].entryId = String(Date.now() + Math.random() * 10000) + '-' + i;
+          needPersist = true;
+        }
+      }
+      if(needPersist) migrated = true;
+    }
+  }
+  if(migrated) {
+    try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){}
+    console.log("Local migration complete: added entryId to all ledger entries.");
+  }
+  // --- end migration ---
+
+  let clock = Date.now();
+  const listeners=new Set();
+  const authCbs=new Set();
+  let loggedIn=false;
+  const persist=()=>{ try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){} };
+  const sortedList=()=>Object.entries(data.citizens)
+    .map(([id,c])=>({ id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name, phone:c.phone,
+                      totalCharged:c.totalCharged, totalPaid:c.totalPaid, balance:c.balance, deferredTotal:c.deferredTotal||0 }))
+    .sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+  const notify=()=>listeners.forEach(cb=>cb(sortedList()));
+  function recalcTotals(c){
+    let tc=0, tp=0, dt=0;
+    for(const e of (c.ledger||[])){
+      if(e.type==="charge"){
+        if(e.deferred) dt += e.amount;
+        else tc += e.amount;
+      } else if(e.type==="payment"){
+        tp += e.amount;
+      } else if(e.type==="forgive"){
+        tc -= e.amount;
+      }
+    }
+    c.totalCharged = tc + dt;
+    c.totalPaid = tp;
+    c.deferredTotal = dt;
+    c.balance = (tc + dt) - tp;
+    return c;
+  }
+  return {
+    isLocal:true,
+    async getCitizen(id){ const c=data.citizens[id]; return c? {...c, ledger:undefined} : null; },
+    async getLedger(id){ const c=data.citizens[id]; if(!c) return [];
+      return [...(c.ledger||[])].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)); },
+    async findByCard(typed){
+      const suf=suffixOf(typed), fk=fullKey(typed);
+      const out=[];
+      for(const [id,c] of Object.entries(data.citizens)){
+        if(id===fk || (c.cardNo||"")===suf) out.push({ id, c:{...c, ledger:undefined} });
+      }
+      return out;
+    },
+    subscribe(cb){ listeners.add(cb); cb(sortedList()); return ()=>listeners.delete(cb); },
+    async listOwing(){
+      const list=[]; 
+      for(const [id,c] of Object.entries(data.citizens)){
+        const effBal = getEffectiveBalance(c);
+        if(effBal > 0) list.push({ id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name,
+                          totalCharged:c.totalCharged, totalPaid:c.totalPaid, balance:effBal, deferredTotal:c.deferredTotal||0 });
+      }
+      return list;
+    },
+    async exists(id){ return !!data.citizens[id]; },
+    async addCitizen(id, d){ data.citizens[id]={...d, ledger:[], pendingPayments:[], createdAt:++clock, updatedAt:++clock}; persist(); notify(); },
+    async addEntry(id, type, amount, note, date, deferred=false){
+      const c=data.citizens[id]; if(!c) throw new Error("missing");
+      const entryId = String(++clock);
+      const entry = { entryId, type, amount, note, date, deferred: deferred || false, createdAt: clock };
+      if(!c.ledger) c.ledger=[];
+      c.ledger.push(entry);
+      recalcTotals(c);
+      c.updatedAt=++clock; persist(); notify();
+    },
+    async toggleDefer(id, entryId, deferred){
+      const c=data.citizens[id]; if(!c) return;
+      const idx = c.ledger.findIndex(e => e.entryId === entryId);
+      if(idx<0 || c.ledger[idx].type!=="charge") return;
+      c.ledger[idx].deferred = deferred;
+      c.ledger[idx].deferSource = deferred ? "manual" : null;
+      recalcTotals(c);
+      c.updatedAt=++clock; persist(); notify();
+    },
+    async forgiveDebt(id, amount, note){
+      const c=data.citizens[id]; if(!c) throw new Error("missing");
+      const entryId = String(++clock);
+      const entry = { entryId, type:"forgive", amount, note, date:todayISO(), deferred:false, createdAt:clock };
+      c.ledger.push(entry);
+      recalcTotals(c);
+      c.updatedAt=++clock; persist(); notify();
+    },
+    async addPendingPayment(id, amount){
+      const c=data.citizens[id]; if(!c) throw new Error("missing");
+      if(!c.pendingPayments) c.pendingPayments=[];
+      const pp = { id:String(++clock), amount, date:todayISO(), status:"pending", createdAt:clock };
+      c.pendingPayments.push(pp);
+      c.updatedAt=++clock; persist(); notify();
+      return pp;
+    },
+    async confirmPendingPayment(id, pendingId){
+      const c=data.citizens[id]; if(!c) return;
+      const idx = c.pendingPayments.findIndex(p=>p.id===pendingId);
+      if(idx<0) return;
+      const pp = c.pendingPayments[idx];
+      if(pp.status!=="pending") return;
+      const entryId = String(++clock);
+      const entry = { entryId, type:"payment", amount:pp.amount, note:"UPI", date:pp.date, deferred:false, createdAt:clock };
+      c.ledger.push(entry);
+      recalcTotals(c);
+      pp.status="confirmed";
+      c.updatedAt=++clock; persist(); notify();
+    },
+    async deleteEntry(id, entryId){
+      const c=data.citizens[id]; if(!c) return;
+      const idx = c.ledger.findIndex(e => e.entryId === entryId);
+      if(idx<0) return;
+      c.ledger.splice(idx,1);
+      recalcTotals(c);
+      c.updatedAt=++clock; persist(); notify();
+    },
+    async editEntry(id, entryId, updates){
+      const c=data.citizens[id]; if(!c) return;
+      const idx = c.ledger.findIndex(e => e.entryId === entryId);
+      if(idx<0) return;
+      const e = c.ledger[idx];
+      if(updates.amount!==undefined) e.amount=updates.amount;
+      if(updates.note!==undefined) e.note=updates.note;
+      if(updates.date!==undefined) e.date=updates.date;
+      recalcTotals(c);
+      c.updatedAt=++clock; persist(); notify();
+    },
+    async getPendingPayments(){
+      const all=[];
+      for(const [id,c] of Object.entries(data.citizens)){
+        for(const p of (c.pendingPayments||[])){
+          if(p.status==="pending") all.push({ citizenId:id, ...p, name:c.name, jobCard:c.jobCard });
+        }
+      }
+      return all;
+    },
+    async deleteCitizen(id){ delete data.citizens[id]; persist(); notify(); },
+    async bulkImport(rows, onProgress){
+      let n=0;
+      for(const r of rows){
+        data.citizens[r.id] = {
+          jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, phone:r.phone||"",
+          totalCharged:r.totalCharged, totalPaid:r.totalPaid, balance:r.balance, deferredTotal:0,
+          createdAt:++clock, updatedAt:++clock,
+          ledger:(r.ledger||[]).map(e=>({ entryId:e.entryId || String(++clock), type:e.type, amount:e.amount, note:e.note, date:e.date,
+                                          deferred:e.deferred||false, createdAt:e.when? e.when.getTime() : ++clock })),
+          pendingPayments:[]
+        };
+        recalcTotals(data.citizens[r.id]);
+        if((++n % 50)===0 && onProgress) onProgress(n, rows.length);
+      }
+      persist(); notify(); if(onProgress) onProgress(rows.length, rows.length);
+      return rows.length;
+    },
+    async bulkAppendCharges(items, onProgress){
+      let n=0;
+      for(const it of items){
+        let c=data.citizens[it.id];
+        if(!c){ c={ jobCard:it.jobCard, cardNo:it.cardNo, name:it.name, phone:"",
+                    totalCharged:0, totalPaid:0, balance:0, deferredTotal:0, createdAt:++clock, updatedAt:++clock, ledger:[], pendingPayments:[] };
+                data.citizens[it.id]=c; }
+        const isDeferred = it.deferred || false;
+        const entryId = String(++clock);
+        c.ledger.push({ entryId, type:"charge", amount:it.amount, note:it.note, date:"", deferred:isDeferred, deferSource:it.deferSource||null, createdAt:clock });
+        recalcTotals(c);
+        c.updatedAt=++clock;
+        if((++n % 50)===0 && onProgress) onProgress(n, items.length);
+      }
+      persist(); notify(); if(onProgress) onProgress(items.length, items.length);
+      return items.length;
+    },
+    async bulkAppendPayments(items, onProgress){
+      let n=0;
+      for(const it of items){
+        const c=data.citizens[it.id]; if(!c) continue;
+        const entryId = String(++clock);
+        c.ledger.push({ entryId, type:"payment", amount:it.amount, note:it.note, date:it.date||"", deferred:false, createdAt:clock });
+        recalcTotals(c);
+        c.updatedAt=++clock;
+        if((++n % 50)===0 && onProgress) onProgress(n, items.length);
+      }
+      persist(); notify(); if(onProgress) onProgress(items.length, items.length);
+      return items.length;
+    },
+    async signIn(){ loggedIn=true; authCbs.forEach(cb=>cb(true)); },
+    signOut(){ loggedIn=false; authCbs.forEach(cb=>cb(false)); },
+    onAuth(cb){ authCbs.add(cb); cb(loggedIn); },
+    async exportOwingCsv(){
+      const owing = await this.listOwing();
+      let csv = "Name,Job Card,Outstanding (₹),Payment History\n";
+      for(const c of owing){
+        const entries = await this.getLedger(c.id);
+        const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
+        csv += `"${esc(c.name)}","${esc(c.jobCard)}",${c.balance},"${esc(payments)}"\n`;
+      }
+      return csv;
+    },
+    async exportAll(){
+      const citizens = Object.entries(data.citizens).map(([id,c])=>({
+        id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name, phone:c.phone||"",
+        totalCharged:c.totalCharged||0, totalPaid:c.totalPaid||0, balance:c.balance||0, deferredTotal:c.deferredTotal||0,
+        ledger:(c.ledger||[]).map(e=>({ entryId:e.entryId, type:e.type, amount:e.amount, note:e.note,
+          date:e.date||"", deferred:e.deferred||false, createdAtMs: typeof e.createdAt==="number"? e.createdAt : null }))
+      }));
+      return { app:"nsnvc-contribution", version:1, exportedAt:new Date().toISOString(), count:citizens.length, citizens };
+    },
+    async importAll(backup, onProgress){
+      if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
+      let done=0;
+      for(const r of backup.citizens){
+        data.citizens[r.id]={ jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, phone:r.phone||"",
+          totalCharged:r.totalCharged||0, totalPaid:r.totalPaid||0, balance:r.balance||0, deferredTotal:r.deferredTotal||0,
+          createdAt:++clock, updatedAt:++clock, pendingPayments:[],
+          ledger:(r.ledger||[]).map(e=>({ entryId:e.entryId||String(++clock), type:e.type, amount:e.amount, note:e.note,
+            date:e.date||"", deferred:e.deferred||false, createdAt:(e.createdAtMs||++clock) })) };
+        recalcTotals(data.citizens[r.id]);
+        if((++done % 50)===0 && onProgress) onProgress(done, backup.citizens.length);
+      }
+      persist(); notify(); if(onProgress) onProgress(backup.citizens.length, backup.citizens.length);
+      return backup.citizens.length;
+    },
+    async getImportedPeriods(){ return (data.meta && data.meta.periods) ? data.meta.periods.slice() : []; },
+    async recordImportedPeriod(p){ if(!data.meta) data.meta={periods:[]}; if(!data.meta.periods) data.meta.periods=[];
+      if(!data.meta.periods.includes(p)) data.meta.periods.push(p); persist(); },
+    async getDeferredUploads(){ return (data.meta && data.meta.deferredUploads) ? data.meta.deferredUploads.slice() : []; },
+    async recordDeferredUpload(p){ if(!data.meta) data.meta={}; if(!data.meta.deferredUploads) data.meta.deferredUploads=[];
+      if(!data.meta.deferredUploads.includes(p)) data.meta.deferredUploads.push(p); persist(); },
+    async removeDeferredUpload(p){ if(data.meta && data.meta.deferredUploads) data.meta.deferredUploads=data.meta.deferredUploads.filter(x=>x!==p); persist(); },
+    async releaseUploadDeferred(period, onProgress){
+      const ids=Object.keys(data.citizens); let done=0, released=0;
+      for(const id of ids){ const c=data.citizens[id]; let changed=false;
+        for(const e of (c.ledger||[])){
+          if(e.type==="charge" && e.deferred===true && e.deferSource==="upload" && (!period || e.note===period)){
+            e.deferred=false; e.deferSource=null; changed=true; released++;
+          }
+        }
+        if(changed){ recalcTotals(c); c.updatedAt=++clock; }
+        if((++done%50)===0&&onProgress) onProgress(done, ids.length);
+      }
+      if(period) await this.removeDeferredUpload(period); else if(data.meta) data.meta.deferredUploads=[];
+      persist(); notify(); if(onProgress) onProgress(ids.length, ids.length); return released;
+    },
+    async recalcAll(onProgress){
+      const ids=Object.keys(data.citizens); let done=0;
+      for(const id of ids){ recalcTotals(data.citizens[id]); if((++done%50)===0&&onProgress) onProgress(done, ids.length); }
+      persist(); notify(); if(onProgress) onProgress(ids.length, ids.length); return ids.length;
+    },
+    async migrateEntries(){ return 0; } // no-op for local
+  };
+}
+
+function seedData(){
+  let t=1;
+  const k=()=>++t;
+  return { citizens:{
+    "MZ-07-001-005-001%2F3":{ jobCard:"MZ-07-001-005-001/3", cardNo:"3", name:"Lalrinmawia", phone:"",
+      totalCharged:1000, totalPaid:300, balance:700, deferredTotal:0, createdAt:k(), updatedAt:k(),
+      ledger:[
+        { entryId:String(k()), type:"charge",  amount:500, note:"April 2026", date:"2026-04-03", deferred:false, createdAt:k() },
+        { entryId:String(k()), type:"payment", amount:300, note:"cash",       date:"2026-04-12", deferred:false, createdAt:k() },
+        { entryId:String(k()), type:"charge",  amount:500, note:"MAY1",        date:"", deferred:false, createdAt:k() }
+      ], pendingPayments:[] },
+    "MZ-07-001-005-001%2F18":{ jobCard:"MZ-07-001-005-001/18", cardNo:"18", name:"Lalduhawmi", phone:"",
+      totalCharged:1000, totalPaid:800, balance:200, deferredTotal:0, createdAt:k(), updatedAt:k(),
+      ledger:[
+        { entryId:String(k()), type:"charge",  amount:500, note:"April 2026", date:"2026-04-03", deferred:false, createdAt:k() },
+        { entryId:String(k()), type:"payment", amount:800, note:"paid extra", date:"2026-04-10", deferred:false, createdAt:k() },
+        { entryId:String(k()), type:"charge",  amount:500, note:"MAY1",        date:"", deferred:false, createdAt:k() }
+      ], pendingPayments:[] },
+    "MZ-07-001-005-001%2F22":{ jobCard:"MZ-07-001-005-001/22", cardNo:"22", name:"Vanlalruata", phone:"",
+      totalCharged:500, totalPaid:500, balance:0, deferredTotal:0, createdAt:k(), updatedAt:k(),
+      ledger:[
+        { entryId:String(k()), type:"charge",  amount:500, note:"April 2026", date:"2026-04-03", deferred:false, createdAt:k() },
+        { entryId:String(k()), type:"payment", amount:500, note:"cash",       date:"2026-04-08", deferred:false, createdAt:k() }
+      ], pendingPayments:[] }
+  }};
+}
+
+async function loadFirebase(cfg){
+  const appMod  = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+  const authMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+  const fsMod   = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+  const app  = appMod.initializeApp(cfg);
+  const auth = authMod.getAuth(app);
+  const db   = fsMod.getFirestore(app);
+  return { auth, db, fs:fsMod, au:authMod };
+}
+
+function makeFirebaseStore({ auth, db, fs, au }){
+  async function migrateEntries(){
+    const citizensSnap = await fs.getDocs(fs.collection(db,"citizens"));
+    let updated = 0;
+    for(const doc of citizensSnap.docs){
+      const citizenId = doc.id;
+      const ledgerSnap = await fs.getDocs(fs.collection(db,"citizens",citizenId,"ledger"));
+      let batch = fs.writeBatch(db);
+      let batchCount = 0;
+      for(const entryDoc of ledgerSnap.docs){
+        const data = entryDoc.data();
+        if(!data.entryId){
+          batch.update(entryDoc.ref, { entryId: entryDoc.id });
+          batchCount++;
+          updated++;
+        }
+        if(batchCount >= 400){
+          await batch.commit();
+          batch = fs.writeBatch(db);
+          batchCount = 0;
+        }
+      }
+      if(batchCount > 0){
+        await batch.commit();
+      }
+    }
+    return updated;
+  }
+
+  return {
+    isLocal:false,
+    migrateEntries,
+    async getCitizen(id){ const s=await fs.getDoc(fs.doc(db,"citizens",id)); return s.exists()? s.data() : null; },
+    async getLedger(id){
+      const q=fs.query(fs.collection(db,"citizens",id,"ledger"), fs.orderBy("createdAt","asc"));
+      const snap = await fs.getDocs(q);
+      return snap.docs.map(d=> {
+        const data = d.data();
+        if(!data.entryId) data.entryId = d.id;
+        return data;
+      });
+    },
+    async findByCard(typed){
+      const suf=suffixOf(typed), fk=fullKey(typed);
+      const out=[]; const seen=new Set();
+      const byNo=await fs.getDocs(fs.query(fs.collection(db,"citizens"), fs.where("cardNo","==",suf)));
+      byNo.forEach(d=>{ if(!seen.has(d.id)){ seen.add(d.id); out.push({ id:d.id, c:d.data() }); } });
+      if(!seen.has(fk)){
+        const direct=await fs.getDoc(fs.doc(db,"citizens",fk));
+        if(direct.exists()){ out.push({ id:fk, c:direct.data() }); }
+      }
+      return out;
+    },
+    subscribe(cb){
+      const q=fs.query(fs.collection(db,"citizens"), fs.orderBy("name"));
+      return fs.onSnapshot(q, snap=> cb(snap.docs.map(d=>({ id:d.id, ...d.data() }))));
+    },
+    async listOwing(){
+      const snap=await fs.getDocs(fs.collection(db,"citizens"));
+      const out=[];
+      for(const d of snap.docs){
+        const c=d.data();
+        const effBal = c.balance - (c.deferredTotal||0);
+        if(effBal>0) out.push({ id:d.id, ...c, balance:effBal });
+      }
+      return out;
+    },
+    async exists(id){ return (await fs.getDoc(fs.doc(db,"citizens",id))).exists(); },
+    async addCitizen(id, d){
+      await fs.setDoc(fs.doc(db,"citizens",id), {...d, createdAt:fs.serverTimestamp(), updatedAt:fs.serverTimestamp()});
+    },
+    async addEntry(id, type, amount, note, date, deferred=false){
+      const eRef=fs.doc(fs.collection(db,"citizens",id,"ledger"));
+      await fs.setDoc(eRef, { entryId:eRef.id, type, amount, note, date, deferred, createdAt:fs.serverTimestamp() });
+      const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
+      let tc=0, tp=0, dt=0;
+      ledSnap.docs.forEach(doc=>{
+        const e=doc.data();
+        if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
+        else if(e.type==="payment") tp+=e.amount;
+        else if(e.type==="forgive") tc-=e.amount;
+      });
+      await fs.updateDoc(fs.doc(db,"citizens",id),{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt) - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+    },
+    async toggleDefer(id, entryId, deferred){
+      const ref = fs.doc(db, "citizens", id, "ledger", entryId);
+      await fs.updateDoc(ref, { deferred, deferSource: deferred?"manual":null });
+      const cRef=fs.doc(db,"citizens",id);
+      const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
+      let tc=0, tp=0, dt=0;
+      ledSnap.docs.forEach(doc=>{
+        const e=doc.data();
+        if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
+        else if(e.type==="payment") tp+=e.amount;
+        else if(e.type==="forgive") tc-=e.amount;
+      });
+      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt) - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+    },
+    async forgiveDebt(id, amount, note){
+      await this.addEntry(id, "forgive", amount, note, todayISO());
+    },
+    async addPendingPayment(id, amount){
+      const ppRef=fs.collection(db,"citizens",id,"pendingPayments");
+      const newRef=fs.doc(ppRef);
+      await fs.setDoc(newRef, { id:newRef.id, amount, date:todayISO(), status:"pending", createdAt:fs.serverTimestamp() });
+      return { id:newRef.id, amount, status:"pending" };
+    },
+    async confirmPendingPayment(id, pendingId){
+      const ppRef=fs.doc(db,"citizens",id,"pendingPayments",pendingId);
+      const snap=await fs.getDoc(ppRef);
+      if(!snap.exists()) return;
+      const pp=snap.data();
+      if(pp.status!=="pending") return;
+      await fs.updateDoc(ppRef,{ status:"confirmed" });
+      await this.addEntry(id, "payment", pp.amount, "UPI", pp.date);
+    },
+    async getPendingPayments(){
+      const snap=await fs.getDocs(fs.collection(db,"citizens"));
+      const all=[];
+      for(const d of snap.docs){
+        const id=d.id;
+        const c=d.data();
+        const ppSnap=await fs.getDocs(fs.collection(db,"citizens",id,"pendingPayments"));
+        ppSnap.docs.forEach(doc=>{
+          const p=doc.data();
+          if(p.status==="pending") all.push({ citizenId:id, id:doc.id, ...p, name:c.name, jobCard:c.jobCard });
+        });
+      }
+      return all;
+    },
+    async deleteEntry(id, entryId){
+      await fs.deleteDoc(fs.doc(db,"citizens",id,"ledger",entryId));
+      const cRef=fs.doc(db,"citizens",id);
+      const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
+      let tc=0, tp=0, dt=0;
+      ledSnap.docs.forEach(doc=>{
+        const e=doc.data();
+        if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
+        else if(e.type==="payment") tp+=e.amount;
+        else if(e.type==="forgive") tc-=e.amount;
+      });
+      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt) - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+    },
+    async editEntry(id, entryId, updates){
+      const ref=fs.doc(db,"citizens",id,"ledger",entryId);
+      await fs.updateDoc(ref, updates);
+      const cRef=fs.doc(db,"citizens",id);
+      const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
+      let tc=0, tp=0, dt=0;
+      ledSnap.docs.forEach(doc=>{
+        const e=doc.data();
+        if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
+        else if(e.type==="payment") tp+=e.amount;
+        else if(e.type==="forgive") tc-=e.amount;
+      });
+      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt) - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+    },
+    async deleteCitizen(id){
+      const led=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
+      await Promise.all(led.docs.map(d=>fs.deleteDoc(d.ref)));
+      const pp=await fs.getDocs(fs.collection(db,"citizens",id,"pendingPayments"));
+      await Promise.all(pp.docs.map(d=>fs.deleteDoc(d.ref)));
+      await fs.deleteDoc(fs.doc(db,"citizens",id));
+    },
+    async bulkImport(rows, onProgress){
+      let batch=fs.writeBatch(db), ops=0, done=0;
+      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
+      for(const r of rows){
+        const cRef=fs.doc(db,"citizens",r.id);
+        batch.set(cRef,{ jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, phone:r.phone||"",
+          totalCharged:r.totalCharged||0, totalPaid:r.totalPaid||0, balance:r.balance||0, deferredTotal:0,
+          createdAt:fs.serverTimestamp(), updatedAt:fs.serverTimestamp() }); ops++;
+        for(const e of (r.ledger||[])){
+          const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));
+          batch.set(eRef,{ entryId:eRef.id, type:e.type, amount:e.amount, note:e.note, date:e.date||"",
+            deferred:e.deferred||false, createdAt: e.when? fs.Timestamp.fromDate(e.when) : fs.serverTimestamp() }); ops++;
+          if(ops>=400) await flush();
+        }
+        if(ops>=400) await flush();
+        if((++done % 50)===0 && onProgress) onProgress(done, rows.length);
+      }
+      await flush(); if(onProgress) onProgress(rows.length, rows.length);
+      return rows.length;
+    },
+    async bulkAppendCharges(items, onProgress){
+      let batch=fs.writeBatch(db), ops=0, done=0;
+      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
+      for(const it of items){
+        const cRef=fs.doc(db,"citizens",it.id);
+        const eRef=fs.doc(fs.collection(db,"citizens",it.id,"ledger"));
+        const def = it.deferred||false;
+        batch.set(eRef,{ entryId:eRef.id, type:"charge", amount:it.amount, note:it.note, date:"", deferred:def, deferSource:it.deferSource||null, createdAt:fs.serverTimestamp() });
+        batch.set(cRef,{ jobCard:it.jobCard, cardNo:it.cardNo, name:it.name,
+          totalCharged:fs.increment(it.amount), balance:fs.increment(it.amount),
+          deferredTotal:fs.increment(def?it.amount:0), updatedAt:fs.serverTimestamp() }, {merge:true});
+        if(++ops>=400) await flush();
+        if((++done % 50)===0 && onProgress) onProgress(done, items.length);
+      }
+      await flush();
+      if(onProgress) onProgress(items.length, items.length);
+      return items.length;
+    },
+    async bulkAppendPayments(items, onProgress){
+      let batch=fs.writeBatch(db), ops=0, done=0;
+      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
+      for(const it of items){
+        const cRef=fs.doc(db,"citizens",it.id);
+        const eRef=fs.doc(fs.collection(db,"citizens",it.id,"ledger"));
+        batch.set(eRef,{ entryId:eRef.id, type:"payment", amount:it.amount, note:it.note||"Bank", date:it.date||"", deferred:false, createdAt:fs.serverTimestamp() });
+        batch.set(cRef,{ totalPaid:fs.increment(it.amount), balance:fs.increment(-it.amount), updatedAt:fs.serverTimestamp() }, {merge:true});
+        if(++ops>=400) await flush();
+        if((++done % 50)===0 && onProgress) onProgress(done, items.length);
+      }
+      await flush();
+      if(onProgress) onProgress(items.length, items.length);
+      return items.length;
+    },
+    async signIn(email, pass){ await au.signInWithEmailAndPassword(auth, email, pass); },
+    signOut(){ au.signOut(auth); },
+    onAuth(cb){ au.onAuthStateChanged(auth, u=>cb(!!u)); },
+    async exportOwingCsv(){
+      const owing = await this.listOwing();
+      let csv = "Name,Job Card,Outstanding (₹),Payment History\n";
+      for(const c of owing){
+        const entries = await this.getLedger(c.id);
+        const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
+        csv += `"${esc(c.name)}","${esc(c.jobCard)}",${c.balance},"${esc(payments)}"\n`;
+      }
+      return csv;
+    },
+    async exportAll(onProgress){
+      if(onProgress) onProgress(0, 2);
+      const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
+      const byId={};
+      cSnap.docs.forEach(d=>{ const c=d.data(); byId[d.id]={ id:d.id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name, phone:c.phone||"",
+        totalCharged:c.totalCharged||0, totalPaid:c.totalPaid||0, balance:c.balance||0, deferredTotal:c.deferredTotal||0, ledger:[] }; });
+      if(onProgress) onProgress(1, 2);
+      const ledSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
+      ledSnap.docs.forEach(x=>{
+        const pid = x.ref.parent.parent && x.ref.parent.parent.id;
+        if(pid && byId[pid]){ const e=x.data(); byId[pid].ledger.push({ entryId:e.entryId||x.id, type:e.type, amount:e.amount, note:e.note,
+          date:e.date||"", deferred:e.deferred||false, createdAtMs:(e.createdAt&&e.createdAt.toMillis)?e.createdAt.toMillis():null }); }
+      });
+      const citizens=Object.values(byId);
+      citizens.forEach(c=> c.ledger.sort((a,b)=>(a.createdAtMs||0)-(b.createdAtMs||0)));
+      if(onProgress) onProgress(2, 2);
+      return { app:"nsnvc-contribution", version:1, exportedAt:new Date().toISOString(), count:citizens.length, citizens };
+    },
+    async importAll(backup, onProgress){
+      if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
+      if(onProgress) onProgress(0, 3);
+      const ledSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
+      let batch=fs.writeBatch(db), ops=0;
+      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
+      for(const d of ledSnap.docs){
+        batch.delete(d.ref);
+        if(++ops>=400) await flush();
+      }
+      await flush();
+      if(onProgress) onProgress(1, 3);
+      batch=fs.writeBatch(db); ops=0; let done=0;
+      for(const r of backup.citizens){
+        const cRef=fs.doc(db,"citizens",r.id);
+        batch.set(cRef,{ jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, phone:r.phone||"",
+          totalCharged:r.totalCharged||0, totalPaid:r.totalPaid||0, balance:r.balance||0, deferredTotal:r.deferredTotal||0,
+          updatedAt:fs.serverTimestamp() }); if(++ops>=400) await flush();
+        for(const e of (r.ledger||[])){
+          const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));
+          batch.set(eRef,{ entryId:e.entryId||eRef.id, type:e.type, amount:e.amount, note:e.note, date:e.date||"", deferred:e.deferred||false,
+            createdAt: e.createdAtMs? fs.Timestamp.fromMillis(e.createdAtMs) : fs.serverTimestamp() }); if(++ops>=400) await flush();
+        }
+        if((++done % 50)===0 && onProgress) onProgress(2, 3);
+      }
+      await flush();
+      if(onProgress) onProgress(3, 3);
+      return backup.citizens.length;
+    },
+    async getImportedPeriods(){ const s=await fs.getDoc(fs.doc(db,"meta","imports")); return s.exists()? (s.data().periods||[]) : []; },
+    async recordImportedPeriod(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { periods:fs.arrayUnion(p) }, {merge:true}); },
+    async getDeferredUploads(){ const s=await fs.getDoc(fs.doc(db,"meta","imports")); return s.exists()?(s.data().deferredUploads||[]):[]; },
+    async recordDeferredUpload(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { deferredUploads:fs.arrayUnion(p) }, {merge:true}); },
+    async removeDeferredUpload(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { deferredUploads:fs.arrayRemove(p) }, {merge:true}); },
+    async releaseUploadDeferred(period, onProgress){
+      let batch=fs.writeBatch(db), ops=0, released=0;
+      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
+      const q=fs.query(fs.collectionGroup(db,"ledger"),
+        fs.where("type","==","charge"),
+        fs.where("deferred","==",true),
+        fs.where("deferSource","==","upload"));
+      const ledSnap=await fs.getDocs(q);
+      const byCitizen={};
+      ledSnap.docs.forEach(d=>{
+        const pid=d.ref.parent.parent.id;
+        const e=d.data();
+        if(!period || e.note===period){
+          if(!byCitizen[pid]) byCitizen[pid]={ entries:[], ref:fs.doc(db,"citizens",pid) };
+          byCitizen[pid].entries.push({ ref:d.ref, e });
+        }
+      });
+      const citizenIds=Object.keys(byCitizen);
+      for(const id of citizenIds){
+        const {entries,ref}=byCitizen[id];
+        for(const {ref:eRef,e} of entries){
+          batch.update(eRef,{ deferred:false, deferSource:null }); ops++; released++;
+          if(ops>=400) await flush();
+        }
+        const cSnap=await fs.getDoc(ref);
+        if(cSnap.exists()){
+          const c=cSnap.data();
+          let tc=0,tp=0,dt=0;
+          for(const {e} of entries){ if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
+            else if(e.type==="payment") tp+=e.amount; else if(e.type==="forgive") tc-=e.amount; }
+          batch.update(ref,{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt)-tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() }); ops++;
+          if(ops>=400) await flush();
+        }
+      }
+      await flush();
+      if(period) await this.removeDeferredUpload(period); else await fs.setDoc(fs.doc(db,"meta","imports"),{ deferredUploads:[] },{merge:true});
+      if(onProgress) onProgress(citizenIds.length, citizenIds.length);
+      return released;
+    },
+    async recalcAll(onProgress){
+      let batch=fs.writeBatch(db), ops=0, done=0;
+      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
+      const ledSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
+      const byCitizen={};
+      ledSnap.docs.forEach(d=>{
+        const pid=d.ref.parent.parent.id;
+        if(!byCitizen[pid]) byCitizen[pid]={ entries:[] };
+        byCitizen[pid].entries.push(d.data());
+      });
+      const citizenIds=Object.keys(byCitizen);
+      for(const id of citizenIds){
+        let tc=0,tp=0,dt=0;
+        const entries=byCitizen[id].entries;
+        for(const e of entries){
+          if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
+          else if(e.type==="payment") tp+=e.amount;
+          else if(e.type==="forgive") tc-=e.amount;
+        }
+        batch.update(fs.doc(db,"citizens",id),{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt)-tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() }); ops++;
+        if(ops>=400) await flush();
+        if((++done%50)===0&&onProgress) onProgress(done, citizenIds.length);
+      }
+      await flush();
+      if(onProgress) onProgress(citizenIds.length, citizenIds.length);
+      return citizenIds.length;
+    }
+  };
+}
+
+/* ---------- choose backend ---------- */
+let citizensUnsub=null, allCitizens=[], loggedIn=false, store=null, isLocalMode=false, lastResult=null, matches=[];
+
+const notConfigured = Object.values(firebaseConfig).some(v => v === "PASTE_HERE");
+if(notConfigured){
+  isLocalMode=true; store=makeLocalStore();
+  showModeBanner("Test mode — running on this device with sample data. Add citizens, contributions and payments to try it out; everything is saved in this browser only. Paste your Firebase config into the file to go live.");
+} else {
+  try{
+    store=makeFirebaseStore(await loadFirebase(firebaseConfig));
+  }catch(err){
+    console.error(err);
+    isLocalMode=true; store=makeLocalStore();
+    showModeBanner("Couldn't reach the database, so the app is running in local test mode. Check your connection or Firebase settings.");
+  }
+}
+if(isLocalMode) addTestLoginHint();
+store.onAuth(onAuth);
+
+function showModeBanner(msg){
+  document.querySelector("main").insertAdjacentHTML("afterbegin", `<div class="config-warn">${msg}</div>`);
+}
+function addTestLoginHint(){
+  const btn=document.getElementById("loginBtn");
+  if(!btn || document.getElementById("testHint")) return;
+  btn.insertAdjacentHTML("afterend",
+    `<p id="testHint" style="font-size:12px;color:var(--muted);text-align:center;margin:12px 0 0">Test mode — any email and password will log you in.</p>`);
+}
+
+/* ============================================================
+   CITIZEN LOOKUP
+   ============================================================ */
+$("searchBtn").addEventListener("click", doSearch);
+$("searchId").addEventListener("keydown", e => { if(e.key==="Enter") doSearch(); });
+
+function personCardHTML(id, c){
+  const owe = Math.max(0, getEffectiveBalance(c));
+  return `<button class="result-card" data-id="${esc(id)}">
+    <span class="info">
+      <b>${esc(c.jobCard||id)}</b>
+      <small>${esc(c.name||"—")}</small>
+    </span>
+    <span class="card-amt money ${owe>0?"owe":"clear"}">${fmt(owe)}</span>
+  </button>`;
+}
+
+async function doSearch(){
+  const typed = $("searchId").value.trim();
+  const out = $("citizenResult");
+  if(!typed){ showList(); return; }
+  $("citizenList").classList.add("hidden");
+  out.innerHTML=`<div class="notice info">Looking up…</div>`;
+  try{
+    matches = await store.findByCard(typed);
+    if(!matches.length){
+      out.innerHTML=`<button class="back" id="toListBtn">‹ Back to list</button>
+        <div class="notice err">No record found for <b>${esc(typed)}</b>. Please check the number or contact the council office.</div>`;
+      $("toListBtn").addEventListener("click", ()=>{ $("searchId").value=""; showList(); });
+      return;
+    }
+    renderResults();
+  }catch(err){
+    out.innerHTML=`<div class="notice err">Couldn't load the record. Check your connection and try again.</div>`;
+    console.error(err);
+  }
+}
+
+function renderResults(){
+  $("lookupCard").classList.remove("hidden");
+  $("citizenList").classList.add("hidden");
+  const multi = matches.length>1;
+  const cards = matches.map(m=>personCardHTML(m.id, m.c)).join("");
+  $("citizenResult").innerHTML =
+    `<button class="back" id="toListBtn">‹ Back to list</button>` +
+    (multi ? `<div class="notice info">More than one person uses this number — tap your name.</div>` : ``) +
+    cards;
+  $("toListBtn").addEventListener("click", ()=>{ $("searchId").value=""; showList(); });
+  document.querySelectorAll("#citizenResult .result-card").forEach(b=>
+    b.addEventListener("click", ()=>openMatch(b.dataset.id, false)));
+}
+
+async function openMatch(id, fromList){
+  backTarget = fromList ? "list" : "results";
+  const c = (matches.find(x=>x.id===id)||{}).c || pubAll.find(x=>x.id===id) || await store.getCitizen(id);
+  if(!c) return;
+  $("lookupCard").classList.add("hidden");
+  $("citizenList").classList.add("hidden");
+  $("citizenResult").innerHTML = `<div class="notice info">Loading…</div>`;
+  const entries = await store.getLedger(id);
+  lastResult = { id, c, entries };
+  renderStatement();
+}
+
+function goBack(){
+  $("lookupCard").classList.remove("hidden");
+  if(backTarget==="results"){ renderResults(); }
+  else { $("citizenResult").innerHTML=""; $("citizenList").classList.remove("hidden"); }
+}
+
+/* ---------- public list ---------- */
+let pubAll=[], pubShown=10, backTarget="list";
+const PUB_STEP=10;
+
+function showList(){
+  backTarget="list";
+  $("lookupCard").classList.remove("hidden");
+  $("citizenResult").innerHTML="";
+  $("citizenList").classList.remove("hidden");
+  loadOwing();
+}
+async function loadOwing(){
+  $("citizenList").innerHTML=`<div class="empty">Loading…</div>`;
+  try{
+    pubAll = await store.listOwing();
+    pubAll.sort(byCardNo);
+    pubShown=PUB_STEP;
+    renderPubList();
+  }catch(err){ console.error(err); $("citizenList").innerHTML=`<div class="notice err">Couldn't load the list.</div>`; }
+}
+function renderPubList(){
+  const total=pubAll.length;
+  if(!total){
+    $("citizenList").innerHTML=`<div class="list-head">Pending payments</div>
+      <div class="empty">Everyone is fully paid. Nothing pending.</div>`;
+    return;
+  }
+  const shown=Math.min(pubShown, total);
+  const cards=pubAll.slice(0, shown).map(c=>personCardHTML(c.id, c)).join("");
+  $("citizenList").innerHTML =
+    `<div class="list-head">Pending payments (${total})</div>` + cards +
+    (shown<total ? `<button class="btn block ghost small" id="seeMore" style="margin-top:12px">Show next ${Math.min(PUB_STEP, total-shown)}</button>` : ``);
+  document.querySelectorAll("#citizenList .result-card").forEach(b=>
+    b.addEventListener("click", ()=>openMatch(b.dataset.id, true)));
+  if($("seeMore")) $("seeMore").addEventListener("click", ()=>{ pubShown+=PUB_STEP; renderPubList(); });
+}
+
+// Step 2: the payable detail, with UPI Pay Now button
+function renderStatement(){
+  const { id, c, entries } = lastResult;
+  const bal = getEffectiveBalance(c);
+  const toPay = Math.max(0, bal);
+  const st = statusOf(c);
+
+  const chrono = [...entries].sort((a,b)=>a.createdAt-b.createdAt);
+  let rows = chrono.length ? chrono.map((e, idx)=>{
+    const isPayment = e.type==="payment";
+    const isForgive = e.type==="forgive";
+    const isDeferred = e.deferred && e.type==="charge";
+    let label = entryLabel(e);
+    let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
+    let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
+    let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "");
+    return `<div class="${rowClass}">
+      <div class="desc"><b>${esc(label)}</b><small>${esc(e.date||"")}</small></div>
+      <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
+    </div>`;
+  }).join("") : `<div class="empty">No entries yet.</div>`;
+
+  let upiButton = '';
+  if(toPay > 0){
+    const upiUrl = `upi://pay?pa=9599898884@upi&pn=Council&am=${toPay.toFixed(2)}&cu=INR`;
+    upiButton = `
+      <a class="btn-upi" href="${upiUrl}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="white"><path d="M6 4h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2zm0 1.5A.5.5 0 005.5 6v12a.5.5 0 00.5.5h12a.5.5 0 00.5-.5V6a.5.5 0 00-.5-.5H6zm6 1.5a.5.5 0 010 1h-2v4h2a.5.5 0 010 1h-2v2.5a.5.5 0 01-1 0V12a.5.5 0 010-1h2V7h-2a.5.5 0 010-1h2zm4 0a.5.5 0 010 1h-2v4h2a.5.5 0 010 1h-2v2.5a.5.5 0 01-1 0V12a.5.5 0 010-1h2V7h-2a.5.5 0 010-1h2z"/></svg>
+        Pay Now (UPI)
+      </a>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;">📲 After paying, send a screenshot to the Council on WhatsApp</div>
+    `;
+  }
+
+  $("citizenResult").innerHTML = `
+  <button class="back" id="backBtn">‹ Back</button>
+  <div class="statement">
+    <div class="top">
+      <div>
+        <p class="name">${esc(c.name||"—")}</p>
+        <div class="meta">${esc(c.jobCard||id)}</div>
+      </div>
+      <span class="badge ${st}">${statusLabel[st]}</span>
+    </div>
+    <div class="balance-block">
+      <div class="label">Total to pay now</div>
+      <div class="amount money ${toPay<=0?"zero":"owing"}">${fmt(toPay)}</div>
+      ${toPay<=0 ? `<div class="meta">You're all paid up. Thank you.</div>` : upiButton}
+    </div>
+    <div class="ledger">
+      <button class="hist-toggle" id="histToggle">Show history (${chrono.length}) ▾</button>
+      <div id="histBody" class="hidden">${rows}</div>
+    </div>
+  </div>`;
+  $("backBtn").addEventListener("click", goBack);
+  $("histToggle").addEventListener("click", ()=>{
+    const body=$("histBody"); const open=!body.classList.contains("hidden");
+    body.classList.toggle("hidden", open);
+    $("histToggle").textContent = open ? `Show history (${chrono.length}) ▾` : `Hide history ▴`;
+  });
+}
+
+/* ============================================================
+   MODE TOGGLE & ADMIN AUTH
+   ============================================================ */
+$("modeBtn").addEventListener("click", ()=>{
+  const adminHidden = $("adminView").classList.contains("hidden");
+  $("adminView").classList.toggle("hidden", !adminHidden);
+  $("citizenView").classList.toggle("hidden", adminHidden);
+  if(!adminHidden){ $("searchId").value=""; showList(); }
+  updateModeBtn();
+});
+function updateModeBtn(){
+  const adminShown = !$("adminView").classList.contains("hidden");
+  $("modeBtn").textContent = adminShown ? "Citizen view" : (loggedIn ? "Admin" : "Council login");
+}
+
+$("loginBtn").addEventListener("click", login);
+$("adminPass").addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
+$("logoutBtn").addEventListener("click", ()=>{ store.signOut(); });
+
+async function login(){
+  const email=$("adminEmail").value.trim(), pass=$("adminPass").value;
+  $("loginErr").innerHTML="";
+  try{ await store.signIn(email, pass); }
+  catch(err){
+    $("loginErr").innerHTML=`<div class="notice err">Login failed. Check email and password.</div>`;
+    console.error(err);
+  }
+}
+
+function onAuth(isIn){
+  loggedIn = isIn;
+  if(isIn){
+    $("loginCard").classList.add("hidden");
+    $("dashboard").classList.remove("hidden");
+    subscribeCitizens();
+    refreshPending();
+  } else {
+    $("loginCard").classList.remove("hidden");
+    $("dashboard").classList.add("hidden");
+    if(citizensUnsub){ citizensUnsub(); citizensUnsub=null; }
+  }
+  updateModeBtn();
+}
+
+/* ============================================================
+   ADMIN — live citizen list + stats
+   ============================================================ */
+function subscribeCitizens(){
+  if(citizensUnsub) return;
+  citizensUnsub = store.subscribe(list=>{
+    allCitizens = list;
+    renderStats(); renderList(); refreshPending();
+  });
+}
+function renderStats(){
+  const pending = allCitizens.filter(c=>getEffectiveBalance(c)>0);
+  const out = pending.reduce((s,c)=>s+Math.max(0,getEffectiveBalance(c)),0);
+  $("stOut").textContent = fmt(out);
+  $("stPendingCount").textContent = `${pending.length} household${pending.length===1?"":"s"} pending`;
+}
+let adminFilter="pending", adminShown=20;
+const ADMIN_STEP=20;
+let periodFilter="", unpaidCache=new Map(), periodsReady=false, loadingPeriods=false;
+
+function periodKey(note){
+  const s=String(note||"").trim().toUpperCase();
+  const m=s.match(/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s*([0-9]*)$/);
+  if(!m) return 9999;
+  const idx={JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12}[m[1]];
+  return idx*10 + (m[2]?parseInt(m[2],10):0);
+}
+function unpaidPeriods(entries){
+  const chrono=[...entries].sort((a,b)=>a.createdAt-b.createdAt);
+  let pay=0; for(const e of chrono) if(e.type==="payment") pay+=(e.amount||0);
+  const owed=[];
+  for(const e of chrono){
+    if(e.type!=="charge" || e.deferred) continue;
+    if(pay>=(e.amount||0)){ pay-=(e.amount||0); }
+    else { if(e.note) owed.push(e.note); pay=0; }
+  }
+  return owed;
+}
+async function loadPendingPeriods(){
+  if(loadingPeriods) return; loadingPeriods=true;
+  const pend=allCitizens.filter(c=>getEffectiveBalance(c)>0);
+  const cache=new Map(), set=new Set();
+  for(const c of pend){
+    try{ const led=await store.getLedger(c.id); const up=unpaidPeriods(led);
+      cache.set(c.id, up); up.forEach(p=>set.add(p)); }catch(e){}
+  }
+  unpaidCache=cache; periodsReady=true; loadingPeriods=false;
+  const sel=$("periodSel");
+  if(sel){
+    const periods=[...set].sort((a,b)=>periodKey(a)-periodKey(b));
+    sel.innerHTML=`<option value="">All pending (any period)</option>`+
+      periods.map(p=>`<option value="${esc(p)}"${p===periodFilter?" selected":""}>Pending: ${esc(prettyPeriod(p))}</option>`).join("");
+  }
+  renderList();
+}
+
+$("adminSearch").addEventListener("input", ()=>{ adminShown=20; renderList(); });
+document.querySelectorAll("#adminFilter button").forEach(b=>
+  b.addEventListener("click", ()=>{
+    adminFilter=b.dataset.f; adminShown=20;
+    if(adminFilter!=="pending") periodFilter="";
+    document.querySelectorAll("#adminFilter button").forEach(x=>x.classList.toggle("active", x===b));
+    renderList();
+  }));
+$("periodSel").addEventListener("change", ()=>{ periodFilter=$("periodSel").value; adminShown=20; renderList(); });
+$("periodSel").addEventListener("focus", ()=>{ if(!periodsReady && !loadingPeriods) loadPendingPeriods(); });
+
+function renderList(){
+  const term = $("adminSearch").value.trim().toLowerCase();
+  const showPeriod = (adminFilter==="pending" && !term);
+  $("periodWrap").classList.toggle("hidden", !showPeriod);
+
+  let list = allCitizens.slice();
+  if(term){
+    list = list.filter(c => (c.jobCard||c.id).toLowerCase().includes(term) || (c.name||"").toLowerCase().includes(term));
+  } else if(adminFilter==="pending"){
+    list = list.filter(c => getEffectiveBalance(c)>0);
+    if(periodFilter){
+      if(!periodsReady && !loadingPeriods) loadPendingPeriods();
+      list = list.filter(c => (unpaidCache.get(c.id)||[]).includes(periodFilter));
+    }
+  } else if(adminFilter==="paid"){
+    list = list.filter(c => getEffectiveBalance(c)<=0 && (c.deferredTotal||0)<=0);
+  } else if(adminFilter==="deferred"){
+    list = list.filter(c => (c.deferredTotal||0)>0);
+  }
+  list.sort(byCardNo);
+  const total=list.length;
+  if(!total){ $("adminList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet. Tap + Add to begin."}</div>`; return; }
+  const shown=Math.min(adminShown, total);
+  const cards = list.slice(0, shown).map(c=>{
+    const bal=getEffectiveBalance(c); const st=statusOf(c);
+    return `<button class="citizen-row" data-id="${esc(c.id)}">
+      <span class="dot ${st}"></span>
+      <span class="info">
+        <b>${esc(c.name||"—")}</b>
+        <small>${esc(c.jobCard||c.id)}</small>
+      </span>
+      <span class="bal money" style="color:${bal>0?'var(--due)':'var(--paid)'}">${fmt(Math.max(0,bal))}</span>
+    </button>`;
+  }).join("");
+  const relBar = (adminFilter==="deferred" && !term)
+    ? `<button class="btn block ghost small" id="relDeferredBtn" style="margin-bottom:12px">Release upload-deferred charges…</button>` : ``;
+  $("adminList").innerHTML = relBar + cards +
+    (shown<total ? `<button class="btn block ghost small" id="adminMore" style="margin-top:12px">Show next ${Math.min(ADMIN_STEP, total-shown)}</button>` : ``);
+  document.querySelectorAll("#adminList .citizen-row").forEach(b=>
+    b.addEventListener("click",()=>openCitizen(b.dataset.id)));
+  if($("relDeferredBtn")) $("relDeferredBtn").addEventListener("click", openReleaseDeferred);
+  if($("adminMore")) $("adminMore").addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
+}
+
+async function openReleaseDeferred(){
+  let periods=[];
+  try{ periods=await store.getDeferredUploads(); }catch(e){}
+  openSheet("Release upload-deferred", `
+    <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">This un-defers only charges that were deferred by an upload's "defer all". Charges you deferred by hand from a person's view are left alone.</p>
+    ${periods.length ? `
+      <div class="field"><label>Release deferred charges from period</label>
+        <select id="relPeriod" class="period-sel">${periods.map(p=>`<option value="${esc(p)}">${esc(prettyPeriod(p))}</option>`).join("")}</select></div>
+      <button class="btn block" id="relOne" style="margin-bottom:10px">Release this period</button>
+      <button class="btn block ghost" id="relAll">Release all upload-deferred</button>
+    ` : `
+      <p style="font-size:13.5px;color:var(--muted)">No upload-deferred batches are on record, but you can still release any that exist.</p>
+      <button class="btn block ghost" id="relAll">Release all upload-deferred</button>`}
+    <div id="relProgress" style="margin-top:12px"></div>
+  `);
+  if($("relOne")) $("relOne").addEventListener("click", ()=>doRelease($("relPeriod").value));
+  if($("relAll")) $("relAll").addEventListener("click", ()=>doRelease(""));
+}
+async function doRelease(period){
+  const ok = await confirmAction(period
+    ? `Release all upload-deferred charges for "${period}"? They will count as owed again.`
+    : `Release ALL upload-deferred charges? They will count as owed again.`);
+  if(!ok) return;
+  const prog=$("relProgress"); prog.innerHTML=`<div class="notice info">Releasing…</div>`;
+  try{
+    const n=await store.releaseUploadDeferred(period, (d,t)=>{ prog.innerHTML=`<div class="notice info">Releasing… ${d} / ${t}</div>`; });
+    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Released ${n} deferred charge${n===1?"":"s"}.</div>`;
+    toast("Deferred charges released");
+  }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Release failed. Try again.</div>`; }
+}
+
+/* ============================================================
+   ADMIN — pending UPI payments
+   ============================================================ */
+async function refreshPending(){
+  const pendings = await store.getPendingPayments();
+  const container = $("pendingContainer");
+  const count = pendings.length;
+  if(count===0){ container.classList.add("hidden"); return; }
+  container.classList.remove("hidden");
+  $("pendingCount").textContent = count;
+  const list = pendings.map(p => `<div class="pending-row">
+    <span class="info">
+      <b>${esc(p.name)}</b>
+      <small>${esc(p.jobCard)}</small>
+    </span>
+    <span class="money">${fmt(p.amount)}</span>
+    <button class="confirm-btn" data-citizen="${esc(p.citizenId)}" data-pending="${esc(p.id)}">Confirm</button>
+  </div>`).join("");
+  $("pendingList").innerHTML = list;
+  document.querySelectorAll(".pending-list .confirm-btn").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const cid=btn.dataset.citizen, pid=btn.dataset.pending;
+      await store.confirmPendingPayment(cid, pid);
+      toast("Payment confirmed");
+      refreshPending();
+    });
+  });
+}
+
+/* ============================================================
+   ADMIN — import (unchanged, but included for completeness)
+   ============================================================ */
+$("impExpBtn").addEventListener("click", openImportExport);
+$("backupMenuBtn").addEventListener("click", openBackup);
+let pendingImport = null, pendingMonthly = null, pendingBank = null, pendingUpload = null;
+
+function openImportExport(){
+  openSheet("Import / Export", `
+    <p style="font-size:13.5px;color:var(--muted);margin:0 0 12px"><b>Import</b> from Excel:</p>
+    <button class="btn block" id="impUploadBtn">Upload charges or payments</button>
+    <div style="border-top:1px solid var(--border);padding-top:16px">
+      <p style="font-size:13.5px;color:var(--muted);margin:0 0 10px"><b>Export</b>:</p>
+      <button class="btn block ghost" id="exportAllBtn">Export all households (CSV)</button>
+      <button class="btn block ghost" id="exportPeriodBtn" style="margin-top:8px">Export by period (CSV)</button>
+      <button class="btn block ghost" id="exportCsvBtn2" style="margin-top:8px">Export owing list (CSV)</button>
+    </div>
+  `);
+  $("impUploadBtn").addEventListener("click", openUpload);
+  $("exportAllBtn").addEventListener("click", doExportAll);
+  $("exportPeriodBtn").addEventListener("click", openExportPeriod);
+  $("exportCsvBtn2").addEventListener("click", doExportCsv);
+}
+function openBackup(){
+  openSheet("Backup / Restore", `
+    <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">Download a copy of all data, or restore from a saved backup file. Do this regularly.</p>
+    <button class="btn block" id="backupBtn" style="margin-bottom:10px">⬇ Download backup (all data)</button>
+    <button class="btn block ghost" id="restoreBtn" style="margin-bottom:18px;color:var(--due);border-color:var(--due)">⬆ Restore from backup…</button>
+    <input id="restoreFile" type="file" accept=".json,application/json" style="display:none">
+    <div style="border-top:1px solid var(--border);padding-top:16px">
+      <p style="font-size:12.5px;color:var(--muted);margin:0 0 10px">If any balance looks wrong, this rebuilds every total from its history.</p>
+      <button class="btn block ghost" id="recalcBtn">Recalculate all balances</button>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:16px">
+      <p style="font-size:12.5px;color:var(--muted);margin:0 0 10px">Danger zone - these actions cannot be undone.</p>
+      <button class="btn block ghost" id="deleteAllBtn" style="color:var(--due);border-color:var(--due)">Delete all data</button>
+    </div>
+    <div id="backupMsg" style="margin-top:12px"></div>
+  `);
+  $("backupBtn").addEventListener("click", doBackup);
+  $("restoreBtn").addEventListener("click", ()=>$("restoreFile").click());
+  $("restoreFile").addEventListener("change", doRestore);
+  $("recalcBtn").addEventListener("click", doRecalcAll);
+  $("deleteAllBtn").addEventListener("click", doDeleteAll);
+}
+async function doRecalcAll(){
+  const ok = await confirmAction("Recalculate every household's balance from its history? This is safe and fixes any wrong totals.");
+  if(!ok) return;
+  const msg=$("backupMsg"); const btn=$("recalcBtn"); btn.disabled=true;
+  msg.innerHTML=`<div class="notice info">Recalculating…</div>`;
+  try{
+    const n=await store.recalcAll((d,t)=>{ msg.innerHTML=`<div class="notice info">Recalculating… ${d} / ${t}</div>`; });
+    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${n} households recalculated.</div>`;
+    toast("Balances recalculated");
+  }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Recalculate failed. Try again.</div>`; }
+  finally{ btn.disabled=false; }
+}
+async function doDeleteAll(){
+  const ok1 = await confirmAction("Are you sure you want to delete ALL data? This will remove all citizens and their payment history. This cannot be undone.", true);
+  if(!ok1) return;
+  const ok2 = await confirmAction("This is your last chance. Type 'DELETE' to confirm.", true);
+  if(!ok2) return;
+  const msg=$("backupMsg"); const btn=$("deleteAllBtn"); btn.disabled=true;
+  msg.innerHTML=`<div class="notice info">Deleting all data…</div>`;
+  try{
+    const ledSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
+    let batch=fs.writeBatch(db), ops=0;
+    const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
+    for(const d of ledSnap.docs){
+      batch.delete(d.ref); ops++;
+      if(ops>=400) await flush();
+    }
+    await flush();
+    msg.innerHTML=`<div class="notice info">Deleting citizens…</div>`;
+    const citSnap=await fs.getDocs(fs.collection(db,"citizens"));
+    batch=fs.writeBatch(db); ops=0;
+    for(const d of citSnap.docs){
+      batch.delete(d.ref); ops++;
+      if(ops>=400) await flush();
+    }
+    await flush();
+    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — all data deleted.</div>`;
+    toast("All data deleted");
+    setTimeout(()=>location.reload(),1500);
+  }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Delete failed. Try again.</div>`; }
+  finally{ btn.disabled=false; }
+}
+let backupBusy=false;
+async function doBackup(){
+  if(backupBusy) return; backupBusy=true;
+  const btn=$("backupBtn"); if(btn){ btn.disabled=true; }
+  const msg=$("backupMsg"); msg.innerHTML=`<div class="notice info">Preparing backup…</div>`;
+  try{
+    const data = await store.exportAll((d,t)=>{ msg.innerHTML=`<div class="notice info">Reading… ${d} / ${t}</div>`; });
+    const blob = new Blob([JSON.stringify(data)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download=`nsnvc-backup-${todayISO()}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Backup downloaded — ${data.count} households. Keep it somewhere safe.</div>`;
+  }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Backup failed. Check connection and try again.</div>`; }
+  finally{ backupBusy=false; if(btn) btn.disabled=false; }
+}
+async function doRestore(e){
+  const file=e.target.files[0]; if(!file) return;
+  const msg=$("backupMsg"); let backup;
+  try{ backup = JSON.parse(await file.text()); }catch(err){ msg.innerHTML=`<div class="notice err">That file isn't a valid backup.</div>`; e.target.value=""; return; }
+  if(!backup || !Array.isArray(backup.citizens)){ msg.innerHTML=`<div class="notice err">That file isn't a valid backup.</div>`; e.target.value=""; return; }
+  const ok = await confirmAction(`Restore ${backup.citizens.length} households from this backup? It overwrites their current records and history.`, true);
+  if(!ok){ e.target.value=""; return; }
+  msg.innerHTML=`<div class="notice info">Restoring…</div>`;
+  try{
+    await store.importAll(backup, (d,t)=>{ msg.innerHTML=`<div class="notice info">Restoring… ${d} / ${t}</div>`; });
+    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Restored ${backup.citizens.length} households.</div>`;
+    toast("Restore complete");
+  }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Restore failed partway. Check connection and try again.</div>`; }
+  e.target.value="";
+}
+
+async function ensureXLSX(){
+  if(window.XLSX) return window.XLSX;
+  await new Promise((res,rej)=>{
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload=res; s.onerror=()=>rej(new Error("xlsx load failed"));
+    document.head.appendChild(s);
+  });
+  return window.XLSX;
+}
+
+const _num = v => { const n=parseFloat(v); return isNaN(n)?0:n; };
+const _norm = h => String(h||"").toUpperCase().replace(/\s+/g,"").trim();
+function _findCol(header, re){ for(let i=0;i<header.length;i++){ if(re.test(String(header[i]||"").trim())) return i; } return -1; }
+function _periodCols(header){
+  const re=/(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/i;
+  const out=[];
+  header.forEach((h,i)=>{ if(h!=null && re.test(String(h))) out.push({ label:String(h).trim(), key:_norm(h), col:i }); });
+  return out;
+}
+function openUpload(){
+  openSheet("Upload charges or payments", `
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5">
+      Upload charges or payments in one file. Each row can have charges, payments, or both.
+      People are matched by job card; new job cards are added for charges.</p>
+    <div class="field"><label>Period name — for charges (shows in history)</label>
+      <input id="impPeriod" placeholder="e.g. MAY2"></div>
+    <div class="field"><label>Payment date — for payments</label>
+      <input id="impDate" type="date" value="${todayISO()}"></div>
+    <div class="field" style="margin-top:8px;">
+      <label style="display:flex;align-items:center;gap:8px;font-weight:400;color:var(--ink);cursor:pointer;">
+        <input type="checkbox" id="impDefer"> Defer all charges in this upload (they won't appear in public pending lists until you uncheck them later)
+      </label>
+    </div>
+    <div class="field"><label>Excel file (.xlsx)</label>
+      <input id="impFile" type="file" accept=".xlsx,.xls"></div>
+    <div id="impMsg"></div><div id="impPreview"></div>
+  `);
+  $("impFile").addEventListener("change", handleUpload);
+}
+
+let uploadRaw=null;
+async function handleUpload(e){
+  const file=e.target.files[0]; if(!file) return;
+  $("impMsg").innerHTML=`<div class="notice info">Reading…</div>`; $("impPreview").innerHTML="";
+  let XLSX; try{ XLSX=await ensureXLSX(); }catch(err){ $("impMsg").innerHTML=`<div class="notice err">Couldn't load the Excel reader. Connect to the internet and try again.</div>`; return; }
+  try{
+    const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+    if(rows.length<2){ $("impMsg").innerHTML=`<div class="notice err">That sheet looks empty.</div>`; return; }
+    const h=rows[0]||[];
+    const guessJob=_findCol(h,/job\s*card/i);
+    const guessName=_findCol(h,/holder|head of house|name/i);
+    const guessCharge=_findCol(h,/charge|contribution|amount/i);
+    const guessPayment=_findCol(h,/payment|paid|pay/i);
+    const guessMode=_findCol(h,/mode|method|cash|bank/i);
+    const sample = rows.find((r,i)=> i>0 && r && r.some(v=>v!=null)) || rows[1];
+    uploadRaw={ rows };
+    $("impMsg").innerHTML=`<div class="notice info">Confirm which column is which, then Continue.</div>`;
+    $("impPreview").innerHTML=`
+      <div class="panel" style="margin-top:12px">
+        <div class="field"><label>Job card number column *</label><select id="mapJob" class="period-sel">${colOptions(h,sample,guessJob)}</select></div>
+        <div class="field"><label>Name column</label><select id="mapName" class="period-sel">${colOptions(h,sample,guessName)}</select></div>
+        <div class="field"><label>Contribution charge column (optional)</label><select id="mapCharge" class="period-sel">${colOptions(h,sample,guessCharge)}</select></div>
+        <div class="field"><label>Payment column (optional)</label><select id="mapPayment" class="period-sel">${colOptions(h,sample,guessPayment)}</select></div>
+        <div class="field"><label>Payment mode column (optional - Cash/Bank)</label><select id="mapMode" class="period-sel">${colOptions(h,sample,guessMode)}</select></div>
+      </div>
+      <button class="btn block" id="mapContinue">Continue</button>
+      <div id="mapMsg" style="margin-top:10px"></div>`;
+    $("mapContinue").addEventListener("click", buildUploadItems);
+  }catch(err){ console.error(err); $("impMsg").innerHTML=`<div class="notice err">Couldn't read that file.</div>`; }
+}
+
+function colOptions(header, sample, selected){
+  const n=Math.max(header.length, sample?sample.length:0);
+  let opts=`<option value="-1"${selected<0?" selected":""}>— none —</option>`;
+  for(let i=0;i<n;i++){
+    const raw=header[i];
+    const name=(raw!=null && String(raw).trim()) ? String(raw).trim() : `Column ${String.fromCharCode(65+(i%26))}`;
+    const s=(sample && sample[i]!=null) ? String(sample[i]).slice(0,20) : "";
+    opts+=`<option value="${i}"${i===selected?" selected":""}>${esc(name)}${s?` — e.g. ${esc(s)}`:""}</option>`;
+  }
+  return opts;
+}
+
+function buildUploadItems(){
+  if(!uploadRaw) return;
+  const cFull=parseInt($("mapJob").value,10);
+  const cName=parseInt($("mapName").value,10);
+  const cCharge=parseInt($("mapCharge").value,10);
+  const cPayment=parseInt($("mapPayment").value,10);
+  const cMode=parseInt($("mapMode").value,10);
+  if(!(cFull>=0)){ $("mapMsg").innerHTML=`<div class="notice err">Choose Job card column.</div>`; return; }
+  if(!(cCharge>=0) && !(cPayment>=0)){ $("mapMsg").innerHTML=`<div class="notice err">Choose at least a Charge or Payment column.</div>`; return; }
+  const rows=uploadRaw.rows;
+  const charges=[]; const payments=[]; const notFound=[]; const ambiguous=[];
+  let chargeAmt=0, payAmt=0;
+  for(let r=1;r<rows.length;r++){ const row=rows[r]; if(!row) continue;
+    const full=String(row[cFull]||"").trim(); if(!full) continue;
+    const nm=String(row[cName>=0?cName:1]||"").trim();
+    const cand=resolveCitizen(full);
+    if(cand.length===1){
+      const id=cand[0].id;
+      const chargeAmtVal = cCharge>=0 ? _num(row[cCharge]) : 0;
+      const payAmtVal = cPayment>=0 ? _num(row[cPayment]) : 0;
+      const modeVal = cMode>=0 ? String(row[cMode]||"").trim().toLowerCase() : "";
+      
+      if(chargeAmtVal>0){
+        charges.push({ id, jobCard:full, cardNo:suffixOf(full), name:nm, amount:chargeAmtVal }); chargeAmt+=chargeAmtVal;
+      }
+      if(payAmtVal>0){
+        const note = modeVal.includes("cash") ? "Cash" : "Bank";
+        payments.push({ id, amount:payAmtVal, name:nm, jobCard:full, note }); payAmt+=payAmtVal;
+      }
+    }else if(cand.length>1){ ambiguous.push(full+(nm?" ("+nm+")":"")); }
+    else { notFound.push(full+(nm?" ("+nm+")":"")); }
+  }
+  if(!charges.length && !payments.length && !notFound.length && !ambiguous.length){ $("mapMsg").innerHTML=`<div class="notice err">No rows with an amount found.</div>`; return; }
+  pendingUpload={charges,payments};
+  const issues = [...ambiguous.map(x=>"⚠︎ "+x+" — number matches more than one person"),
+                  ...notFound.map(x=>"• "+x+" — not found")];
+  $("impMsg").innerHTML=`<div class="notice info">Review and confirm the upload.</div>`;
+  $("impPreview").innerHTML=`
+    <div class="panel" style="margin-top:12px">
+      <div class="brow"><span>Charges to add</span><b>${charges.length}</b></div>
+      <div class="brow"><span>Payments to record</span><b>${payments.length}</b></div>
+      <div class="brow"><span>Not matched (skipped)</span><b>${notFound.length}</b></div>
+      <div class="brow"><span>Ambiguous (skipped)</span><b>${ambiguous.length}</b></div>
+      <div class="brow total"><span>Total charges</span><b class="money">${fmt(chargeAmt)}</b></div>
+      <div class="brow total"><span>Total payments</span><b class="money">${fmt(payAmt)}</b></div>
+    </div>
+    ${issues.length?`<div class="panel" style="max-height:160px;overflow:auto"><h4>Skipped rows</h4>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.7">${issues.map(esc).join("<br>")}</div></div>`:``}
+    <button class="btn block" id="impConfirm" ${(charges.length||payments.length)?"":"disabled"}>Process ${charges.length} charges and ${payments.length} payments</button>
+    <div id="impProgress" style="margin-top:10px"></div>`;
+  if($("impConfirm")) $("impConfirm").addEventListener("click", runUpload);
+}
+
+async function runUpload(){
+  if(!pendingUpload) return;
+  const period=$("impPeriod").value.trim();
+  const dateStr=$("impDate").value || todayISO();
+  const defer=$("impDefer").checked;
+  const btn=$("impConfirm"); btn.disabled=true; const prog=$("impProgress");
+  prog.innerHTML=`<div class="notice info">Processing…</div>`;
+  try{
+    let done=0, total=pendingUpload.charges.length+pendingUpload.payments.length;
+    if(pendingUpload.charges.length && !period){
+      prog.innerHTML=`<div class="notice err">Please type the period name above for charges.</div>`;
+      $("impPeriod").focus();
+      btn.disabled=false;
+      return;
+    }
+    if(pendingUpload.charges.length){
+      const deferAll = defer ? "upload" : null;
+      const chargeItems=pendingUpload.charges.map(it=>({...it, note:period, deferred:defer, deferSource:deferAll}));
+      await store.bulkAppendCharges(chargeItems,(d,t)=>{ done=d; prog.innerHTML=`<div class="notice info">Processing charges… ${d} / ${t}</div>`; });
+      try{ await store.recordImportedPeriod(period); }catch(e){}
+      if(defer){ try{ await store.recordDeferredUpload(period); }catch(e){} }
+    }
+    if(pendingUpload.payments.length){
+      const when=new Date(dateStr+"T12:00:00");
+      const payItems=pendingUpload.payments.map(it=>({...it, date:dateStr, when}));
+      await store.bulkAppendPayments(payItems,(d,t)=>{ done=pendingUpload.charges.length+d; prog.innerHTML=`<div class="notice info">Processing payments… ${d} / ${t}</div>`; });
+    }
+    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${pendingUpload.charges.length} charges and ${pendingUpload.payments.length} payments processed.</div>`;
+    pendingUpload=null; setTimeout(()=>{ closeSheet(); toast("Upload complete"); },900);
+  }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Update failed partway. Check connection and try again.</div>`; btn.disabled=false; }
+}
+
+function openBank(){
+  openSheet("Bank payment file", `
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5">
+      One sheet with Job Card No., Name and amount — the list of who paid through the bank.
+      Each row is recorded as a payment ("Payment (Bank)") and lowers that person's balance.
+      People are matched by job card; rows that don't match anyone are skipped and listed.</p>
+    <div class="field"><label>Payment date</label><input id="impDate" type="date" value="${todayISO()}"></div>
+    <div class="field"><label>Excel file (.xlsx)</label>
+      <input id="impFile" type="file" accept=".xlsx,.xls"></div>
+    <div id="impMsg"></div><div id="impPreview"></div>
+  `);
+  $("impFile").addEventListener("change", handleBank);
+}
+
+function resolveCitizen(value){
+  const fk=fullKey(value);
+  let cand=allCitizens.filter(c=>c.id===fk);
+  if(!cand.length){ const suf=suffixOf(value); cand=allCitizens.filter(c=>(c.cardNo||"")===suf); }
+  return cand;
+}
+
+let bankRaw=null;
+async function handleBank(e){
+  const file=e.target.files[0]; if(!file) return;
+  $("impMsg").innerHTML=`<div class="notice info">Reading…</div>`; $("impPreview").innerHTML="";
+  let XLSX; try{ XLSX=await ensureXLSX(); }catch(err){ $("impMsg").innerHTML=`<div class="notice err">Couldn't load the Excel reader. Connect to the internet and try again.</div>`; return; }
+  try{
+    const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+    if(rows.length<2){ $("impMsg").innerHTML=`<div class="notice err">That sheet looks empty.</div>`; return; }
+    const h=rows[0]||[];
+    const guessJob=_findCol(h,/job\s*card/i);
+    const guessName=_findCol(h,/name|holder/i);
+    const guessAmt=_findCol(h,/amount|paid|payable|pay/i);
+    const sample = rows.find((r,i)=> i>0 && r && r.some(v=>v!=null)) || rows[1];
+    bankRaw={ rows };
+    $("impMsg").innerHTML=`<div class="notice info">Confirm which column is which, then Continue.</div>`;
+    $("impPreview").innerHTML=`
+      <div class="panel" style="margin-top:12px">
+        <div class="field"><label>Job card number column *</label><select id="mapJob" class="period-sel">${colOptions(h,sample,guessJob)}</select></div>
+        <div class="field"><label>Name column</label><select id="mapName" class="period-sel">${colOptions(h,sample,guessName)}</select></div>
+        <div class="field"><label>Amount column *</label><select id="mapAmt" class="period-sel">${colOptions(h,sample,guessAmt)}</select></div>
+      </div>
+      <button class="btn block" id="mapContinue">Continue</button>
+      <div id="mapMsg" style="margin-top:10px"></div>`;
+    $("mapContinue").addEventListener("click", buildBankItems);
+  }catch(err){ console.error(err); $("impMsg").innerHTML=`<div class="notice err">Couldn't read that file.</div>`; }
+}
+
+function buildBankItems(){
+  if(!bankRaw) return;
+  const cFull=parseInt($("mapJob").value,10);
+  const cName=parseInt($("mapName").value,10);
+  const cAmt=parseInt($("mapAmt").value,10);
+  if(!(cFull>=0) || !(cAmt>=0)){ $("mapMsg").innerHTML=`<div class="notice err">Choose at least the Job card column and the Amount column.</div>`; return; }
+  const rows=bankRaw.rows;
+  const items=[]; const notFound=[]; const ambiguous=[];
+  let totAmt=0;
+  for(let r=1;r<rows.length;r++){ const row=rows[r]; if(!row) continue;
+    const val=String(row[cFull]||"").trim(); if(!val) continue;
+    const amt=_num(row[cAmt]); if(amt<=0) continue;
+    const nm=String(row[cName>=0?cName:1]||"").trim();
+    const cand=resolveCitizen(val);
+    if(cand.length===1){ items.push({ id:cand[0].id, amount:amt }); totAmt+=amt; }
+    else if(cand.length>1){ ambiguous.push(val+(nm?" ("+nm+")":"")); }
+    else { notFound.push(val+(nm?" ("+nm+")":"")); }
+  }
+  if(!items.length && !notFound.length && !ambiguous.length){ $("mapMsg").innerHTML=`<div class="notice err">No rows with an amount found.</div>`; return; }
+  pendingBank={items};
+  const issues = [...ambiguous.map(x=>"⚠︎ "+x+" — number matches more than one person"),
+                  ...notFound.map(x=>"• "+x+" — not found")];
+  $("impMsg").innerHTML=`<div class="notice info">Review and confirm the bank payments.</div>`;
+  $("impPreview").innerHTML=`
+    <div class="panel" style="margin-top:12px">
+      <div class="brow"><span>Payments to record</span><b>${items.length}</b></div>
+      <div class="brow"><span>Not matched (skipped)</span><b>${notFound.length}</b></div>
+      <div class="brow"><span>Ambiguous (skipped)</span><b>${ambiguous.length}</b></div>
+      <div class="brow total"><span>Total being paid</span><b class="money">${fmt(totAmt)}</b></div>
+    </div>
+    ${issues.length?`<div class="panel" style="max-height:160px;overflow:auto"><h4>Skipped rows</h4>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.7">${issues.map(esc).join("<br>")}</div></div>`:``}
+    <button class="btn block" id="impConfirm" ${items.length?"":"disabled"}>Record ${items.length} bank payments</button>
+    <div id="impProgress" style="margin-top:10px"></div>`;
+  if($("impConfirm")) $("impConfirm").addEventListener("click", runBank);
+}
+
+async function runBank(){
+  if(!pendingBank) return;
+  const dateStr=$("impDate").value || todayISO();
+  const when=new Date(dateStr+"T12:00:00");
+  const items=pendingBank.items.map(it=>({...it, note:"Bank", date:dateStr, when}));
+  const btn=$("impConfirm"); btn.disabled=true; const prog=$("impProgress");
+  prog.innerHTML=`<div class="notice info">Recording… 0 / ${items.length}</div>`;
+  try{
+    await store.bulkAppendPayments(items,(d,t)=>{ prog.innerHTML=`<div class="notice info">Recording… ${d} / ${t}</div>`; });
+    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${items.length} bank payments recorded.</div>`;
+    pendingBank=null; setTimeout(()=>{ closeSheet(); toast("Bank payments recorded"); },900);
+  }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Recording failed partway. Check connection and try again.</div>`; btn.disabled=false; }
+}
+
+/* ============================================================
+   ADMIN — add citizen
+   ============================================================ */
+$("addCitizenBtn").addEventListener("click", openAddCitizen);
+
+function openSheet(title, bodyHTML){
+  $("modalRoot").innerHTML = `
+    <div class="overlay" id="overlay">
+      <div class="sheet">
+        <div class="sheet-head"><h2>${esc(title)}</h2><button class="x" id="closeSheet">×</button></div>
+        <div class="sheet-body">${bodyHTML}</div>
+      </div>
+    </div>`;
+  document.body.style.overflow="hidden";
+  $("overlay").addEventListener("click", e=>{ if(e.target.id==="overlay") closeSheet(); });
+  $("closeSheet").addEventListener("click", closeSheet);
+}
+function closeSheet(){ $("modalRoot").innerHTML=""; document.body.style.overflow=""; }
+function confirmAction(message, danger=false){
+  return new Promise(resolve=>{
+    const ov=document.createElement("div");
+    ov.className="confirm-overlay";
+    ov.innerHTML=`<div class="confirm-box">
+      <div class="confirm-msg"></div>
+      <div class="confirm-btns">
+        <button class="btn small ghost" data-a="no">Cancel</button>
+        <button class="btn small" data-a="yes"${danger?' style="background:var(--due)"':''}>Confirm</button>
+      </div>
+    </div>`;
+    ov.querySelector(".confirm-msg").textContent = message;
+    document.body.appendChild(ov);
+    const done=v=>{ ov.remove(); resolve(v); };
+    ov.addEventListener("click", e=>{ if(e.target===ov) done(false); });
+    ov.querySelector('[data-a="no"]').addEventListener("click", ()=>done(false));
+    ov.querySelector('[data-a="yes"]').addEventListener("click", ()=>done(true));
+  });
+}
+
+function openAddCitizen(){
+  openSheet("Add citizen", `
+    <div class="field"><label>Job card number (unique)</label><input id="ncId" placeholder="e.g. MZ-07-001-005-001/3">
+      <small style="display:block;color:var(--muted);font-size:11.5px;margin-top:5px">Type the full number exactly as printed (not zero-padded). Citizens look up by the part after the slash (e.g. 3).</small></div>
+    <div class="field"><label>Name</label><input id="ncName" placeholder="Owner / household name"></div>
+    <div class="field"><label>Phone</label><input id="ncPhone" inputmode="tel" placeholder="optional"></div>
+    <div id="ncErr"></div>
+    <button class="btn block" id="ncSave" style="margin-top:6px">Save citizen</button>
+  `);
+  $("ncSave").addEventListener("click", saveNewCitizen);
+}
+async function saveNewCitizen(){
+  const jobCard=$("ncId").value.trim(), name=$("ncName").value.trim();
+  const phone=$("ncPhone").value.trim();
+  if(!jobCard || !name){ $("ncErr").innerHTML=`<div class="notice err">Job card number and name are required.</div>`; return; }
+  $("ncSave").disabled=true;
+  const id=fullKey(jobCard);
+  try{
+    if(await store.exists(id)){
+      $("ncErr").innerHTML=`<div class="notice err">Job card ${esc(jobCard)} already exists.</div>`; $("ncSave").disabled=false; return;
+    }
+    await store.addCitizen(id, { jobCard, cardNo:suffixOf(jobCard), name, phone, totalCharged:0, totalPaid:0, balance:0, deferredTotal:0 });
+    closeSheet(); toast("Citizen added");
+  }catch(err){ $("ncErr").innerHTML=`<div class="notice err">Couldn't save. Try again.</div>`; console.error(err); $("ncSave").disabled=false; }
+}
+
+/* ============================================================
+   ADMIN — citizen detail: all actions
+   ============================================================ */
+async function openCitizen(id){
+  const c = allCitizens.find(x=>x.id===id); if(!c) return;
+  openSheet(c.name||"Citizen", `<div id="cDetail" class="empty">Loading…</div>`);
+  await renderCitizenDetail(id);
+}
+
+async function renderCitizenDetail(id){
+  const c = allCitizens.find(x=>x.id===id);
+  const entries = await store.getLedger(id);
+  const bal = getEffectiveBalance(c);
+  const chrono = [...entries].sort((a,b)=>a.createdAt-b.createdAt);
+
+  const rows = chrono.length ? chrono.map((e, idx)=>{
+    const isPayment = e.type==="payment";
+    const isForgive = e.type==="forgive";
+    const isDeferred = e.deferred && e.type==="charge";
+    let label = entryLabel(e);
+    let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
+    let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
+    let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "");
+    const actions = `<span class="actions">
+      <button class="edit-entry" data-id="${e.entryId}" data-type="${e.type}">✏️</button>
+      <button class="del-entry" data-id="${e.entryId}">🗑️</button>
+    </span>`;
+    let deferToggle = '';
+    if(e.type==="charge"){
+      const checked = e.deferred ? 'checked' : '';
+      deferToggle = `<label style="font-size:12px;color:var(--muted);margin-left:8px;">
+        <input type="checkbox" class="defer-chk" data-id="${e.entryId}" ${checked}> Defer
+      </label>`;
+    }
+    return `<div class="${rowClass}">
+      <div class="desc"><b>${esc(label)}</b><small>${esc(e.date||"")}</small> ${deferToggle}</div>
+      <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
+      ${actions}
+    </div>`;
+  }).join("") : `<div class="empty">No entries yet.</div>`;
+
+  const forgiveBlock = `<div class="panel" style="margin-top:12px;">
+    <h4>Forgive debt</h4>
+    <div class="inline">
+      <div class="field"><label>Amount</label><input id="forgiveAmt" placeholder="0" value="${bal>0?bal:''}"></div>
+      <div class="field"><label>Note</label><input id="forgiveNote" placeholder="optional"></div>
+    </div>
+    <button class="btn small" id="forgiveBtn" ${bal<=0?'disabled':''}>Forgive</button>
+  </div>`;
+
+  $("cDetail").outerHTML = `<div id="cDetail">
+    <div class="balance-block" style="padding-top:0">
+      <div class="label">Remaining balance</div>
+      <div class="amount money ${bal<=0?'zero':'owing'}">${fmt(Math.max(0,bal))}</div>
+      <div class="meta">${esc(c.jobCard||id)}${c.phone?" · "+esc(c.phone):""}</div>
+    </div>
+
+    <div class="panel">
+      <h4>Add this month's contribution</h4>
+      <div class="field"><label>Amount (${CURRENCY})</label><input id="chAmt" inputmode="decimal" placeholder="0"></div>
+      <div class="inline">
+        <div class="field"><label>For</label><input id="chNote" value="${esc(monthLabel())}"></div>
+        <div class="field"><label>Date</label><input id="chDate" type="date" value="${todayISO()}"></div>
+      </div>
+      <button class="btn block small" id="addCharge" style="margin-top:10px">Add contribution</button>
+    </div>
+
+    <div class="panel">
+      <h4>Record a payment</h4>
+      <div class="field"><label>Amount paid (${CURRENCY})</label><input id="pyAmt" inputmode="decimal" placeholder="0"></div>
+      <div class="inline">
+        <div class="field"><label>Note</label><input id="pyNote" placeholder="optional (e.g. cash)"></div>
+        <div class="field"><label>Date</label><input id="pyDate" type="date" value="${todayISO()}"></div>
+      </div>
+      <div class="inline-buttons" style="margin-top:10px;">
+        <button class="btn small ghost" id="addPayment" style="flex:1">Record this amount</button>
+        ${bal>0 ? `<button class="btn small" id="markPaid" style="flex:1">Mark fully paid (${fmt(bal)})</button>` : ``}
+      </div>
+    </div>
+
+    ${forgiveBlock}
+
+    <div class="clist" style="box-shadow:none">
+      <h3 style="font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:0;padding:14px 15px 4px">History</h3>
+      ${rows}
+    </div>
+
+    <button class="btn ghost block small" id="delCitizen" style="margin-top:16px;color:var(--due);border-color:var(--due)">Delete this citizen</button>
+  </div>`;
+
+  // Attach event listeners
+  $("addCharge").addEventListener("click", ()=>addEntry(id,"charge"));
+  $("addPayment").addEventListener("click", ()=>addEntry(id,"payment"));
+  if($("markPaid")) $("markPaid").addEventListener("click", ()=>markFullyPaid(id, bal));
+  $("delCitizen").addEventListener("click", ()=>deleteCitizen(id));
+  $("forgiveBtn").addEventListener("click", ()=>forgiveDebt(id));
+
+  // Defer toggles
+  document.querySelectorAll(".defer-chk").forEach(chk=>{
+    chk.addEventListener("change", async ()=>{
+      const entryId = chk.dataset.id;
+      await store.toggleDefer(id, entryId, chk.checked);
+      toast("Deferral updated");
+      await renderCitizenDetail(id);
+    });
+  });
+
+  // Edit entry
+  document.querySelectorAll(".edit-entry").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const entryId = btn.dataset.id;
+      const entry = chrono.find(e=>e.entryId===entryId);
+      if(!entry) return;
+      openEditEntry(id, entryId, entry);
+    });
+  });
+
+  // Delete entry
+  document.querySelectorAll(".del-entry").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const entryId = btn.dataset.id;
+      if(!(await confirmAction("Delete this entry?", true))) return;
+      await store.deleteEntry(id, entryId);
+      toast("Entry deleted");
+      await renderCitizenDetail(id);
+    });
+  });
+}
+
+async function markFullyPaid(id, bal){
+  if(!(bal>0)) return;
+  const btn=$("markPaid"); if(btn) btn.disabled=true;
+  try{
+    await store.addEntry(id, "payment", bal, "Paid in full", todayISO());
+    toast("Marked fully paid");
+    await renderCitizenDetail(id);
+  }catch(err){ toast("Couldn't save. Try again."); console.error(err); if(btn) btn.disabled=false; }
+}
+
+async function addEntry(id, type){
+  const amtEl = type==="charge" ? $("chAmt") : $("pyAmt");
+  const noteEl = type==="charge" ? $("chNote") : $("pyNote");
+  const dateEl = type==="charge" ? $("chDate") : $("pyDate");
+  const amount = parseFloat(amtEl.value);
+  if(!(amount>0)){ toast("Enter a valid amount"); return; }
+  const btn = type==="charge" ? $("addCharge") : $("addPayment");
+  btn.disabled=true;
+  try{
+    await store.addEntry(id, type, amount, noteEl.value.trim(), dateEl.value||todayISO());
+    toast(type==="charge"?"Contribution added":"Payment recorded");
+    await renderCitizenDetail(id);
+  }catch(err){ toast("Couldn't save. Try again."); console.error(err); btn.disabled=false; }
+}
+
+async function forgiveDebt(id){
+  const amtInput = $("forgiveAmt");
+  const noteInput = $("forgiveNote");
+  const amount = parseFloat(amtInput.value);
+  if(!(amount>0)){ toast("Enter a valid amount"); return; }
+  const note = noteInput.value.trim() || "Forgiven";
+  if(!(await confirmAction(`Forgive ${fmt(amount)} for this citizen?`))) return;
+  try{
+    await store.forgiveDebt(id, amount, note);
+    toast("Debt forgiven");
+    await renderCitizenDetail(id);
+  }catch(err){ toast("Failed"); console.error(err); }
+}
+
+async function deleteCitizen(id){
+  if(!(await confirmAction("Delete this citizen and all their records? This cannot be undone.", true))) return;
+  try{
+    await store.deleteCitizen(id);
+    closeSheet(); toast("Citizen deleted");
+  }catch(err){ toast("Couldn't delete."); console.error(err); }
+}
+
+function openEditEntry(citizenId, entryId, entry){
+  openSheet("Edit entry", `
+    <div class="field"><label>Amount</label><input id="editAmt" type="number" step="0.01" value="${entry.amount}"></div>
+    <div class="field"><label>Note</label><input id="editNote" value="${esc(entry.note||"")}"></div>
+    <div class="field"><label>Date</label><input id="editDate" type="date" value="${entry.date||todayISO()}"></div>
+    <button class="btn block" id="saveEdit">Save</button>
+  `);
+  $("saveEdit").addEventListener("click", async ()=>{
+    const amt = parseFloat($("editAmt").value);
+    if(!(amt>0)){ toast("Enter valid amount"); return; }
+    const note = $("editNote").value.trim();
+    const date = $("editDate").value;
+    try{
+      await store.editEntry(citizenId, entryId, { amount:amt, note, date });
+      toast("Entry updated");
+      closeSheet();
+      await renderCitizenDetail(citizenId);
+    }catch(err){ toast("Failed to update"); console.error(err); }
+  });
+}
+
+/* ============================================================
+   ADMIN — CSV Export
+   ============================================================ */
+let exportBusy=false;
+async function doExportCsv(){
+  if(exportBusy) return; exportBusy=true;
+  const btn=$("exportCsvBtn2"); if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
+  try{
+    const csv = await store.exportOwingCsv();
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `owing_${todayISO()}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast("CSV exported");
+  }catch(err){ toast("Export failed"); console.error(err); }
+  finally{ exportBusy=false; if(btn){ btn.disabled=false; btn.textContent="Export owing list (CSV)"; } }
+}
+
+async function doExportAll(){
+  if(exportBusy) return; exportBusy=true;
+  const btn=$("exportAllBtn"); if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
+  try{
+    const citizens = allCitizens;
+    let csv = "Name,Job Card,Total Charged (₹),Total Paid (₹),Balance (₹),Status,Payment History\n";
+    for(const c of citizens){
+      const entries = await store.getLedger(c.id);
+      const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
+      const status = statusOf(c);
+      csv += `"${esc(c.name)}","${esc(c.jobCard)}",${c.totalCharged||0},${c.totalPaid||0},${c.balance||0},"${statusLabel[status]}","${esc(payments)}"\n`;
+    }
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `all_households_${todayISO()}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast("CSV exported");
+  }catch(err){ toast("Export failed"); console.error(err); }
+  finally{ exportBusy=false; if(btn){ btn.disabled=false; btn.textContent="Export all households (CSV)"; } }
+}
+
+async function openExportPeriod(){
+  const periods = [];
+  for(const c of allCitizens){
+    const entries = await store.getLedger(c.id);
+    entries.forEach(e => { if(e.type==="charge" && e.note) periods.push(e.note); });
+  }
+  const uniquePeriods = [...new Set(periods)].sort();
+  openSheet("Export by period", `
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Select a period to export contribution charges for that month.</p>
+    <div class="field"><label>Period</label>
+      <select id="exportPeriodSel" class="period-sel">
+        <option value="">Select period...</option>
+        ${uniquePeriods.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
+      </select>
+    </div>
+    <button class="btn block" id="exportPeriodConfirm">Export</button>
+  `);
+  $("exportPeriodConfirm").addEventListener("click", async ()=>{
+    const period = $("exportPeriodSel").value;
+    if(!period){ toast("Please select a period"); return; }
+    await doExportPeriod(period);
+    closeSheet();
+  });
+}
+
+async function doExportPeriod(period){
+  if(exportBusy) return; exportBusy=true;
+  try{
+    let csv = "Name,Job Card,Amount (₹),Status,Payment History\n";
+    for(const c of allCitizens){
+      const entries = await store.getLedger(c.id);
+      const charge = entries.find(e => e.type==="charge" && e.note===period);
+      if(charge){
+        const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
+        const status = charge.deferred ? "Deferred" : "Active";
+        csv += `"${esc(c.name)}","${esc(c.jobCard)}",${charge.amount},"${status}","${esc(payments)}"\n`;
+      }
+    }
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `period_${esc(period).replace(/\s+/g,'_')}_${todayISO()}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast("CSV exported");
+  }catch(err){ toast("Export failed"); console.error(err); }
+  finally{ exportBusy=false; }
+}
+
+// Initial public browse list
+showList();
+
+// Register service worker for PWA
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').then(reg=>{
+    console.log('Service Worker registered', reg);
+  }).catch(err=>{
+    console.log('Service Worker registration failed', err);
+  });
+}
+</script>
+</body>
+</html>
