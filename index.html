@@ -403,7 +403,7 @@ function getEffectiveBalance(c){
   if(!c.ledger) return (c.totalCharged||0) - (c.totalPaid||0);
   let includedCharged=0;
   for(const e of c.ledger){
-    if(e.type==="charge" && e.note && !excludedPeriods.includes(e.note)){
+    if(e.type==="charge" && !e.deferred && e.note && !excludedPeriods.includes(e.note)){
       includedCharged += e.amount;
     }
   }
@@ -522,6 +522,14 @@ function makeLocalStore(){
       const entry = { entryId, type, amount, note, date, deferred: deferred || false, createdAt: clock };
       if(!c.ledger) c.ledger=[];
       c.ledger.push(entry);
+      recalcTotals(c);
+      c.updatedAt=++clock; persist(); notify();
+    },
+    async toggleDefer(id, entryId, deferred){
+      const c=data.citizens[id]; if(!c) return;
+      const idx = c.ledger.findIndex(e => e.entryId === entryId);
+      if(idx<0 || c.ledger[idx].type!=="charge") return;
+      c.ledger[idx].deferred = deferred;
       recalcTotals(c);
       c.updatedAt=++clock; persist(); notify();
     },
@@ -823,7 +831,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         let includedCharged=0;
         ledSnap.docs.forEach(doc=>{
           const e=doc.data();
-          if(e.type==="charge" && e.note && !excludedPeriods.includes(e.note)){
+          if(e.type==="charge" && !e.deferred && e.note && !excludedPeriods.includes(e.note)){
             includedCharged += e.amount;
           }
         });
@@ -848,6 +856,20 @@ function makeFirebaseStore({ auth, db, fs, au }){
         else if(e.type==="forgive") tc-=e.amount;
       });
       await fs.updateDoc(fs.doc(db,"citizens",id),{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt) - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+    },
+    async toggleDefer(id, entryId, deferred){
+      const ref = fs.doc(db, "citizens", id, "ledger", entryId);
+      await fs.updateDoc(ref, { deferred });
+      const cRef=fs.doc(db,"citizens",id);
+      const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
+      let tc=0, tp=0, dt=0;
+      ledSnap.docs.forEach(doc=>{
+        const e=doc.data();
+        if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
+        else if(e.type==="payment") tp+=e.amount;
+        else if(e.type==="forgive") tc-=e.amount;
+      });
+      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt) - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
     },
     async forgiveDebt(id, amount, note){
       await this.addEntry(id, "forgive", amount, note, todayISO());
@@ -2027,8 +2049,8 @@ async function renderCitizenDetail(id){
     let deferToggle = '';
     if(e.type==="charge"){
       const checked = e.deferred ? 'checked' : '';
-      deferToggle = `<label style="font-size:12px;color:var(--muted);margin-left:8px;">
-        <input type="checkbox" class="defer-chk" data-id="${e.entryId}" ${checked}> Defer
+      deferToggle = `<label style="font-size:12px;color:var(--muted);margin-left:8px;display:flex;align-items:center;gap:4px;">
+        <input type="checkbox" class="defer-chk" data-id="${e.entryId}" ${checked}> <span>Defer</span>
       </label>`;
     }
     return `<div class="${rowClass}">
