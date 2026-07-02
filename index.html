@@ -656,6 +656,12 @@ function makeLocalStore(){
       }));
       return { app:"nsnvc-contribution", version:1, exportedAt:new Date().toISOString(), count:citizens.length, citizens };
     },
+    async deleteAll(onProgress){
+      data.citizens = {};
+      data.meta = { periods: [], deferredUploads: [] };
+      persist(); notify();
+      if(onProgress) onProgress(1, 1);
+    },
     async importAll(backup, onProgress){
       if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
       let done=0;
@@ -985,6 +991,24 @@ function makeFirebaseStore({ auth, db, fs, au }){
       citizens.forEach(c=> c.ledger.sort((a,b)=>(a.createdAtMs||0)-(b.createdAtMs||0)));
       if(onProgress) onProgress(2, 2);
       return { app:"nsnvc-contribution", version:1, exportedAt:new Date().toISOString(), count:citizens.length, citizens };
+    },
+    async deleteAll(onProgress){
+      if(onProgress) onProgress(0, 2);
+      const ledSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
+      let batch=fs.writeBatch(db), ops=0;
+      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
+      for(const d of ledSnap.docs){
+        batch.delete(d.ref); if(++ops>=400) await flush();
+      }
+      await flush();
+      if(onProgress) onProgress(1, 2);
+      const citSnap=await fs.getDocs(fs.collection(db,"citizens"));
+      batch=fs.writeBatch(db); ops=0;
+      for(const d of citSnap.docs){
+        batch.delete(d.ref); if(++ops>=400) await flush();
+      }
+      await flush();
+      if(onProgress) onProgress(2, 2);
     },
     async importAll(backup, onProgress){
       if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
@@ -1567,22 +1591,7 @@ async function doDeleteAll(){
   const msg=$("backupMsg"); const btn=$("deleteAllBtn"); btn.disabled=true;
   msg.innerHTML=`<div class="notice info">Deleting all data…</div>`;
   try{
-    const ledSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
-    let batch=fs.writeBatch(db), ops=0;
-    const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
-    for(const d of ledSnap.docs){
-      batch.delete(d.ref); ops++;
-      if(ops>=400) await flush();
-    }
-    await flush();
-    msg.innerHTML=`<div class="notice info">Deleting citizens…</div>`;
-    const citSnap=await fs.getDocs(fs.collection(db,"citizens"));
-    batch=fs.writeBatch(db); ops=0;
-    for(const d of citSnap.docs){
-      batch.delete(d.ref); ops++;
-      if(ops>=400) await flush();
-    }
-    await flush();
+    await store.deleteAll((d,t)=>{ msg.innerHTML=`<div class="notice info">Deleting… ${d} / ${t}</div>`; });
     msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — all data deleted.</div>`;
     toast("All data deleted");
     setTimeout(()=>location.reload(),1500);
