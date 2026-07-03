@@ -238,6 +238,7 @@
   .row .actions button:hover{color:var(--ink)}
   .row.deferred{opacity:0.6; background:#f9f9f6;}
   .row.deferred .desc b::after{content:" (deferred)"; font-weight:400; color:var(--muted); font-size:11px; margin-left:6px;}
+  .row.no-top-border{border-top:none;}
   .inline-buttons{display:flex; gap:8px; flex-wrap:wrap;}
   .inline-buttons .btn{flex:1; min-width:80px;}
   .pending-badge{background:#fef3c7; color:#92400e; padding:2px 10px; border-radius:99px; font-size:12px; font-weight:600;}
@@ -1338,7 +1339,8 @@ function renderStatement(){
     let label = entryLabel(e);
     let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
     let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
-    let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "");
+    const prevCharge = idx>0 && chrono[idx-1].type==="charge";
+    let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "") + (isPayment && prevCharge ? " no-top-border" : "");
     sum += e.type==="charge" ? e.amount : -e.amount;
     return `<div class="${rowClass}">
       <div class="desc"><b>${esc(label)}</b><small>${esc(e.date||"")}</small></div>
@@ -2159,19 +2161,20 @@ async function renderCitizenDetail(id){
     return Object.entries(grouped).sort((a,b)=>{
       const maxA = Math.max(...a[1].map(e=>e.createdAt||0));
       const maxB = Math.max(...b[1].map(e=>e.createdAt||0));
-      return maxB - maxA;
+      return maxA - maxB;
     });
   };
 
   const monthRows = (entries)=>{
-    return entries.map((e)=>{
+    return entries.map((e, idx)=>{
       const isPayment = e.type==="payment";
       const isForgive = e.type==="forgive";
       const isDeferred = e.deferred && e.type==="charge";
       let label = entryLabel(e);
       let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
       let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
-      let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "");
+      const prevCharge = idx>0 && entries[idx-1].type==="charge";
+      let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "") + (isPayment && prevCharge ? " no-top-border" : "");
       const actions = `<span class="actions">
         <button class="edit-entry" data-id="${e.entryId}" data-type="${e.type}">✏️</button>
         <button class="del-entry" data-id="${e.entryId}">🗑️</button>
