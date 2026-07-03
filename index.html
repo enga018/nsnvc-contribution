@@ -1546,13 +1546,14 @@ function renderList(){
   document.querySelectorAll("#adminList .citizen-row-open").forEach(b=>
     b.addEventListener("click",()=>openCitizen(b.dataset.id)));
   document.querySelectorAll("#adminList .mark-paid-btn").forEach(b=>
-    b.addEventListener("click", (e)=>{
+    b.addEventListener("click", async (e)=>{
       e.stopPropagation();
       const id = b.dataset.id;
       const amount = parseFloat(b.dataset.amount);
-      confirmAction(`Mark ${esc(allCitizens.find(c=>c.id===id)?.name||id)} fully paid (${fmt(amount)})?`).then(ok=>{
-        if(ok) markFullyPaid(id, amount);
-      });
+      const citizen = allCitizens.find(c=>c.id===id);
+      const name = citizen?.name || id;
+      const ok = await confirmAction(`Mark ${name} fully paid (${fmt(amount)})?`);
+      if(ok) markFullyPaid(id, amount);
     }));
   if($("adminMore")) $("adminMore").addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
 }
