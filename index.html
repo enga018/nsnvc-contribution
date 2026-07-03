@@ -295,7 +295,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.24.3</footer>
+<footer>New Serchhip North Village Council · v1.24.4</footer>
 
 <script type="module">
 /* ============================================================
@@ -1344,110 +1344,118 @@ async function openSettings(){
   $("adminDetail").classList.remove("hidden");
   $("adminDetail").innerHTML = `<div class="notice info">Loading…</div>`;
   try{
-    if(ledgerCache.size===0) await store.getAllLedgers();
-    const { periods, stats } = getPeriodStats();
-    const excluded = await store.getExcludedPeriods();
-    const pendingRenames = new Map();
-    const rows = periods.length ? periods.map(p => {
-      const s = stats.get(p) || {count:0, amount:0};
-      const isExcl = excluded.includes(p);
-      return `<div class="period-row" data-original="${esc(p)}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-        <label class="switch" style="flex:none"><input type="checkbox" class="period-toggle" value="${esc(p)}" ${!isExcl?"checked":""}><span class="switch-track"><span class="switch-thumb"></span></span></label>
-        <div style="flex:1;min-width:0"><span class="period-name"><b style="font-size:14px">${esc(prettyPeriod(p))}</b></span><br><small style="font-size:12px;color:var(--muted)">${s.count} charge${s.count===1?"":"s"} · ${fmt(s.amount)}</small></div>
-        <button class="period-rename-btn" data-period="${esc(p)}" style="background:transparent;border:none;cursor:pointer;font-size:14px;padding:4px;color:var(--muted)" title="Rename">✏️</button>
-      </div>`;
-    }).join("") : '<div style="color:var(--muted)">No periods found yet.</div>';
-
     $("adminDetail").innerHTML = `
     <button class="back" id="settingsBackBtn">‹ Back</button>
     <div class="statement">
-      <div class="top"><div><p class="name">Settings</p><div class="meta">Manage periods, backup, and account</div></div></div>
+      <div class="top"><div><p class="name">Settings</p></div></div>
       <div class="ledger">
-        <div class="ledger-head" style="padding-left:18px"><b>Manage Periods</b></div>
         <div style="padding:0 18px">
-          ${rows}
-          <button class="btn block" id="savePeriodsBtn" disabled style="margin-top:14px">Save</button>
-          <div id="settingsMsg" style="margin-top:12px"></div>
-        </div>
-        <div style="border-top:1px solid var(--border);margin:16px 0"></div>
-        <div style="padding:0 18px">
-          <button class="btn block ghost" id="settingsBackup">Backup / Restore</button>
+          <button class="btn block" id="settingsManagePeriods">Manage Periods</button>
           <button class="btn block ghost" id="settingsImport" style="margin-top:8px">Import / Export</button>
+          <button class="btn block ghost" id="settingsBackup" style="margin-top:8px">Backup / Restore</button>
+          <button class="btn block ghost" id="settingsRecalc" style="margin-top:8px">Recalculate all balances</button>
+          <button class="btn block ghost" id="settingsDeleteAll" style="margin-top:8px;color:var(--due);border-color:var(--due)">Delete all data</button>
           <div style="border-top:1px solid var(--border);margin:14px 0"></div>
           <button class="btn block ghost" id="settingsLogout" style="color:var(--due);border-color:var(--due)">Sign out</button>
         </div>
+        <div id="settingsPeriodsSection" class="hidden" style="padding:0 18px;margin-top:16px;border-top:1px solid var(--border);padding-top:16px"></div>
+        <div id="settingsMsg" style="padding:0 18px;margin-top:12px"></div>
       </div>
     </div>`;
     $("settingsBackBtn").addEventListener("click", closeSettings);
-    $("settingsBackup").addEventListener("click", openBackup);
     $("settingsImport").addEventListener("click", openImportExport);
+    $("settingsBackup").addEventListener("click", openBackup);
     $("settingsLogout").addEventListener("click", doLogout);
+    $("settingsRecalc").addEventListener("click", doRecalcAllFromSettings);
+    $("settingsDeleteAll").addEventListener("click", doDeleteAllFromSettings);
 
-    function updateSaveBtn(){
-      const exCount = document.querySelectorAll(".period-toggle").length;
-      const renCount = pendingRenames.size;
-      const btn = $("savePeriodsBtn");
-      if(renCount===0){ btn.disabled=true; btn.textContent="Save"; return; }
-      btn.disabled=false;
-      btn.textContent=`Save (${renCount} rename${renCount===1?"":"s"})`;
-    }
+    $("settingsManagePeriods").addEventListener("click", async ()=>{
+      const sec = $("settingsPeriodsSection");
+      if(!sec.classList.contains("hidden")){ sec.classList.add("hidden"); return; }
+      sec.classList.remove("hidden");
+      sec.innerHTML = `<div class="notice info">Loading periods…</div>`;
+      if(ledgerCache.size===0) await store.getAllLedgers();
+      const { periods, stats } = getPeriodStats();
+      const excluded = await store.getExcludedPeriods();
+      const pendingRenames = new Map();
+      const rows = periods.length ? periods.map(p => {
+        const s = stats.get(p) || {count:0, amount:0};
+        const isExcl = excluded.includes(p);
+        return `<div class="period-row" data-original="${esc(p)}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+          <label class="switch" style="flex:none"><input type="checkbox" class="period-toggle" value="${esc(p)}" ${!isExcl?"checked":""}><span class="switch-track"><span class="switch-thumb"></span></span></label>
+          <div style="flex:1;min-width:0"><span class="period-name"><b style="font-size:14px">${esc(prettyPeriod(p))}</b></span><br><small style="font-size:12px;color:var(--muted)">${s.count} charge${s.count===1?"":"s"} · ${fmt(s.amount)}</small></div>
+          <button class="period-rename-btn" data-period="${esc(p)}" style="background:transparent;border:none;cursor:pointer;font-size:14px;padding:4px;color:var(--muted)" title="Rename">✏️</button>
+        </div>`;
+      }).join("") : '<div style="color:var(--muted)">No periods found yet.</div>';
+      sec.innerHTML = `
+        <b style="font-size:14px">Manage Periods</b>
+        <p style="font-size:12.5px;color:var(--muted);margin:4px 0 10px">Toggle exclusion and rename periods inline.</p>
+        ${rows}
+        <button class="btn block" id="savePeriodsBtn" disabled style="margin-top:14px">Save</button>
+        <div id="periodsMsg" style="margin-top:12px"></div>`;
 
-    document.querySelectorAll(".period-rename-btn").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        const oldName = btn.dataset.period;
-        const row = btn.closest(".period-row");
-        if(pendingRenames.has(oldName)){
-          pendingRenames.delete(oldName);
-          row.classList.remove("period-row-renamed");
-          row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
-          btn.textContent="✏️";
-          updateSaveBtn();
-          return;
-        }
-        row.classList.add("period-row-renamed");
-        row.querySelector(".period-name").innerHTML=`<input class="period-rename-input" value="${esc(oldName)}">`;
-        btn.textContent="✕";
-        const input = row.querySelector(".period-rename-input");
-        input.focus(); input.select();
-        function apply(){
-          const newVal = input.value.trim();
-          if(newVal && newVal !== oldName){
-            pendingRenames.set(oldName, newVal);
-            row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b> → <b style="font-size:14px;color:var(--green)">${esc(prettyPeriod(newVal))}</b>`;
-            btn.textContent="✕";
-          } else {
+      function updateSaveBtn(){
+        const renCount = pendingRenames.size;
+        const btn = $("savePeriodsBtn");
+        if(renCount===0){ btn.disabled=true; btn.textContent="Save"; return; }
+        btn.disabled=false;
+        btn.textContent=`Save (${renCount} rename${renCount===1?"":"s"})`;
+      }
+      document.querySelectorAll(".period-rename-btn").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const oldName = btn.dataset.period;
+          const row = btn.closest(".period-row");
+          if(pendingRenames.has(oldName)){
             pendingRenames.delete(oldName);
             row.classList.remove("period-row-renamed");
             row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
             btn.textContent="✏️";
+            updateSaveBtn();
+            return;
           }
-          updateSaveBtn();
-        }
-        input.addEventListener("keydown", e=>{ if(e.key==="Enter") apply(); if(e.key==="Escape"){ pendingRenames.delete(oldName); row.classList.remove("period-row-renamed"); row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`; btn.textContent="✏️"; updateSaveBtn(); }});
-        input.addEventListener("blur", apply);
+          row.classList.add("period-row-renamed");
+          row.querySelector(".period-name").innerHTML=`<input class="period-rename-input" value="${esc(oldName)}">`;
+          btn.textContent="✕";
+          const input = row.querySelector(".period-rename-input");
+          input.focus(); input.select();
+          function apply(){
+            const newVal = input.value.trim();
+            if(newVal && newVal !== oldName){
+              pendingRenames.set(oldName, newVal);
+              row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b> → <b style="font-size:14px;color:var(--green)">${esc(prettyPeriod(newVal))}</b>`;
+              btn.textContent="✕";
+            } else {
+              pendingRenames.delete(oldName);
+              row.classList.remove("period-row-renamed");
+              row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
+              btn.textContent="✏️";
+            }
+            updateSaveBtn();
+          }
+          input.addEventListener("keydown", e=>{ if(e.key==="Enter") apply(); if(e.key==="Escape"){ pendingRenames.delete(oldName); row.classList.remove("period-row-renamed"); row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`; btn.textContent="✏️"; updateSaveBtn(); }});
+          input.addEventListener("blur", apply);
+        });
       });
-    });
-
-    $("savePeriodsBtn").addEventListener("click", async ()=>{
-      const msg=$("settingsMsg"); const btn=$("savePeriodsBtn"); btn.disabled=true;
-      msg.innerHTML='<div class="notice info">Saving…</div>';
-      try{
-        const excluded=[];
-        document.querySelectorAll(".period-toggle").forEach(t=>{ if(!t.checked) excluded.push(t.value); });
-        await store.setExcludedPeriods(excluded);
-        excludedPeriods=excluded; periodsReady=false; unpaidCache=new Map();
-        if(periodFilter && excludedPeriods.includes(periodFilter)) periodFilter="";
-        let renamed=0;
-        for(const [oldName,newName] of pendingRenames){
-          await store.renamePeriod(oldName, newName);
-          renamed++;
-        }
-        pendingRenames.clear();
-        msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excluded.length} exclusions, ${renamed} rename${renamed===1?"":"s"}.</div>`;
-        toast("Periods updated");
-        await refreshDashboard(); loadPendingPeriods();
-        setTimeout(()=>openSettings(), 800);
-      }catch(err){ console.error(err); msg.innerHTML='<div class="notice err">Failed to save.</div>'; btn.disabled=false; }
+      $("savePeriodsBtn").addEventListener("click", async ()=>{
+        const msg=$("periodsMsg"); const btn=$("savePeriodsBtn"); btn.disabled=true;
+        msg.innerHTML='<div class="notice info">Saving…</div>';
+        try{
+          const excl=[];
+          document.querySelectorAll(".period-toggle").forEach(t=>{ if(!t.checked) excl.push(t.value); });
+          await store.setExcludedPeriods(excl);
+          excludedPeriods=excl; periodsReady=false; unpaidCache=new Map();
+          if(periodFilter && excludedPeriods.includes(periodFilter)) periodFilter="";
+          let renamed=0;
+          for(const [oldName,newName] of pendingRenames){
+            await store.renamePeriod(oldName, newName);
+            renamed++;
+          }
+          pendingRenames.clear();
+          msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excl.length} exclusions, ${renamed} rename${renamed===1?"":"s"}.</div>`;
+          toast("Periods updated");
+          await refreshDashboard(); loadPendingPeriods();
+        }catch(err){ console.error(err); msg.innerHTML='<div class="notice err">Failed to save.</div>'; btn.disabled=false; }
+      });
     });
   }catch(err){
     console.error(err);
@@ -1461,6 +1469,38 @@ function closeSettings(){
   $("adminDetail").innerHTML = "";
   $("dashboard").classList.remove("hidden");
   renderList();
+}
+
+async function doRecalcAllFromSettings(){
+  const ok = await confirmAction("Recalculate every household's balance from its history? This is safe and fixes any wrong totals.");
+  if(!ok) return;
+  const msg=$("settingsMsg");
+  msg.innerHTML='<div class="notice info">Recalculating…</div>';
+  try{
+    const n=await store.recalcAll((d,t)=>{ msg.innerHTML=`<div class="notice info">Recalculating… ${d} / ${t}</div>`; });
+    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${n} households recalculated.</div>`;
+    toast("Balances recalculated");
+  }catch(err){ console.error(err); msg.innerHTML='<div class="notice err">Recalculate failed. Try again.</div>'; }
+}
+
+async function doDeleteAllFromSettings(){
+  const ok1 = await confirmAction("Are you sure you want to delete ALL data? This will remove all citizens and their payment history. This cannot be undone.", true);
+  if(!ok1) return;
+  const msg=$("settingsMsg");
+  const input = await new Promise(resolve=>{
+    msg.innerHTML=`<div class="notice err" style="margin-bottom:10px">Type <b>DELETE</b> to confirm:</div><div style="display:flex;gap:8px"><input id="deleteConfirmInput" class="period-rename-input" style="flex:1" placeholder="Type DELETE"><button class="btn small" id="deleteConfirmBtn" style="background:var(--due);color:#fff">Confirm</button></div>`;
+    $("deleteConfirmInput").focus();
+    $("deleteConfirmBtn").addEventListener("click", ()=>resolve($("deleteConfirmInput").value));
+    $("deleteConfirmInput").addEventListener("keydown", e=>{ if(e.key==="Enter") resolve($("deleteConfirmInput").value); });
+  });
+  if(input!=="DELETE"){ msg.innerHTML='<div class="notice err">Deletion cancelled — you did not type DELETE.</div>'; return; }
+  msg.innerHTML='<div class="notice info">Deleting all data…</div>';
+  try{
+    await store.deleteAll((d,t)=>{ msg.innerHTML=`<div class="notice info">Deleting… ${d} / ${t}</div>`; });
+    msg.innerHTML='<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — all data deleted.</div>';
+    toast("All data deleted");
+    setTimeout(()=>location.reload(),1500);
+  }catch(err){ console.error(err); msg.innerHTML='<div class="notice err">Delete failed. Try again.</div>'; }
 }
 
 function doLogout(){
@@ -1527,50 +1567,13 @@ function openBackup(){
   openSheet("Backup / Restore", `
     <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">Download a copy of all data, or restore from a saved backup file. Do this regularly.</p>
     <button class="btn block" id="backupBtn" style="margin-bottom:10px">⬇ Download backup (all data)</button>
-    <button class="btn block ghost" id="restoreBtn" style="margin-bottom:18px;color:var(--due);border-color:var(--due)">⬆ Restore from backup…</button>
+    <button class="btn block ghost" id="restoreBtn" style="color:var(--due);border-color:var(--due)">⬆ Restore from backup…</button>
     <input id="restoreFile" type="file" accept=".json,application/json" style="display:none">
-    <div style="border-top:1px solid var(--border);padding-top:16px">
-      <p style="font-size:12.5px;color:var(--muted);margin:0 0 10px">If any balance looks wrong, this rebuilds every total from its history.</p>
-      <button class="btn block ghost" id="recalcBtn">Recalculate all balances</button>
-    </div>
-    <div style="border-top:1px solid var(--border);padding-top:16px">
-      <p style="font-size:12.5px;color:var(--muted);margin:0 0 10px">Danger zone - these actions cannot be undone.</p>
-      <button class="btn block ghost" id="deleteAllBtn" style="color:var(--due);border-color:var(--due)">Delete all data</button>
-    </div>
     <div id="backupMsg" style="margin-top:12px"></div>
   `);
   $("backupBtn").addEventListener("click", doBackup);
   $("restoreBtn").addEventListener("click", ()=>$("restoreFile").click());
   $("restoreFile").addEventListener("change", doRestore);
-  $("recalcBtn").addEventListener("click", doRecalcAll);
-  $("deleteAllBtn").addEventListener("click", doDeleteAll);
-}
-async function doRecalcAll(){
-  const ok = await confirmAction("Recalculate every household's balance from its history? This is safe and fixes any wrong totals.");
-  if(!ok) return;
-  const msg=$("backupMsg"); const btn=$("recalcBtn"); btn.disabled=true;
-  msg.innerHTML=`<div class="notice info">Recalculating…</div>`;
-  try{
-    const n=await store.recalcAll((d,t)=>{ msg.innerHTML=`<div class="notice info">Recalculating… ${d} / ${t}</div>`; });
-    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${n} households recalculated.</div>`;
-    toast("Balances recalculated");
-  }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Recalculate failed. Try again.</div>`; }
-  finally{ btn.disabled=false; }
-}
-async function doDeleteAll(){
-  const ok1 = await confirmAction("Are you sure you want to delete ALL data? This will remove all citizens and their payment history. This cannot be undone.", true);
-  if(!ok1) return;
-  const ok2 = await confirmAction("This is your last chance. Type 'DELETE' to confirm.", true);
-  if(!ok2) return;
-  const msg=$("backupMsg"); const btn=$("deleteAllBtn"); btn.disabled=true;
-  msg.innerHTML=`<div class="notice info">Deleting all data…</div>`;
-  try{
-    await store.deleteAll((d,t)=>{ msg.innerHTML=`<div class="notice info">Deleting… ${d} / ${t}</div>`; });
-    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — all data deleted.</div>`;
-    toast("All data deleted");
-    setTimeout(()=>location.reload(),1500);
-  }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Delete failed. Try again.</div>`; }
-  finally{ btn.disabled=false; }
 }
 async function openPeriods(){
   openSheet("Manage Periods", `
