@@ -1095,12 +1095,12 @@ function makeFirebaseStore({ auth, db, fs, au }){
       return Array.from(periods).sort();
     },
     async getExcludedPeriods(){
-      const doc=await fs.getDoc(fs.doc(db,"settings","excludedPeriods"));
+      const doc=await fs.getDoc(fs.doc(db,"meta","excludedPeriods"));
       if(doc.exists()) return doc.data().periods||[];
       return [];
     },
     async setExcludedPeriods(periods){
-      await fs.setDoc(fs.doc(db,"settings","excludedPeriods"), { periods }, {merge:true});
+      await fs.setDoc(fs.doc(db,"meta","excludedPeriods"), { periods }, {merge:true});
     },
     async importAll(backup, onProgress){
       if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
@@ -1167,7 +1167,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
 }
 
 /* ---------- choose backend ---------- */
-let citizensUnsub=null, allCitizens=[], loggedIn=false, store=null, isLocalMode=false, lastResult=null, matches=[];
+let citizensUnsub=null, allCitizens=[], rawCitizens=[], loggedIn=false, store=null, isLocalMode=false, lastResult=null, matches=[];
 
 const notConfigured = Object.values(firebaseConfig).some(v => v === "PASTE_HERE");
 if(notConfigured){
@@ -1446,9 +1446,24 @@ function onAuth(isIn){
 function subscribeCitizens(){
   if(citizensUnsub) return;
   citizensUnsub = store.subscribe(list=>{
-    allCitizens = list;
-    renderStats(); renderList(); refreshPending();
+    rawCitizens = list;
+    refreshDashboard();
   });
+}
+// Manage Periods excludes charges by period from balance calculations, but the
+// live citizen list from subscribe() only carries the cached totals, not each
+// household's ledger — so getEffectiveBalance can't apply the exclusion unless
+// we attach the ledger ourselves whenever some period is excluded.
+async function refreshDashboard(){
+  let list = rawCitizens;
+  if(excludedPeriods.length){
+    try{
+      const ledgers = await store.getAllLedgers();
+      list = list.map(c => ({...c, ledger: ledgers[c.id] || []}));
+    }catch(e){ console.error("Failed to load ledgers for period exclusion:", e); }
+  }
+  allCitizens = list;
+  renderStats(); renderList(); refreshPending();
 }
 function renderStats(){
   const pending = allCitizens.filter(c=>getEffectiveBalance(c)>0);
@@ -1473,6 +1488,7 @@ function unpaidPeriods(entries){
   const owed=[];
   for(const e of chrono){
     if(e.type!=="charge" || e.deferred) continue;
+    if(e.note && excludedPeriods.includes(e.note)) continue;
     if(pay>=(e.amount||0)){ pay-=(e.amount||0); }
     else { if(e.note) owed.push(e.note); pay=0; }
   }
@@ -1753,9 +1769,15 @@ async function savePeriods(){
   try{
     await store.setExcludedPeriods(excluded);
     excludedPeriods = excluded;
+    // The period filter dropdown caches unpaid periods per household; force it to
+    // recompute so it stops offering/filtering by periods just excluded above.
+    periodsReady = false;
+    unpaidCache = new Map();
+    if(periodFilter && excludedPeriods.includes(periodFilter)) periodFilter = "";
     msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excluded.length} periods excluded from calculations.</div>`;
     toast("Periods updated");
-    renderList();
+    await refreshDashboard();
+    loadPendingPeriods();
   }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Failed to save. Try again.</div>`; }
   finally{ btn.disabled=false; }
 }
