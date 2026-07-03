@@ -1679,37 +1679,54 @@ function openUpload(){
   }).catch(() => {});
 }
 
-let uploadRaw=null;
+let uploadRaw=null, uploadWB=null;
 async function handleUpload(e){
   const file=e.target.files[0]; if(!file) return;
   $("impMsg").innerHTML=`<div class="notice info">Reading…</div>`; $("impPreview").innerHTML="";
   let XLSX; try{ XLSX=await ensureXLSX(); }catch(err){ $("impMsg").innerHTML=`<div class="notice err">Couldn't load the Excel reader. Connect to the internet and try again.</div>`; return; }
   try{
-    const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
-    const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
-    if(rows.length<2){ $("impMsg").innerHTML=`<div class="notice err">That sheet looks empty.</div>`; return; }
-    const h=rows[0]||[];
-    const guessJob=_findCol(h,/job\s*card/i);
-    const guessName=_findCol(h,/holder|head of house|name/i);
-    const guessCharge=_findCol(h,/charge|contribution|amount/i);
-    const guessPayment=_findCol(h,/payment|paid|pay/i);
-    const guessMode=_findCol(h,/mode|method|cash|bank/i);
-    const sample = rows.find((r,i)=> i>0 && r && r.some(v=>v!=null)) || rows[1];
-    uploadRaw={ rows };
-    $("impMsg").innerHTML=`<div class="notice info">Confirm which column is which, then Continue.</div>`;
-    $("impPreview").innerHTML=`
-      <div class="panel" style="margin-top:12px">
-        <div class="field"><label>Job card number column *</label><select id="mapJob" class="period-sel">${colOptions(h,sample,guessJob)}</select></div>
-        <div class="field"><label>Name column</label><select id="mapName" class="period-sel">${colOptions(h,sample,guessName)}</select></div>
-        <div class="field"><label>Contribution charge column (optional)</label><select id="mapCharge" class="period-sel">${colOptions(h,sample,guessCharge)}</select></div>
-        <div class="field"><label>Payment column (optional)</label><select id="mapPayment" class="period-sel">${colOptions(h,sample,guessPayment)}</select></div>
-        <div class="field"><label>Payment mode column (optional - Cash/Bank)</label><select id="mapMode" class="period-sel">${colOptions(h,sample,guessMode)}</select></div>
-      </div>
-      <button class="btn block" id="mapContinue">Continue</button>
-      <div id="mapMsg" style="margin-top:10px"></div>`;
-    $("mapContinue").addEventListener("click", buildUploadItems);
+    uploadWB=XLSX.read(await file.arrayBuffer(),{type:"array"});
+    if(uploadWB.SheetNames.length>1){
+      $("impMsg").innerHTML=`<div class="notice info">This file has ${uploadWB.SheetNames.length} sheets. Pick one to import.</div>`;
+      $("impPreview").innerHTML=`
+        <div class="panel" style="margin-top:12px">
+          <div class="field"><label>Select sheet</label>
+            <select id="sheetSelect" class="period-sel">${uploadWB.SheetNames.map((n,i)=>`<option value="${i}"${i===0?" selected":""}>${esc(n)}</option>`).join("")}</select></div>
+        </div>
+        <button class="btn block" id="sheetContinue">Use this sheet</button>`;
+      $("sheetContinue").addEventListener("click", ()=>{
+        const idx=parseInt($("sheetSelect").value,10);
+        loadSheet(uploadWB.Sheets[uploadWB.SheetNames[idx]]);
+      });
+    } else {
+      loadSheet(uploadWB.Sheets[uploadWB.SheetNames[0]]);
+    }
   }catch(err){ console.error(err); $("impMsg").innerHTML=`<div class="notice err">Couldn't read that file.</div>`; }
+}
+
+function loadSheet(ws){
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  if(rows.length<2){ $("impMsg").innerHTML=`<div class="notice err">That sheet looks empty.</div>`; return; }
+  const h=rows[0]||[];
+  const guessJob=_findCol(h,/job\s*card/i);
+  const guessName=_findCol(h,/holder|head of house|name/i);
+  const guessCharge=_findCol(h,/charge|contribution|amount/i);
+  const guessPayment=_findCol(h,/payment|paid|pay/i);
+  const guessMode=_findCol(h,/mode|method|cash|bank/i);
+  const sample = rows.find((r,i)=> i>0 && r && r.some(v=>v!=null)) || rows[1];
+  uploadRaw={ rows };
+  $("impMsg").innerHTML=`<div class="notice info">Confirm which column is which, then Continue.</div>`;
+  $("impPreview").innerHTML=`
+    <div class="panel" style="margin-top:12px">
+      <div class="field"><label>Job card number column *</label><select id="mapJob" class="period-sel">${colOptions(h,sample,guessJob)}</select></div>
+      <div class="field"><label>Name column</label><select id="mapName" class="period-sel">${colOptions(h,sample,guessName)}</select></div>
+      <div class="field"><label>Contribution charge column (optional)</label><select id="mapCharge" class="period-sel">${colOptions(h,sample,guessCharge)}</select></div>
+      <div class="field"><label>Payment column (optional)</label><select id="mapPayment" class="period-sel">${colOptions(h,sample,guessPayment)}</select></div>
+      <div class="field"><label>Payment mode column (optional - Cash/Bank)</label><select id="mapMode" class="period-sel">${colOptions(h,sample,guessMode)}</select></div>
+    </div>
+    <button class="btn block" id="mapContinue">Continue</button>
+    <div id="mapMsg" style="margin-top:10px"></div>`;
+  $("mapContinue").addEventListener("click", buildUploadItems);
 }
 
 function colOptions(header, sample, selected){
@@ -1827,33 +1844,50 @@ function resolveCitizen(value){
   return cand;
 }
 
-let bankRaw=null;
+let bankRaw=null, bankWB=null;
 async function handleBank(e){
   const file=e.target.files[0]; if(!file) return;
   $("impMsg").innerHTML=`<div class="notice info">Reading…</div>`; $("impPreview").innerHTML="";
   let XLSX; try{ XLSX=await ensureXLSX(); }catch(err){ $("impMsg").innerHTML=`<div class="notice err">Couldn't load the Excel reader. Connect to the internet and try again.</div>`; return; }
   try{
-    const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
-    const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
-    if(rows.length<2){ $("impMsg").innerHTML=`<div class="notice err">That sheet looks empty.</div>`; return; }
-    const h=rows[0]||[];
-    const guessJob=_findCol(h,/job\s*card/i);
-    const guessName=_findCol(h,/name|holder/i);
-    const guessAmt=_findCol(h,/amount|paid|payable|pay/i);
-    const sample = rows.find((r,i)=> i>0 && r && r.some(v=>v!=null)) || rows[1];
-    bankRaw={ rows };
-    $("impMsg").innerHTML=`<div class="notice info">Confirm which column is which, then Continue.</div>`;
-    $("impPreview").innerHTML=`
-      <div class="panel" style="margin-top:12px">
-        <div class="field"><label>Job card number column *</label><select id="mapJob" class="period-sel">${colOptions(h,sample,guessJob)}</select></div>
-        <div class="field"><label>Name column</label><select id="mapName" class="period-sel">${colOptions(h,sample,guessName)}</select></div>
-        <div class="field"><label>Amount column *</label><select id="mapAmt" class="period-sel">${colOptions(h,sample,guessAmt)}</select></div>
-      </div>
-      <button class="btn block" id="mapContinue">Continue</button>
-      <div id="mapMsg" style="margin-top:10px"></div>`;
-    $("mapContinue").addEventListener("click", buildBankItems);
+    bankWB=XLSX.read(await file.arrayBuffer(),{type:"array"});
+    if(bankWB.SheetNames.length>1){
+      $("impMsg").innerHTML=`<div class="notice info">This file has ${bankWB.SheetNames.length} sheets. Pick one to import.</div>`;
+      $("impPreview").innerHTML=`
+        <div class="panel" style="margin-top:12px">
+          <div class="field"><label>Select sheet</label>
+            <select id="sheetSelect" class="period-sel">${bankWB.SheetNames.map((n,i)=>`<option value="${i}"${i===0?" selected":""}>${esc(n)}</option>`).join("")}</select></div>
+        </div>
+        <button class="btn block" id="sheetContinue">Use this sheet</button>`;
+      $("sheetContinue").addEventListener("click", ()=>{
+        const idx=parseInt($("sheetSelect").value,10);
+        loadBankSheet(bankWB.Sheets[bankWB.SheetNames[idx]]);
+      });
+    } else {
+      loadBankSheet(bankWB.Sheets[bankWB.SheetNames[0]]);
+    }
   }catch(err){ console.error(err); $("impMsg").innerHTML=`<div class="notice err">Couldn't read that file.</div>`; }
+}
+
+function loadBankSheet(ws){
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  if(rows.length<2){ $("impMsg").innerHTML=`<div class="notice err">That sheet looks empty.</div>`; return; }
+  const h=rows[0]||[];
+  const guessJob=_findCol(h,/job\s*card/i);
+  const guessName=_findCol(h,/name|holder/i);
+  const guessAmt=_findCol(h,/amount|paid|payable|pay/i);
+  const sample = rows.find((r,i)=> i>0 && r && r.some(v=>v!=null)) || rows[1];
+  bankRaw={ rows };
+  $("impMsg").innerHTML=`<div class="notice info">Confirm which column is which, then Continue.</div>`;
+  $("impPreview").innerHTML=`
+    <div class="panel" style="margin-top:12px">
+      <div class="field"><label>Job card number column *</label><select id="mapJob" class="period-sel">${colOptions(h,sample,guessJob)}</select></div>
+      <div class="field"><label>Name column</label><select id="mapName" class="period-sel">${colOptions(h,sample,guessName)}</select></div>
+      <div class="field"><label>Amount column *</label><select id="mapAmt" class="period-sel">${colOptions(h,sample,guessAmt)}</select></div>
+    </div>
+    <button class="btn block" id="mapContinue">Continue</button>
+    <div id="mapMsg" style="margin-top:10px"></div>`;
+  $("mapContinue").addEventListener("click", buildBankItems);
 }
 
 function buildBankItems(){
