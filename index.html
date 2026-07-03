@@ -287,7 +287,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.23.3</footer>
+<footer>New Serchhip North Village Council · v1.23.4</footer>
 
 <script type="module">
 /* ============================================================
@@ -940,12 +940,13 @@ function makeFirebaseStore({ auth, db, fs, au }){
       cSnap.docs.forEach(d=>{ const c=d.data(); byId[d.id]={ id:d.id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name, phone:c.phone||"",
         totalCharged:c.totalCharged||0, totalPaid:c.totalPaid||0, balance:c.balance||0, deferredTotal:c.deferredTotal||0, ledger:[] }; });
       if(onProgress) onProgress(1, 2);
-      const ledSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
-      ledSnap.docs.forEach(x=>{
-        const pid = x.ref.parent.parent && x.ref.parent.parent.id;
-        if(pid && byId[pid]){ const e=x.data(); byId[pid].ledger.push({ entryId:e.entryId||x.id, type:e.type, amount:e.amount, note:e.note,
-          date:e.date||"", deferred:e.deferred||false, createdAtMs:(e.createdAt&&e.createdAt.toMillis)?e.createdAt.toMillis():null }); }
-      });
+      await Promise.all(cSnap.docs.map(async d => {
+        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
+        ledSnap.docs.forEach(x=>{
+          const e=x.data(); byId[d.id].ledger.push({ entryId:e.entryId||x.id, type:e.type, amount:e.amount, note:e.note,
+            date:e.date||"", deferred:e.deferred||false, createdAtMs:(e.createdAt&&e.createdAt.toMillis)?e.createdAt.toMillis():null });
+        });
+      }));
       const citizens=Object.values(byId);
       citizens.forEach(c=> c.ledger.sort((a,b)=>(a.createdAtMs||0)-(b.createdAtMs||0)));
       if(onProgress) onProgress(2, 2);
@@ -953,32 +954,34 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     async deleteAll(onProgress){
       if(onProgress) onProgress(0, 2);
-      const ledSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
+      const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
       let batch=fs.writeBatch(db), ops=0;
       const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
-      for(const d of ledSnap.docs){
+      for(const d of cSnap.docs){
+        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
+        ledSnap.docs.forEach(ld => { batch.delete(ld.ref); if(++ops>=400) { } });
+        if(ops>=400) await flush();
         batch.delete(d.ref); if(++ops>=400) await flush();
+        if(onProgress) onProgress(0, 2);
       }
       await flush();
-      if(onProgress) onProgress(1, 2);
-      const citSnap=await fs.getDocs(fs.collection(db,"citizens"));
-      batch=fs.writeBatch(db); ops=0;
-      for(const d of citSnap.docs){
-        batch.delete(d.ref); if(++ops>=400) await flush();
       }
       await flush();
       if(onProgress) onProgress(2, 2);
     },
     async renamePeriod(oldPeriod, newPeriod, onProgress){
-      const ledSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
+      const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
       let batch=fs.writeBatch(db), ops=0, count=0;
       const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
-      for(const d of ledSnap.docs){
-        const e=d.data();
-        if(e.type==="charge" && e.note===oldPeriod){
-          batch.update(d.ref, { note:newPeriod });
-          ops++; count++;
-          if(ops>=400) await flush();
+      for(const cd of cSnap.docs){
+        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",cd.id,"ledger"));
+        for(const ld of ledSnap.docs){
+          const e=ld.data();
+          if(e.type==="charge" && e.note===oldPeriod){
+            batch.update(ld.ref, { note:newPeriod });
+            ops++; count++;
+            if(ops>=400) await flush();
+          }
         }
       }
       await flush();
@@ -1008,12 +1011,14 @@ function makeFirebaseStore({ auth, db, fs, au }){
     async importAll(backup, onProgress){
       if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
       if(onProgress) onProgress(0, 3);
-      const ledSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
+      const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
       let batch=fs.writeBatch(db), ops=0;
       const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
-      for(const d of ledSnap.docs){
-        batch.delete(d.ref);
-        if(++ops>=400) await flush();
+      for(const d of cSnap.docs){
+        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
+        ledSnap.docs.forEach(ld => { batch.delete(ld.ref); if(++ops>=400) { } });
+        if(ops>=400) await flush();
+        batch.delete(d.ref); if(ops>=400) await flush();
       }
       await flush();
       if(onProgress) onProgress(1, 3);
