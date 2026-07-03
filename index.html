@@ -1561,7 +1561,8 @@ function openUpload(){
       Upload charges or payments in one file. Each row can have charges, payments, or both.
       People are matched by job card; new job cards are added for charges.</p>
     <div class="field"><label>Period name — for charges (shows in history)</label>
-      <input id="impPeriod" placeholder="e.g. MAY2"></div>
+      <input id="impPeriod" placeholder="e.g. MAY2" list="periodSuggestions">
+      <datalist id="periodSuggestions"></datalist></div>
     <div class="field"><label>Payment date — for payments</label>
       <input id="impDate" type="date" value="${todayISO()}"></div>
     <div class="field"><label>Excel file (.xlsx)</label>
@@ -1569,6 +1570,10 @@ function openUpload(){
     <div id="impMsg"></div><div id="impPreview"></div>
   `);
   $("impFile").addEventListener("change", handleUpload);
+  store.getImportedPeriods().then(periods => {
+    const list = $("periodSuggestions");
+    if(list) list.innerHTML = periods.map(p => `<option value="${esc(p)}">`).join('');
+  }).catch(() => {});
 }
 
 let uploadRaw=null;
