@@ -38,36 +38,8 @@
   .brand{display:flex; flex-direction:column; line-height:1.2}
   .brand b{font-size:15px; font-weight:650; letter-spacing:.2px}
   .brand span{font-size:11px; opacity:.8; text-transform:uppercase; letter-spacing:1px}
-  .mode-link{
-    background:rgba(255,255,255,.12); color:#fff; border:1px solid rgba(255,255,255,.25);
-    padding:7px 12px; border-radius:99px; font-size:12.5px; font-weight:600;
-  }
-  .mode-link:active{background:rgba(255,255,255,.22)}
-
   main{max-width:680px; margin:0 auto; padding:18px 16px 60px}
 
-  /* Citizen lookup */
-  .lookup{ text-align:center; padding:14px 4px 6px; }
-  .lookup h1{ font-size:18px; font-weight:600; margin:0 0 16px; color:var(--ink); }
-  .searchbar{
-    display:flex; align-items:center; gap:10px;
-    max-width:420px; margin:0 auto;
-    background:var(--surface); border:1px solid var(--border-strong);
-    border-radius:999px; padding:5px 5px 5px 16px;
-    transition:border-color .15s, box-shadow .15s;
-  }
-  .searchbar:focus-within{ border-color:var(--green); box-shadow:0 0 0 3px rgba(27,77,62,.08); }
-  .search-ico{ width:18px; height:18px; color:var(--muted); flex:none; }
-  .searchbar input{
-    flex:1; min-width:0; border:none; outline:none; background:transparent;
-    font-size:16px; padding:10px 0; color:var(--ink);
-  }
-  .search-go{
-    flex:none; width:40px; height:40px; border-radius:50%; border:none;
-    background:var(--green); color:#fff; display:flex; align-items:center; justify-content:center;
-  }
-  .search-go svg{ width:18px; height:18px; }
-  .search-go:active{ background:var(--green-dark); }
   .btn{
     background:var(--green); color:#fff; border:none; padding:13px 18px;
     border-radius:10px; font-size:15px; font-weight:600; white-space:nowrap;
@@ -119,21 +91,6 @@
   .amt.charge{color:var(--ink)}
   .amt.payment{color:var(--paid)}
   .empty{padding:18px; text-align:center; color:var(--muted); font-size:13.5px}
-
-  /* Search result card (step 1) */
-  .result-card{
-    display:flex; align-items:center; gap:12px; width:100%; text-align:left;
-    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
-    padding:14px 18px; box-shadow:var(--shadow); margin-top:10px; animation:rise .2s ease;
-    transition:background .15s;
-  }
-  .result-card:active{background:var(--paper)}
-  .result-card .info{flex:1; min-width:0}
-  .result-card .info b{font-size:16px; display:block}
-  .result-card .info small{font-size:12.5px; color:var(--muted)}
-  .result-card .card-amt{font-size:15.5px; font-weight:700; white-space:nowrap; flex:none}
-  .result-card .card-amt.owe{color:var(--due)}
-  .result-card .card-amt.clear{color:var(--paid)}
 
   /* Back link */
   .back{background:none; border:none; color:var(--green); font-size:13.5px; font-weight:600;
@@ -220,13 +177,6 @@
     padding:14px 18px; font-size:13px; font-weight:650; color:var(--green); text-transform:uppercase; letter-spacing:.5px; cursor:pointer}
   .dash-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px}
   .dash-title{font-size:13px; font-weight:650; text-transform:uppercase; letter-spacing:1px; color:var(--muted)}
-  .card-amt{font-size:15.5px; font-weight:700; white-space:nowrap; flex:none}
-  .card-amt.owe{color:var(--due)}
-  .card-amt.clear{color:var(--paid)}
-  .pager{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:16px 2px 4px}
-  .pager .pageno{font-size:13px; color:var(--muted)}
-  .list-head{font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); padding:18px 4px 2px}
-  #citizenList .result-card{margin-top:10px}
 
   footer{text-align:center; color:var(--muted); font-size:11.5px; padding:24px 16px}
   .config-warn{background:#fff7e6; border:1px solid #f0d99a; color:#7a5a12; padding:14px 16px; border-radius:10px; font-size:13px; margin:16px; line-height:1.5}
@@ -248,27 +198,6 @@
   }
   .pending-list .pending-row:last-child{border-bottom:none;}
   .pending-list .confirm-btn{background:var(--paid); color:#fff; border:none; padding:4px 12px; border-radius:99px; font-size:12px;}
-  /* UPI Pay Now button style */
-  .btn-upi {
-    background: var(--green);
-    color: #fff;
-    border: none;
-    padding: 11px 22px;
-    border-radius: 999px;
-    font-size: 15px;
-    font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    margin-top: 12px;
-    cursor: pointer;
-    box-shadow: 0 2px 8px rgba(27,77,62,0.25);
-    transition: background 0.15s, transform 0.1s;
-  }
-  .btn-upi:active { background: var(--green-dark); transform: scale(0.97); }
-  .btn-upi svg { width: 18px; height: 18px; fill: currentColor; }
-  .btn-upi, .btn-upi:hover, .btn-upi:visited { text-decoration: none; color: #fff; }
   /* styled confirm dialog */
   .confirm-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex;
     align-items:center; justify-content:center; z-index:9999; padding:24px; }
@@ -383,6 +312,14 @@ function toast(msg){
   document.body.appendChild(t); setTimeout(()=>t.remove(),2200);
 }
 let excludedPeriods=[];
+// Single source of truth for "does this charge count toward period-based
+// calculations" — used by getEffectiveBalance, unpaidPeriods, and the
+// Firebase store's listOwing so exclusion behaves identically everywhere.
+// A charge with no note can't match any excluded period name, so it's
+// never excluded by this check.
+function isChargeExcluded(e){
+  return !!(e.note && excludedPeriods.includes(e.note));
+}
 function statusOf(c){
   const bal = getEffectiveBalance(c);
   if(bal<=0) return "paid";
@@ -399,7 +336,7 @@ function getEffectiveBalance(c){
   }
   let includedCharged=0;
   for(const e of c.ledger){
-    if(e.type==="charge" && e.note && !excludedPeriods.includes(e.note) && !e.deferred){
+    if(e.type==="charge" && !e.deferred && !isChargeExcluded(e)){
       includedCharged += Number(e.amount || 0);
     }
   }
@@ -824,7 +761,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         let includedCharged=0;
         ledSnap.docs.forEach(doc=>{
           const e=doc.data();
-          if(e.type==="charge" && e.note && !excludedPeriods.includes(e.note) && !e.deferred){
+          if(e.type==="charge" && !e.deferred && !isChargeExcluded(e)){
             includedCharged += Number(e.amount || 0);
           }
         });
@@ -1131,6 +1068,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
 
 /* ---------- choose backend ---------- */
 let citizensUnsub=null, allCitizens=[], rawCitizens=[], loggedIn=false, store=null, isLocalMode=false;
+let dashboardRefreshSeq=0, dashboardRefreshTimer=null;
 
 const notConfigured = Object.values(firebaseConfig).some(v => v === "PASTE_HERE");
 if(notConfigured){
@@ -1175,20 +1113,25 @@ async function login(){
   }
 }
 
-function onAuth(isIn){
+async function onAuth(isIn){
   loggedIn = isIn;
   if(isIn){
     $("loginCard").classList.add("hidden");
     $("dashboard").classList.remove("hidden");
     // Excluded periods live in Firestore behind admin-only read rules now that
-    // there's no public view, so this can only be fetched once logged in.
-    store.getExcludedPeriods().then(periods => { excludedPeriods = periods; refreshDashboard(); }).catch(err => console.error("Failed to load excluded periods:", err));
+    // there's no public view. Load them *before* subscribing to the citizen
+    // list so the first dashboard render already has the right exclusions,
+    // instead of a stale/default value that self-corrects a moment later.
+    try{ excludedPeriods = await store.getExcludedPeriods(); }
+    catch(err){ console.error("Failed to load excluded periods:", err); }
     subscribeCitizens();
     refreshPending();
   } else {
     $("loginCard").classList.remove("hidden");
     $("dashboard").classList.add("hidden");
     if(citizensUnsub){ citizensUnsub(); citizensUnsub=null; }
+    clearTimeout(dashboardRefreshTimer);
+    dashboardRefreshSeq++; // invalidate any refreshDashboard() still in flight from before logout
   }
 }
 
@@ -1199,21 +1142,37 @@ function subscribeCitizens(){
   if(citizensUnsub) return;
   citizensUnsub = store.subscribe(list=>{
     rawCitizens = list;
-    refreshDashboard();
+    scheduleDashboardRefresh();
   });
 }
 // Manage Periods excludes charges by period from balance calculations, but the
 // live citizen list from subscribe() only carries the cached totals, not each
 // household's ledger — so getEffectiveBalance can't apply the exclusion unless
-// we attach the ledger ourselves whenever some period is excluded.
+// we attach the ledger ourselves whenever some period is excluded. Note this
+// means objects in allCitizens only carry .ledger while some period is
+// excluded — any future code reading c.ledger directly (instead of going
+// through getEffectiveBalance/getDeferredAmount, which both guard for its
+// absence) needs to handle it being missing.
+function scheduleDashboardRefresh(){
+  // Coalesces bursts of Firestore snapshot events (e.g. a bulk import
+  // triggering many rapid writes) into a single ledger refetch instead of
+  // one full refetch per event.
+  clearTimeout(dashboardRefreshTimer);
+  dashboardRefreshTimer = setTimeout(refreshDashboard, 250);
+}
 async function refreshDashboard(){
+  const seq = ++dashboardRefreshSeq;
   let list = rawCitizens;
   if(excludedPeriods.length){
     try{
       const ledgers = await store.getAllLedgers();
       list = list.map(c => ({...c, ledger: ledgers[c.id] || []}));
-    }catch(e){ console.error("Failed to load ledgers for period exclusion:", e); }
+    }catch(e){
+      console.error("Failed to load ledgers for period exclusion:", e);
+      toast("Couldn't apply period exclusions — showing unfiltered totals");
+    }
   }
+  if(seq !== dashboardRefreshSeq) return; // superseded by a newer refresh; drop this stale result
   allCitizens = list;
   renderStats(); renderList(); refreshPending();
 }
@@ -1239,8 +1198,7 @@ function unpaidPeriods(entries){
   let pay=0; for(const e of chrono) if(e.type==="payment") pay+=(e.amount||0);
   const owed=[];
   for(const e of chrono){
-    if(e.type!=="charge" || e.deferred) continue;
-    if(e.note && excludedPeriods.includes(e.note)) continue;
+    if(e.type!=="charge" || e.deferred || isChargeExcluded(e)) continue;
     if(pay>=(e.amount||0)){ pay-=(e.amount||0); }
     else { if(e.note) owed.push(e.note); pay=0; }
   }
