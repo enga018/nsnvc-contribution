@@ -287,7 +287,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.23.5</footer>
+<footer>New Serchhip North Village Council · v1.23.6</footer>
 
 <script type="module">
 /* ============================================================
@@ -968,19 +968,18 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     async renamePeriod(oldPeriod, newPeriod, onProgress){
       const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
+      const ledgers = await Promise.all(cSnap.docs.map(cd =>
+        fs.getDocs(fs.collection(db,"citizens",cd.id,"ledger"))));
       let batch=fs.writeBatch(db), ops=0, count=0;
       const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
-      for(const cd of cSnap.docs){
-        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",cd.id,"ledger"));
-        for(const ld of ledSnap.docs){
-          const e=ld.data();
-          if(e.type==="charge" && e.note===oldPeriod){
+      for(const ldSnap of ledgers)
+        for(const ld of ldSnap.docs){
+          if(ld.data().type==="charge" && ld.data().note===oldPeriod){
             batch.update(ld.ref, { note:newPeriod });
-            ops++; count++;
-            if(ops>=400) await flush();
+            if(++ops>=400) await flush();
+            count++;
           }
         }
-      }
       await flush();
       if(onProgress) onProgress(count, count);
       return count;
