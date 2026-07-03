@@ -287,7 +287,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.23.7</footer>
+<footer>New Serchhip North Village Council · v1.23.8</footer>
 
 <script type="module">
 /* ============================================================
@@ -1435,10 +1435,11 @@ async function doDeleteAll(){
   }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Delete failed. Try again.</div>`; }
   finally{ btn.disabled=false; }
 }
-function openRenamePeriod(){
+async function openRenamePeriod(){
+  const periods = await store.getAllPeriods();
   openSheet("Rename Period", `
     <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">Change the name of a period for all charges that currently use it.</p>
-    <div class="field"><label>Current period name</label><input id="oldPeriod" placeholder="e.g. MAY2"></div>
+    <div class="field"><label>Current period name</label><select id="oldPeriod" class="period-sel">${periods.map(p=>`<option value="${esc(p)}">${esc(prettyPeriod(p))}</option>`).join("")}</select></div>
     <div class="field"><label>New period name</label><input id="newPeriod" placeholder="e.g. MAY-2024"></div>
     <button class="btn block" id="renameConfirm">Rename period</button>
     <div id="renameMsg" style="margin-top:12px"></div>
