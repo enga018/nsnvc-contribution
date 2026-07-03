@@ -1447,10 +1447,6 @@ async function openManagePeriods(){
     }catch(err){ console.error(err); msg.innerHTML='<div class="notice err">Failed to save.</div>'; btn.disabled=false; }
   });
 }
-    $("adminDetail").innerHTML = `<button class="back" id="settingsBackBtn">‹ Back</button><div class="notice err">Failed to load: ${err.message||err}</div>`;
-    $("settingsBackBtn").addEventListener("click", closeSettings);
-  }
-}
 
 function closeSettings(){
   $("adminDetail").classList.add("hidden");
@@ -1705,7 +1701,7 @@ async function handleUpload(e){
 }
 
 function loadSheet(ws){
-  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  const rows=window.XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
   if(rows.length<2){ $("impMsg").innerHTML=`<div class="notice err">That sheet looks empty.</div>`; return; }
   const h=rows[0]||[];
   const guessJob=_findCol(h,/job\s*card/i);
@@ -1870,7 +1866,7 @@ async function handleBank(e){
 }
 
 function loadBankSheet(ws){
-  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  const rows=window.XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
   if(rows.length<2){ $("impMsg").innerHTML=`<div class="notice err">That sheet looks empty.</div>`; return; }
   const h=rows[0]||[];
   const guessJob=_findCol(h,/job\s*card/i);
