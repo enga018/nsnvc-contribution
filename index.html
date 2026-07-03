@@ -737,7 +737,12 @@ function makeLocalStore(){
       for(const id of ids){ recalcTotals(data.citizens[id]); if((++done%50)===0&&onProgress) onProgress(done, ids.length); }
       persist(); notify(); if(onProgress) onProgress(ids.length, ids.length); return ids.length;
     },
-    async migrateEntries(){ return 0; } // no-op for local
+    async migrateEntries(){ return 0; }, // no-op for local
+    async getAllLedgers(){
+      const out={};
+      for(const [id,c] of Object.entries(data.citizens)){ out[id]=[...(c.ledger||[])]; }
+      return out;
+    }
   };
 }
 
@@ -1141,6 +1146,15 @@ function makeFirebaseStore({ auth, db, fs, au }){
       await flush();
       if(onProgress) onProgress(citizenIds.length, citizenIds.length);
       return citizenIds.length;
+    },
+    async getAllLedgers(){
+      const out={};
+      const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
+      for(const d of cSnap.docs){
+        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
+        out[d.id]=ledSnap.docs.map(x=>x.data());
+      }
+      return out;
     }
   };
 }
@@ -2315,9 +2329,10 @@ async function doExportAll(){
   const btn=$("exportAllBtn"); if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
   try{
     const citizens = allCitizens;
+    const ledgers = await store.getAllLedgers();
     let csv = "Name,Job Card,Total Charged (₹),Total Paid (₹),Balance (₹),Status,Payment History\n";
     for(const c of citizens){
-      const entries = await store.getLedger(c.id);
+      const entries = ledgers[c.id] || [];
       const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
       const status = statusOf(c);
       csv += `"${esc(c.name)}","${esc(c.jobCard)}",${c.totalCharged||0},${c.totalPaid||0},${c.balance||0},"${statusLabel[status]}","${esc(payments)}"\n`;
@@ -2333,9 +2348,10 @@ async function doExportAll(){
 }
 
 async function openExportPeriod(){
+  const ledgers = await store.getAllLedgers();
   const periods = [];
   for(const c of allCitizens){
-    const entries = await store.getLedger(c.id);
+    const entries = ledgers[c.id] || [];
     entries.forEach(e => { if(e.type==="charge" && e.note) periods.push(e.note); });
   }
   const uniquePeriods = [...new Set(periods)].sort();
@@ -2360,9 +2376,10 @@ async function openExportPeriod(){
 async function doExportPeriod(period){
   if(exportBusy) return; exportBusy=true;
   try{
+    const ledgers = await store.getAllLedgers();
     let csv = "Name,Job Card,Amount (₹),Status,Payment History\n";
     for(const c of allCitizens){
-      const entries = await store.getLedger(c.id);
+      const entries = ledgers[c.id] || [];
       const charge = entries.find(e => e.type==="charge" && e.note===period);
       if(charge){
         const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
