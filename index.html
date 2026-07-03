@@ -253,8 +253,10 @@
     <div id="dashboard" class="hidden">
       <div class="dash-head">
         <span class="dash-title">Admin</span>
-        <button class="btn small ghost" id="settingsBtn">⚙️</button>
-        <button class="btn small ghost" id="logoutBtn">Log out</button>
+        <div style="display:flex;gap:4px">
+          <button class="btn small ghost" id="settingsBtn">⚙️</button>
+          <button class="btn small ghost" id="logoutBtn">Log out</button>
+        </div>
       </div>
       <div class="stats" style="grid-template-columns:1fr">
         <div class="stat" style="text-align:center;padding:18px 16px">
@@ -288,7 +290,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.23.13</footer>
+<footer>New Serchhip North Village Council · v1.23.14</footer>
 
 <script type="module">
 /* ============================================================
@@ -455,7 +457,7 @@ function makeLocalStore(){
       if(!c.ledger) c.ledger=[];
       c.ledger.push(entry);
       recalcTotals(c);
-      c.updatedAt=++clock; persist(); notify();
+      c.updatedAt=++clock; persist(); notify(); invalidateLedgerCache(id);
     },
     async toggleDefer(id, entryId, deferred){
       const c=data.citizens[id]; if(!c) return;
@@ -463,7 +465,7 @@ function makeLocalStore(){
       if(idx<0 || c.ledger[idx].type!=="charge") return;
       c.ledger[idx].deferred = deferred;
       recalcTotals(c);
-      c.updatedAt=++clock; persist(); notify();
+      c.updatedAt=++clock; persist(); notify(); invalidateLedgerCache(id);
     },
     async forgiveDebt(id, amount, note){
       const c=data.citizens[id]; if(!c) throw new Error("missing");
@@ -471,7 +473,7 @@ function makeLocalStore(){
       const entry = { entryId, type:"forgive", amount, note, date:todayISO(), deferred:false, createdAt:clock };
       c.ledger.push(entry);
       recalcTotals(c);
-      c.updatedAt=++clock; persist(); notify();
+      c.updatedAt=++clock; persist(); notify(); invalidateLedgerCache(id);
     },
     async addPendingPayment(id, amount){
       const c=data.citizens[id]; if(!c) throw new Error("missing");
@@ -492,7 +494,7 @@ function makeLocalStore(){
       c.ledger.push(entry);
       recalcTotals(c);
       pp.status="confirmed";
-      c.updatedAt=++clock; persist(); notify();
+      c.updatedAt=++clock; persist(); notify(); invalidateLedgerCache(id);
     },
     async deleteEntry(id, entryId){
       const c=data.citizens[id]; if(!c) return;
@@ -500,7 +502,7 @@ function makeLocalStore(){
       if(idx<0) return;
       c.ledger.splice(idx,1);
       recalcTotals(c);
-      c.updatedAt=++clock; persist(); notify();
+      c.updatedAt=++clock; persist(); notify(); invalidateLedgerCache(id);
     },
     async editEntry(id, entryId, updates){
       const c=data.citizens[id]; if(!c) return;
@@ -511,7 +513,7 @@ function makeLocalStore(){
       if(updates.note!==undefined) e.note=updates.note;
       if(updates.date!==undefined) e.date=updates.date;
       recalcTotals(c);
-      c.updatedAt=++clock; persist(); notify();
+      c.updatedAt=++clock; persist(); notify(); invalidateLedgerCache(id);
     },
     async getPendingPayments(){
       const all=[];
@@ -522,7 +524,7 @@ function makeLocalStore(){
       }
       return all;
     },
-    async deleteCitizen(id){ delete data.citizens[id]; persist(); notify(); },
+    async deleteCitizen(id){ delete data.citizens[id]; persist(); notify(); invalidateLedgerCache(id); },
     async bulkImport(rows, onProgress){
       let n=0;
       for(const r of rows){
@@ -537,7 +539,7 @@ function makeLocalStore(){
         recalcTotals(data.citizens[r.id]);
         if((++n % 50)===0 && onProgress) onProgress(n, rows.length);
       }
-      persist(); notify(); if(onProgress) onProgress(rows.length, rows.length);
+      persist(); notify(); invalidateLedgerCache(); if(onProgress) onProgress(rows.length, rows.length);
       return rows.length;
     },
     async bulkAppendCharges(items, onProgress){
@@ -554,7 +556,7 @@ function makeLocalStore(){
         c.updatedAt=++clock;
         if((++n % 50)===0 && onProgress) onProgress(n, items.length);
       }
-      persist(); notify(); if(onProgress) onProgress(items.length, items.length);
+      persist(); notify(); invalidateLedgerCache(); if(onProgress) onProgress(items.length, items.length);
       return items.length;
     },
     async bulkAppendPayments(items, onProgress){
@@ -567,7 +569,7 @@ function makeLocalStore(){
         c.updatedAt=++clock;
         if((++n % 50)===0 && onProgress) onProgress(n, items.length);
       }
-      persist(); notify(); if(onProgress) onProgress(items.length, items.length);
+      persist(); notify(); invalidateLedgerCache(); if(onProgress) onProgress(items.length, items.length);
       return items.length;
     },
     async signIn(){ loggedIn=true; authCbs.forEach(cb=>cb(true)); },
@@ -645,7 +647,7 @@ function makeLocalStore(){
         recalcTotals(data.citizens[r.id]);
         if((++done % 50)===0 && onProgress) onProgress(done, backup.citizens.length);
       }
-      persist(); notify(); if(onProgress) onProgress(backup.citizens.length, backup.citizens.length);
+      persist(); notify(); invalidateLedgerCache(); if(onProgress) onProgress(backup.citizens.length, backup.citizens.length);
       return backup.citizens.length;
     },
     async getImportedPeriods(){ return (data.meta && data.meta.periods) ? data.meta.periods.slice() : []; },
@@ -654,12 +656,15 @@ function makeLocalStore(){
     async recalcAll(onProgress){
       const ids=Object.keys(data.citizens); let done=0;
       for(const id of ids){ recalcTotals(data.citizens[id]); if((++done%50)===0&&onProgress) onProgress(done, ids.length); }
-      persist(); notify(); if(onProgress) onProgress(ids.length, ids.length); return ids.length;
+      persist(); notify(); invalidateLedgerCache(); if(onProgress) onProgress(ids.length, ids.length); return ids.length;
     },
     async migrateEntries(){ return 0; }, // no-op for local
     async getAllLedgers(){
       const out={};
       for(const [id,c] of Object.entries(data.citizens)){ out[id]=[...(c.ledger||[])]; }
+      ledgerCache.clear();
+      for(const [id,entries] of Object.entries(out)) ledgerCache.set(id,entries);
+      periodStatsCache=null;
       return out;
     }
   };
@@ -778,29 +783,22 @@ function makeFirebaseStore({ auth, db, fs, au }){
     async addEntry(id, type, amount, note, date, deferred=false){
       const eRef=fs.doc(fs.collection(db,"citizens",id,"ledger"));
       await fs.setDoc(eRef, { entryId:eRef.id, type, amount, note, date, deferred, createdAt:fs.serverTimestamp() });
-      const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
-      let tc=0, tp=0, dt=0;
-      ledSnap.docs.forEach(doc=>{
-        const e=doc.data();
-        if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
-        else if(e.type==="payment") tp+=e.amount;
-        else if(e.type==="forgive") tc-=e.amount;
-      });
-      await fs.updateDoc(fs.doc(db,"citizens",id),{ totalCharged:tc+dt, totalPaid:tp, balance:tc - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+      const entry={ entryId:eRef.id, type, amount, note, date, deferred, createdAt:Date.now() };
+      const entries=ledgerCache.get(id)||[];
+      entries.push(entry);
+      ledgerCache.set(id,entries); periodStatsCache=null;
+      const totals=recalcFromLedger(entries);
+      await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
     },
     async toggleDefer(id, entryId, deferred){
       const ref = fs.doc(db, "citizens", id, "ledger", entryId);
       await fs.updateDoc(ref, { deferred });
-      const cRef=fs.doc(db,"citizens",id);
-      const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
-      let tc=0, tp=0, dt=0;
-      ledSnap.docs.forEach(doc=>{
-        const e=doc.data();
-        if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
-        else if(e.type==="payment") tp+=e.amount;
-        else if(e.type==="forgive") tc-=e.amount;
-      });
-      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:tc - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+      const entries=ledgerCache.get(id)||[];
+      const e=entries.find(x=>x.entryId===entryId);
+      if(e) e.deferred=deferred;
+      ledgerCache.set(id,entries); periodStatsCache=null;
+      const totals=recalcFromLedger(entries);
+      await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
     },
     async forgiveDebt(id, amount, note){
       await this.addEntry(id, "forgive", amount, note, todayISO());
@@ -836,30 +834,22 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     async deleteEntry(id, entryId){
       await fs.deleteDoc(fs.doc(db,"citizens",id,"ledger",entryId));
-      const cRef=fs.doc(db,"citizens",id);
-      const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
-      let tc=0, tp=0, dt=0;
-      ledSnap.docs.forEach(doc=>{
-        const e=doc.data();
-        if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
-        else if(e.type==="payment") tp+=e.amount;
-        else if(e.type==="forgive") tc-=e.amount;
-      });
-      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:tc - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+      const entries=ledgerCache.get(id)||[];
+      const idx=entries.findIndex(x=>x.entryId===entryId);
+      if(idx>=0) entries.splice(idx,1);
+      ledgerCache.set(id,entries); periodStatsCache=null;
+      const totals=recalcFromLedger(entries);
+      await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
     },
     async editEntry(id, entryId, updates){
       const ref=fs.doc(db,"citizens",id,"ledger",entryId);
       await fs.updateDoc(ref, updates);
-      const cRef=fs.doc(db,"citizens",id);
-      const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
-      let tc=0, tp=0, dt=0;
-      ledSnap.docs.forEach(doc=>{
-        const e=doc.data();
-        if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
-        else if(e.type==="payment") tp+=e.amount;
-        else if(e.type==="forgive") tc-=e.amount;
-      });
-      await fs.updateDoc(cRef,{ totalCharged:tc+dt, totalPaid:tp, balance:tc - tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() });
+      const entries=ledgerCache.get(id)||[];
+      const e=entries.find(x=>x.entryId===entryId);
+      if(e) Object.assign(e,updates);
+      ledgerCache.set(id,entries); periodStatsCache=null;
+      const totals=recalcFromLedger(entries);
+      await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
     },
     async deleteCitizen(id){
       const led=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
@@ -867,6 +857,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
       const pp=await fs.getDocs(fs.collection(db,"citizens",id,"pendingPayments"));
       await Promise.all(pp.docs.map(d=>fs.deleteDoc(d.ref)));
       await fs.deleteDoc(fs.doc(db,"citizens",id));
+      invalidateLedgerCache(id);
     },
     async bulkImport(rows, onProgress){
       let batch=fs.writeBatch(db), ops=0, done=0;
@@ -903,6 +894,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         if((++done % 50)===0 && onProgress) onProgress(done, items.length);
       }
       await flush();
+      invalidateLedgerCache();
       if(onProgress) onProgress(items.length, items.length);
       return items.length;
     },
@@ -918,6 +910,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         if((++done % 50)===0 && onProgress) onProgress(done, items.length);
       }
       await flush();
+      invalidateLedgerCache();
       if(onProgress) onProgress(items.length, items.length);
       return items.length;
     },
@@ -966,6 +959,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         if(onProgress) onProgress(0, 2);
       }
       await flush();
+      invalidateLedgerCache();
     },
     async renamePeriod(oldPeriod, newPeriod, onProgress){
       const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
@@ -982,6 +976,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
           }
         }
       await flush();
+      invalidateLedgerCache();
       if(onProgress) onProgress(count, count);
       return count;
     },
@@ -1033,6 +1028,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         if((++done % 50)===0 && onProgress) onProgress(2, 3);
       }
       await flush();
+      invalidateLedgerCache();
       if(onProgress) onProgress(3, 3);
       return backup.citizens.length;
     },
@@ -1056,17 +1052,20 @@ function makeFirebaseStore({ auth, db, fs, au }){
         if((++done%50)===0&&onProgress) onProgress(done, citizenIds.length);
       }
       await flush();
+      invalidateLedgerCache();
       if(onProgress) onProgress(citizenIds.length, citizenIds.length);
       return citizenIds.length;
     },
     async getAllLedgers(){
-      const out={};
       const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
-      for(const d of cSnap.docs){
+      const results=await Promise.all(cSnap.docs.map(async d=>{
         const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
-        out[d.id]=ledSnap.docs.map(x=>x.data());
-      }
-      return out;
+        return [d.id, ledSnap.docs.map(x=>x.data())];
+      }));
+      ledgerCache.clear();
+      for(const [id,entries] of results) ledgerCache.set(id,entries);
+      periodStatsCache=null;
+      return Object.fromEntries(results);
     }
   };
 }
@@ -1074,6 +1073,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
 /* ---------- choose backend ---------- */
 let citizensUnsub=null, allCitizens=[], rawCitizens=[], loggedIn=false, store=null, isLocalMode=false;
 let dashboardRefreshSeq=0, dashboardRefreshTimer=null;
+let ledgerCache=new Map(), periodStatsCache=null, cacheRefreshTimer=null;
 
 const notConfigured = Object.values(firebaseConfig).some(v => v === "PASTE_HERE");
 if(notConfigured){
@@ -1158,24 +1158,52 @@ function subscribeCitizens(){
 // excluded — any future code reading c.ledger directly (instead of going
 // through getEffectiveBalance/getDeferredAmount, which both guard for its
 // absence) needs to handle it being missing.
+function invalidateLedgerCache(id){
+  if(id) ledgerCache.delete(id); else ledgerCache.clear();
+  periodStatsCache = null;
+}
+function recalcFromLedger(entries){
+  let tc=0, tp=0, dt=0;
+  for(const e of entries){
+    if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
+    else if(e.type==="payment") tp+=e.amount;
+    else if(e.type==="forgive") tc-=e.amount;
+  }
+  return { totalCharged:tc+dt, totalPaid:tp, balance:tc-tp, deferredTotal:dt };
+}
+function getPeriodStats(){
+  if(periodStatsCache) return periodStatsCache;
+  const periods=new Set(), stats=new Map();
+  for(const [cid,entries] of ledgerCache){
+    for(const e of entries){
+      if(e.type==="charge" && e.note){
+        periods.add(e.note);
+        const s=stats.get(e.note)||{count:0,amount:0};
+        s.count++; s.amount+=Number(e.amount||0);
+        stats.set(e.note,s);
+      }
+    }
+  }
+  periodStatsCache={periods:[...periods].sort((a,b)=>periodKey(a)-periodKey(b)),stats};
+  return periodStatsCache;
+}
 function scheduleDashboardRefresh(){
   // Coalesces bursts of Firestore snapshot events (e.g. a bulk import
   // triggering many rapid writes) into a single ledger refetch instead of
   // one full refetch per event.
   clearTimeout(dashboardRefreshTimer);
   dashboardRefreshTimer = setTimeout(refreshDashboard, 250);
+  clearTimeout(cacheRefreshTimer);
+  cacheRefreshTimer = setTimeout(()=>{ if(excludedPeriods.length) store.getAllLedgers().catch(()=>{}); }, 5000);
 }
 async function refreshDashboard(){
   const seq = ++dashboardRefreshSeq;
   let list = rawCitizens;
   if(excludedPeriods.length){
-    try{
-      const ledgers = await store.getAllLedgers();
-      list = list.map(c => ({...c, ledger: ledgers[c.id] || []}));
-    }catch(e){
-      console.error("Failed to load ledgers for period exclusion:", e);
-      toast("Couldn't apply period exclusions — showing unfiltered totals");
+    if(ledgerCache.size===0){
+      try{ await store.getAllLedgers(); }catch(e){ console.error("Failed to load ledgers:", e); }
     }
+    list = list.map(c => ({...c, ledger: ledgerCache.get(c.id) || []}));
   }
   if(seq !== dashboardRefreshSeq) return; // superseded by a newer refresh; drop this stale result
   allCitizens = list;
@@ -1224,7 +1252,7 @@ async function loadPendingPeriods(){
   const pend=allCitizens.filter(c=>getEffectiveBalance(c)>0);
   const cache=new Map(), set=new Set();
   await Promise.all(pend.map(async c => {
-    try{ const led=await store.getLedger(c.id); const up=unpaidPeriods(led);
+    try{ const led=ledgerCache.get(c.id)||await store.getLedger(c.id); const up=unpaidPeriods(led);
       cache.set(c.id, up); up.forEach(p=>set.add(p)); }catch(e){}
   }));
   unpaidCache=cache; periodsReady=true; loadingPeriods=false;
@@ -1311,21 +1339,11 @@ async function openSettings(){
   $("adminDetail").classList.remove("hidden");
   $("adminDetail").innerHTML = `<div class="notice info">Loading…</div>`;
   try{
-    const [periods, excluded, ledgers] = await Promise.all([
-      store.getAllPeriods(), store.getExcludedPeriods(), store.getAllLedgers()
-    ]);
-    const stats = {};
-    for(const cid in ledgers){
-      for(const e of (ledgers[cid]||[])){
-        if(e.type==="charge" && e.note){
-          if(!stats[e.note]) stats[e.note] = { count:0, amount:0 };
-          stats[e.note].count++;
-          stats[e.note].amount += Number(e.amount||0);
-        }
-      }
-    }
-    const rows = periods.length ? periods.sort((a,b)=>periodKey(a)-periodKey(b)).map(p => {
-      const s = stats[p] || {count:0, amount:0};
+    if(ledgerCache.size===0) await store.getAllLedgers();
+    const { periods, stats } = getPeriodStats();
+    const excluded = await store.getExcludedPeriods();
+    const rows = periods.length ? periods.map(p => {
+      const s = stats.get(p) || {count:0, amount:0};
       const isExcl = excluded.includes(p);
       return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
         <label class="switch" style="flex:none"><input type="checkbox" class="period-toggle" value="${esc(p)}" ${!isExcl?"checked":""}><span class="switch-track"><span class="switch-thumb"></span></span></label>
@@ -1958,7 +1976,7 @@ function closeCitizenDetail(){
 
 async function renderCitizenDetail(id){
   const c = allCitizens.find(x=>x.id===id);
-  const entries = await store.getLedger(id);
+  const entries = ledgerCache.get(id) || await store.getLedger(id);
   const bal = getEffectiveBalance(c);
   const chrono = [...entries].sort((a,b)=>a.createdAt-b.createdAt);
 
@@ -2239,7 +2257,7 @@ async function doExportAll(){
   const btn=$("exportAllBtn"); if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
   try{
     const citizens = allCitizens;
-    const ledgers = await store.getAllLedgers();
+    const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
     let csv = "Name,Job Card,Total Charged (₹),Total Paid (₹),Balance (₹),Status,Payment History\n";
     for(const c of citizens){
       const entries = ledgers[c.id] || [];
@@ -2258,19 +2276,14 @@ async function doExportAll(){
 }
 
 async function openExportPeriod(){
-  const ledgers = await store.getAllLedgers();
-  const periods = [];
-  for(const c of allCitizens){
-    const entries = ledgers[c.id] || [];
-    entries.forEach(e => { if(e.type==="charge" && e.note) periods.push(e.note); });
-  }
-  const uniquePeriods = [...new Set(periods)].sort();
+  if(ledgerCache.size===0) await store.getAllLedgers();
+  const { periods } = getPeriodStats();
   openSheet("Export by period", `
     <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Select a period to export contribution charges for that month.</p>
     <div class="field"><label>Period</label>
       <select id="exportPeriodSel" class="period-sel">
         <option value="">Select period...</option>
-        ${uniquePeriods.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
+        ${periods.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
       </select>
     </div>
     <button class="btn block" id="exportPeriodConfirm">Export</button>
@@ -2286,7 +2299,7 @@ async function openExportPeriod(){
 async function doExportPeriod(period){
   if(exportBusy) return; exportBusy=true;
   try{
-    const ledgers = await store.getAllLedgers();
+    const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
     let csv = "Name,Job Card,Amount (₹),Status,Payment History\n";
     for(const c of allCitizens){
       const entries = ledgers[c.id] || [];
