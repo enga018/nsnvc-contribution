@@ -86,6 +86,7 @@
   }
   .row .desc{flex:1; min-width:0}
   .row .desc b{font-size:14px; font-weight:600; display:block}
+  .row .desc .desc-head{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
   .row .desc small{font-size:12px; color:var(--muted)}
   .row .amt{font-size:14.5px; font-weight:650; white-space:nowrap}
   .amt.charge{color:var(--ink)}
@@ -287,7 +288,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.23.8</footer>
+<footer>New Serchhip North Village Council · v1.23.9</footer>
 
 <script type="module">
 /* ============================================================
@@ -1952,7 +1953,7 @@ async function renderCitizenDetail(id){
       </label>`;
     }
     return `<div class="${rowClass}">
-      <div class="desc"><b>${esc(label)}</b><small>${esc(displayDate(e.date))}</small> ${deferToggle}</div>
+      <div class="desc"><div class="desc-head"><b>${esc(label)}</b> ${deferToggle}</div><small>${esc(displayDate(e.date))}</small></div>
       <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
       ${actions}
     </div>`;
