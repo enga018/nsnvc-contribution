@@ -1536,7 +1536,7 @@ function renderList(){
         <b style="display:block;font-weight:600;font-size:15px">${esc(c.name||"—")}</b>
         <small style="font-size:12px;color:var(--muted);display:block;margin-top:2px">${small}</small>
       </span>
-      <span class="bal money" style="color:${adminFilter==="deferred"?'var(--partial)':(bal>0?'var(--due)':'var(--paid)');white-space:nowrap">${adminFilter==="deferred" ? fmt(deferred) : fmt(Math.max(0,bal))}</span>
+      <span class="bal money" style="white-space:nowrap;color:${adminFilter==="deferred"?'var(--partial)':(bal>0?'var(--due)':'var(--paid)')}">${adminFilter==="deferred" ? fmt(deferred) : fmt(Math.max(0,bal))}</span>
       ${markPaidBtn}
       <button class="citizen-row-open" data-id="${esc(c.id)}" style="background:none;border:none;padding:8px;color:var(--muted);cursor:pointer;font-size:14px">→</button>
     </div>`;
