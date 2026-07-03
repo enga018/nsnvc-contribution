@@ -436,12 +436,7 @@ const statusLabel = {paid:"Cleared", partial:"Partly paid", due:"Due"};
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function monthLabel(){ return new Date().toLocaleString("en-IN",{month:"long",year:"numeric"}); }
 function prettyPeriod(note){
-  const s=String(note||"").trim();
-  if(!/^[A-Z0-9 ]+$/.test(s)) return note;
-  const m=s.match(/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s*([0-9]*)$/);
-  if(!m) return note;
-  const M={JAN:"January",FEB:"February",MAR:"March",APR:"April",MAY:"May",JUN:"June",JUL:"July",AUG:"August",SEP:"September",OCT:"October",NOV:"November",DEC:"December"};
-  return M[m[1]] + (m[2]?" "+m[2]:"") + " 2026";
+  return String(note||"").trim();
 }
 function entryLabel(e){
   if(e.type==="payment"){
