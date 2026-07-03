@@ -376,7 +376,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.22.2</footer>
+<footer>New Serchhip North Village Council · v1.23</footer>
 
 <script type="module">
 /* ============================================================
@@ -1578,16 +1578,9 @@ function openSettings(){
       <button class="btn block ghost" id="settingsBackup" style="margin-top:8px">Backup / Restore</button>
       <button class="btn block ghost" id="settingsImport" style="margin-top:8px">Import / Export</button>
     </div>
-    <div class="panel" style="margin-bottom:16px">
+    <div class="panel">
       <h4>Account</h4>
       <button class="btn block ghost" id="settingsLogout" style="color:var(--due);border-color:var(--due)">Sign out</button>
-    </div>
-    <div class="panel">
-      <h4>App Info</h4>
-      <div style="font-size:13px;color:var(--muted);line-height:1.6">
-        <div>Version: v1.22.2</div>
-        <div>New Serchhip North Village Council</div>
-      </div>
     </div>
   `);
   $("settingsPeriods").addEventListener("click", ()=>{ closeSheet(); openPeriods(); });
@@ -1766,7 +1759,7 @@ async function savePeriods(){
     excludedPeriods = excluded;
     msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excluded.length} periods excluded from calculations.</div>`;
     toast("Periods updated");
-    showList();
+    renderList();
   }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Failed to save. Try again.</div>`; }
   finally{ btn.disabled=false; }
 }
@@ -2156,12 +2149,23 @@ async function renderCitizenDetail(id){
   const groupByMonth = (entries)=>{
     const grouped = {};
     for(const e of entries){
-      const d = e.date ? new Date(e.date) : new Date();
-      const key = d.toLocaleString('en-IN', {month:'long', year:'numeric'});
+      let key;
+      if(e.type==="charge" && e.note){
+        key = prettyPeriod(e.note) || e.note;
+      } else if(e.date){
+        const d = new Date(e.date);
+        key = isNaN(d.getTime()) ? "Other" : d.toLocaleString('en-IN', {month:'long', year:'numeric'});
+      } else {
+        key = "Other";
+      }
       if(!grouped[key]) grouped[key] = [];
       grouped[key].push(e);
     }
-    return Object.entries(grouped).reverse();
+    return Object.entries(grouped).sort((a,b)=>{
+      const maxA = Math.max(...a[1].map(e=>e.createdAt||0));
+      const maxB = Math.max(...b[1].map(e=>e.createdAt||0));
+      return maxB - maxA;
+    });
   };
 
   const monthRows = (entries)=>{
