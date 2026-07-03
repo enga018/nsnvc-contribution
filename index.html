@@ -1174,6 +1174,16 @@ async function refreshDashboard(){
   }
   if(seq !== dashboardRefreshSeq) return; // superseded by a newer refresh; drop this stale result
   allCitizens = list;
+  // The period dropdown's cache (unpaidCache/periodsReady) was built from
+  // whatever allCitizens looked like at the time it was requested. If that
+  // happened before the very first citizen list arrived (e.g. someone opens
+  // the dropdown right after login), it would otherwise permanently cache an
+  // empty result — periodsReady stays true forever with no periods listed.
+  // Invalidating it here means the next dropdown focus (or an already-active
+  // period filter, re-checked by renderList below) recomputes against
+  // current data instead of a possibly-stale/empty snapshot.
+  periodsReady = false;
+  unpaidCache = new Map();
   renderStats(); renderList(); refreshPending();
 }
 function renderStats(){
