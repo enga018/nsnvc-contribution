@@ -1,6 +1,6 @@
 # NSNVC Citizen Contribution Tracker
 
-A lightweight web app for the **New Serchhip North Village Council (NSNVC)**, Mizoram, India, to track monthly citizen contributions (derived from MGNREGA wages) for each household — and let citizens look up their own balance.
+A lightweight web app for the **New Serchhip North Village Council (NSNVC)**, Mizoram, India, to track monthly citizen contributions (derived from MGNREGA wages) for each household. Admin-only — there is no public citizen-facing lookup.
 
 **Live site:** https://enga018.github.io/nsnvc-contribution/
 
@@ -10,11 +10,7 @@ It is a single HTML file. No build step, no server of its own — just static ho
 
 ## What it does
 
-### For citizens (public, no login)
-- Look up a contribution balance by typing the **job card number** (the part after the slash is enough).
-- See a clean statement: name, status (Cleared / Due / Partly paid), the amount still to pay, and a collapsible payment history (oldest first).
-- Browse the list of households who still owe.
-- **Pay Now (UPI):** opens the citizen's UPI app (GPay / PhonePe / Paytm) with the council's UPI ID and amount pre-filled. The council confirms the payment manually once it arrives.
+There is no public-facing view — the app opens straight to the council login. (An earlier version let citizens look up their own balance and pay via UPI without logging in; that was removed because it required Firestore to allow public read access to every household's name, balance, and payment history.)
 
 ### For the council (admin, email/password login)
 - Dashboard with a single **"Still to collect"** figure (total outstanding + number of pending households).
@@ -65,7 +61,7 @@ The app runs in a local **test mode** with sample data if no Firebase config is 
    > The web `apiKey` is **not** a secret — it is meant to ship in client code. Access is controlled by Firestore security rules, not by hiding the key.
 
 ### 2. Firestore security rules
-Public read (so citizens can look up balances), admin-only write:
+Admin-only read and write — there's no public view left that needs open read access:
 
 ```
 rules_version = '2';
@@ -73,24 +69,23 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     match /citizens/{cid} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.token.email == "YOUR_ADMIN_EMAIL";
+      allow read, write: if request.auth != null && request.auth.token.email == "YOUR_ADMIN_EMAIL";
       match /{sub=**} {
-        allow read: if true;
-        allow write: if request.auth != null && request.auth.token.email == "YOUR_ADMIN_EMAIL";
+        allow read, write: if request.auth != null && request.auth.token.email == "YOUR_ADMIN_EMAIL";
       }
     }
 
     match /meta/{doc} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.token.email == "YOUR_ADMIN_EMAIL";
+      allow read, write: if request.auth != null && request.auth.token.email == "YOUR_ADMIN_EMAIL";
     }
 
   }
 }
 ```
 
-Replace `YOUR_ADMIN_EMAIL` with your admin login email. The `meta` rule lets the duplicate-import guard remember which periods have been imported.
+Replace `YOUR_ADMIN_EMAIL` with your admin login email. The `meta` doc holds imported-period tracking and the Manage Periods exclusion list.
+
+> **If you're upgrading an existing deployment:** this app version no longer has a public citizen lookup, but removing the UI alone does not change your live Firestore rules. If your project still has `allow read: if true` from an earlier version, anyone with your Firebase config (which isn't secret, see above) can still read every household's name, balance, and payment history directly via the Firestore API, bypassing this app entirely. Update your rules in the Firebase console to the version above to actually close that off.
 
 ### 3. Deploy
 Commit `index.html` to the repo and enable **GitHub Pages** (Settings → Pages → deploy from branch). The app is served from the repo's `index.html`.

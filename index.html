@@ -302,28 +302,10 @@
     <b>Contributions</b>
     <span>New Serchhip North · Village Council</span>
   </div>
-  <button class="mode-link" id="modeBtn">Council login</button>
 </header>
 
 <main>
-  <!-- ============ CITIZEN VIEW ============ -->
-  <section id="citizenView">
-    <div class="lookup" id="lookupCard">
-      <h1>Check your contribution balance</h1>
-      <div class="searchbar">
-        <svg class="search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        <input id="searchId" type="text" inputmode="text" placeholder="Enter your job card no" autocomplete="off" />
-        <button class="search-go" id="searchBtn" aria-label="Search">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-        </button>
-      </div>
-    </div>
-    <div id="citizenResult"></div>
-    <div id="citizenList"></div>
-  </section>
-
-  <!-- ============ ADMIN VIEW ============ -->
-  <section id="adminView" class="hidden">
+  <section id="adminView">
     <div id="loginCard" class="login-card">
       <h2>Council login</h2>
       <div class="field">
@@ -516,14 +498,6 @@ function makeLocalStore(){
     async getCitizen(id){ const c=data.citizens[id]; return c? {...c, ledger:undefined} : null; },
     async getLedger(id){ const c=data.citizens[id]; if(!c) return [];
       return [...(c.ledger||[])].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)); },
-    async findByCard(typed){
-      const suf=suffixOf(typed), fk=fullKey(typed);
-      const out=[];
-      for(const [id,c] of Object.entries(data.citizens)){
-        if(id===fk || (c.cardNo||"")===suf) out.push({ id, c:{...c, ledger:undefined} });
-      }
-      return out;
-    },
     subscribe(cb){ listeners.add(cb); cb(sortedList()); return ()=>listeners.delete(cb); },
     async listOwing(){
       const list=[]; 
@@ -831,17 +805,6 @@ function makeFirebaseStore({ auth, db, fs, au }){
         if(!data.entryId) data.entryId = d.id;
         return data;
       });
-    },
-    async findByCard(typed){
-      const suf=suffixOf(typed), fk=fullKey(typed);
-      const out=[]; const seen=new Set();
-      const byNo=await fs.getDocs(fs.query(fs.collection(db,"citizens"), fs.where("cardNo","==",suf)));
-      byNo.forEach(d=>{ if(!seen.has(d.id)){ seen.add(d.id); out.push({ id:d.id, c:d.data() }); } });
-      if(!seen.has(fk)){
-        const direct=await fs.getDoc(fs.doc(db,"citizens",fk));
-        if(direct.exists()){ out.push({ id:fk, c:direct.data() }); }
-      }
-      return out;
     },
     subscribe(cb){
       const q=fs.query(fs.collection(db,"citizens"), fs.orderBy("name"));
@@ -1167,7 +1130,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
 }
 
 /* ---------- choose backend ---------- */
-let citizensUnsub=null, allCitizens=[], rawCitizens=[], loggedIn=false, store=null, isLocalMode=false, lastResult=null, matches=[];
+let citizensUnsub=null, allCitizens=[], rawCitizens=[], loggedIn=false, store=null, isLocalMode=false;
 
 const notConfigured = Object.values(firebaseConfig).some(v => v === "PASTE_HERE");
 if(notConfigured){
@@ -1185,9 +1148,6 @@ if(notConfigured){
 if(isLocalMode) addTestLoginHint();
 store.onAuth(onAuth);
 
-// Load excluded periods at startup
-store.getExcludedPeriods().then(periods => { excludedPeriods = periods; }).catch(() => {});
-
 function showModeBanner(msg){
   document.querySelector("main").insertAdjacentHTML("afterbegin", `<div class="config-warn">${msg}</div>`);
 }
@@ -1199,218 +1159,8 @@ function addTestLoginHint(){
 }
 
 /* ============================================================
-   CITIZEN LOOKUP
+   ADMIN AUTH
    ============================================================ */
-$("searchBtn").addEventListener("click", doSearch);
-$("searchId").addEventListener("keydown", e => { if(e.key==="Enter") doSearch(); });
-
-function personCardHTML(id, c){
-  const owe = Math.max(0, getEffectiveBalance(c));
-  return `<button class="result-card" data-id="${esc(id)}">
-    <span class="info">
-      <b>${esc(c.jobCard||id)}</b>
-      <small>${esc(c.name||"—")}</small>
-    </span>
-    <span class="card-amt money ${owe>0?"owe":"clear"}">${fmt(owe)}</span>
-  </button>`;
-}
-
-async function doSearch(){
-  const typed = $("searchId").value.trim();
-  const out = $("citizenResult");
-  if(!typed){ showList(); return; }
-  $("citizenList").classList.add("hidden");
-  out.innerHTML=`<div class="notice info">Looking up…</div>`;
-  try{
-    matches = await store.findByCard(typed);
-    if(!matches.length){
-      out.innerHTML=`<button class="back" id="toListBtn">‹ Back to list</button>
-        <div class="notice err">No record found for <b>${esc(typed)}</b>. Please check the number or contact the council office.</div>`;
-      $("toListBtn").addEventListener("click", ()=>{ $("searchId").value=""; showList(); });
-      return;
-    }
-    renderResults();
-  }catch(err){
-    out.innerHTML=`<div class="notice err">Couldn't load the record. Check your connection and try again.</div>`;
-    console.error(err);
-  }
-}
-
-function renderResults(){
-  $("lookupCard").classList.remove("hidden");
-  $("citizenList").classList.add("hidden");
-  const multi = matches.length>1;
-  const cards = matches.map(m=>personCardHTML(m.id, m.c)).join("");
-  $("citizenResult").innerHTML =
-    `<button class="back" id="toListBtn">‹ Back to list</button>` +
-    (multi ? `<div class="notice info">More than one person uses this number — tap your name.</div>` : ``) +
-    cards;
-  $("toListBtn").addEventListener("click", ()=>{ $("searchId").value=""; showList(); });
-  document.querySelectorAll("#citizenResult .result-card").forEach(b=>
-    b.addEventListener("click", ()=>openMatch(b.dataset.id, false)));
-}
-
-async function openMatch(id, fromList){
-  backTarget = fromList ? "list" : "results";
-  const c = (matches.find(x=>x.id===id)||{}).c || pubAll.find(x=>x.id===id) || await store.getCitizen(id);
-  if(!c) return;
-  $("lookupCard").classList.add("hidden");
-  $("citizenList").classList.add("hidden");
-  $("citizenResult").innerHTML = `<div class="notice info">Loading…</div>`;
-  const entries = await store.getLedger(id);
-  lastResult = { id, c, entries };
-  renderStatement();
-}
-
-function goBack(){
-  $("lookupCard").classList.remove("hidden");
-  if(backTarget==="results"){ renderResults(); }
-  else { $("citizenResult").innerHTML=""; $("citizenList").classList.remove("hidden"); }
-}
-
-/* ---------- public list ---------- */
-let pubAll=[], pubShown=6, backTarget="list";
-const PUB_STEP=10;
-
-function showList(){
-  backTarget="list";
-  $("lookupCard").classList.remove("hidden");
-  $("citizenResult").innerHTML="";
-  $("citizenList").classList.remove("hidden");
-  loadOwing();
-}
-async function loadOwing(){
-  $("citizenList").innerHTML=`<div class="empty">Loading…</div>`;
-  try{
-    pubAll = await store.listOwing();
-    pubAll.sort(byCardNo);
-    pubShown=PUB_STEP;
-    renderPubList();
-    if(pubAll.length>pubShown){
-      requestAnimationFrame(()=>{
-        const more = pubAll.slice(pubShown, Math.min(pubShown + PUB_STEP, pubAll.length));
-        if(more.length){
-          const seeMoreBtn = $("seeMore");
-          if(seeMoreBtn){
-            const frag = document.createDocumentFragment();
-            more.forEach(c=>{
-              const tmp = document.createElement("div");
-              tmp.innerHTML = personCardHTML(c.id, c);
-              const card = tmp.firstElementChild;
-              card.addEventListener("click", ()=>openMatch(c.id, true));
-              frag.appendChild(card);
-            });
-            seeMoreBtn.parentNode.insertBefore(frag, seeMoreBtn);
-          }
-        }
-      });
-    }
-  }catch(err){ console.error(err); $("citizenList").innerHTML=`<div class="notice err">Couldn't load the list.</div>`; }
-}
-function renderPubList(){
-  const total=pubAll.length;
-  if(!total){
-    $("citizenList").innerHTML=`<div class="list-head">Pending payments</div>
-      <div class="empty">Everyone is fully paid. Nothing pending.</div>`;
-    return;
-  }
-  const shown=Math.min(pubShown, total);
-  const cards=pubAll.slice(0, shown).map(c=>personCardHTML(c.id, c)).join("");
-  $("citizenList").innerHTML =
-    `<div class="list-head">Pending payments (${total})</div>` + cards +
-    (shown<total ? `<button class="btn block ghost small" id="seeMore" style="margin-top:12px">Show next ${Math.min(PUB_STEP, total-shown)}</button>` : ``);
-  document.querySelectorAll("#citizenList .result-card").forEach(b=>
-    b.addEventListener("click", ()=>openMatch(b.dataset.id, true)));
-  if($("seeMore")) $("seeMore").addEventListener("click", ()=>{ pubShown+=PUB_STEP; renderPubList(); });
-}
-
-// Step 2: the payable detail, with UPI Pay Now button
-function renderStatement(){
-  const { id, c, entries } = lastResult;
-  const bal = getEffectiveBalance(c);
-  const toPay = Math.max(0, bal);
-  const st = statusOf(c);
-
-  const chrono = [...entries].sort((a,b)=>a.createdAt-b.createdAt);
-  let sum = 0;
-  let rows = chrono.length ? chrono.map((e, idx)=>{
-    const isPayment = e.type==="payment";
-    const isForgive = e.type==="forgive";
-    const isDeferred = e.deferred && e.type==="charge";
-    const prevCharge = idx>0 && chrono[idx-1].type==="charge";
-    let label = (isPayment && prevCharge) ? "Payment" : entryLabel(e);
-    let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
-    let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
-    let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "") + (isPayment && prevCharge ? " no-top-border" : "");
-    sum += e.type==="charge" ? e.amount : -e.amount;
-    return `<div class="${rowClass}">
-      <div class="desc"><b>${esc(label)}</b><small>${esc(displayDate(e.date))}</small></div>
-      <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
-    </div>`;
-  }).join("") : `<div class="empty">No entries yet.</div>`;
-  if(chrono.length){
-    const sumClass = sum > 0 ? "owing" : "payment";
-    rows += `<div class="row" style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px;font-weight:700">
-      <div class="desc">Total</div>
-      <div class="amt ${sumClass}" style="color:var(--due)">${sum > 0 ? "+ " : ""}${fmt(sum)}</div>
-    </div>`;
-  }
-
-  let upiButton = '';
-  if(toPay > 0){
-    const upiUrl = `upi://pay?pa=9599898884@upi&pn=Council&am=${toPay.toFixed(2)}&cu=INR`;
-    upiButton = `
-      <a class="btn-upi" href="${upiUrl}">
-        <svg viewBox="0 0 24 24" width="24" height="24" fill="white"><path d="M6 4h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2zm0 1.5A.5.5 0 005.5 6v12a.5.5 0 00.5.5h12a.5.5 0 00.5-.5V6a.5.5 0 00-.5-.5H6zm6 1.5a.5.5 0 010 1h-2v4h2a.5.5 0 010 1h-2v2.5a.5.5 0 01-1 0V12a.5.5 0 010-1h2V7h-2a.5.5 0 010-1h2zm4 0a.5.5 0 010 1h-2v4h2a.5.5 0 010 1h-2v2.5a.5.5 0 01-1 0V12a.5.5 0 010-1h2V7h-2a.5.5 0 010-1h2z"/></svg>
-        Pay Now (UPI)
-      </a>
-      <div style="font-size:11px;color:var(--muted);margin-top:6px;">📲 After paying, send a screenshot to the Council on WhatsApp</div>
-    `;
-  }
-
-  $("citizenResult").innerHTML = `
-  <button class="back" id="backBtn">‹ Back</button>
-  <div class="statement">
-    <div class="top">
-      <div>
-        <p class="name">${esc(c.name||"—")}</p>
-        <div class="meta">${esc(c.jobCard||id)}</div>
-      </div>
-      <span class="badge ${st}">${statusLabel[st]}</span>
-    </div>
-    <div class="balance-block">
-      <div class="label">Total to pay now</div>
-      <div class="amount money ${toPay<=0?"zero":"owing"}">${fmt(toPay)}</div>
-      ${toPay<=0 ? `<div class="meta">You're all paid up. Thank you.</div>` : upiButton}
-    </div>
-    <div class="ledger">
-      <button class="hist-toggle" id="histToggle">Show history (${chrono.length}) ▾</button>
-      <div id="histBody" class="hidden">${rows}</div>
-    </div>
-  </div>`;
-  $("backBtn").addEventListener("click", goBack);
-  $("histToggle").addEventListener("click", ()=>{
-    const body=$("histBody"); const open=!body.classList.contains("hidden");
-    body.classList.toggle("hidden", open);
-    $("histToggle").textContent = open ? `Show history (${chrono.length}) ▾` : `Hide history ▴`;
-  });
-}
-
-/* ============================================================
-   MODE TOGGLE & ADMIN AUTH
-   ============================================================ */
-$("modeBtn").addEventListener("click", ()=>{
-  const adminHidden = $("adminView").classList.contains("hidden");
-  $("adminView").classList.toggle("hidden", !adminHidden);
-  $("citizenView").classList.toggle("hidden", adminHidden);
-  if(!adminHidden){ $("searchId").value=""; showList(); }
-  updateModeBtn();
-});
-function updateModeBtn(){
-  const adminShown = !$("adminView").classList.contains("hidden");
-  $("modeBtn").textContent = adminShown ? "Citizen view" : (loggedIn ? "Admin" : "Council login");
-}
-
 $("loginBtn").addEventListener("click", login);
 $("adminPass").addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
 $("logoutBtn").addEventListener("click", ()=>{ store.signOut(); });
@@ -1430,6 +1180,9 @@ function onAuth(isIn){
   if(isIn){
     $("loginCard").classList.add("hidden");
     $("dashboard").classList.remove("hidden");
+    // Excluded periods live in Firestore behind admin-only read rules now that
+    // there's no public view, so this can only be fetched once logged in.
+    store.getExcludedPeriods().then(periods => { excludedPeriods = periods; refreshDashboard(); }).catch(err => console.error("Failed to load excluded periods:", err));
     subscribeCitizens();
     refreshPending();
   } else {
@@ -1437,7 +1190,6 @@ function onAuth(isIn){
     $("dashboard").classList.add("hidden");
     if(citizensUnsub){ citizensUnsub(); citizensUnsub=null; }
   }
-  updateModeBtn();
 }
 
 /* ============================================================
@@ -2508,9 +2260,6 @@ async function doExportPeriod(period){
   }catch(err){ toast("Export failed"); console.error(err); }
   finally{ exportBusy=false; }
 }
-
-// Initial public browse list
-showList();
 
 // Register service worker for PWA
 if('serviceWorker' in navigator){
