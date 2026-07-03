@@ -287,7 +287,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.23.6</footer>
+<footer>New Serchhip North Village Council · v1.23.7</footer>
 
 <script type="module">
 /* ============================================================
@@ -1222,10 +1222,10 @@ async function loadPendingPeriods(){
   if(loadingPeriods) return; loadingPeriods=true;
   const pend=allCitizens.filter(c=>getEffectiveBalance(c)>0);
   const cache=new Map(), set=new Set();
-  for(const c of pend){
+  await Promise.all(pend.map(async c => {
     try{ const led=await store.getLedger(c.id); const up=unpaidPeriods(led);
       cache.set(c.id, up); up.forEach(p=>set.add(p)); }catch(e){}
-  }
+  }));
   unpaidCache=cache; periodsReady=true; loadingPeriods=false;
   const sel=$("periodSel");
   if(sel){
