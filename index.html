@@ -1488,6 +1488,7 @@ function unpaidPeriods(entries){
   const owed=[];
   for(const e of chrono){
     if(e.type!=="charge" || e.deferred) continue;
+    if(e.note && excludedPeriods.includes(e.note)) continue;
     if(pay>=(e.amount||0)){ pay-=(e.amount||0); }
     else { if(e.note) owed.push(e.note); pay=0; }
   }
@@ -1768,9 +1769,15 @@ async function savePeriods(){
   try{
     await store.setExcludedPeriods(excluded);
     excludedPeriods = excluded;
+    // The period filter dropdown caches unpaid periods per household; force it to
+    // recompute so it stops offering/filtering by periods just excluded above.
+    periodsReady = false;
+    unpaidCache = new Map();
+    if(periodFilter && excludedPeriods.includes(periodFilter)) periodFilter = "";
     msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excluded.length} periods excluded from calculations.</div>`;
     toast("Periods updated");
     await refreshDashboard();
+    loadPendingPeriods();
   }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Failed to save. Try again.</div>`; }
   finally{ btn.disabled=false; }
 }
