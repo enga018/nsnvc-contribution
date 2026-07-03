@@ -287,7 +287,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.23.4</footer>
+<footer>New Serchhip North Village Council · v1.23.5</footer>
 
 <script type="module">
 /* ============================================================
@@ -965,9 +965,6 @@ function makeFirebaseStore({ auth, db, fs, au }){
         if(onProgress) onProgress(0, 2);
       }
       await flush();
-      }
-      await flush();
-      if(onProgress) onProgress(2, 2);
     },
     async renamePeriod(oldPeriod, newPeriod, onProgress){
       const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
