@@ -364,7 +364,6 @@
       <div class="seg" id="adminFilter" style="margin-bottom:12px">
         <button data-f="pending" class="active">Pending</button>
         <button data-f="deferred">Deferred</button>
-        <button data-f="paid">Paid</button>
         <button data-f="all">All</button>
       </div>
       <div id="periodWrap" style="margin-bottom:12px">
@@ -436,6 +435,8 @@ function getDeferredAmount(c){
 const statusLabel = {paid:"Cleared", partial:"Partly paid", due:"Due"};
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function monthLabel(){ return new Date().toLocaleString("en-IN",{month:"long",year:"numeric"}); }
+const DATE_DISPLAY_CUTOFF = "2026-07-01";
+function displayDate(date){ return (date && date >= DATE_DISPLAY_CUTOFF) ? date : ""; }
 function prettyPeriod(note){
   return String(note||"").trim();
 }
@@ -1343,7 +1344,7 @@ function renderStatement(){
     let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "") + (isPayment && prevCharge ? " no-top-border" : "");
     sum += e.type==="charge" ? e.amount : -e.amount;
     return `<div class="${rowClass}">
-      <div class="desc"><b>${esc(label)}</b><small>${esc(e.date||"")}</small></div>
+      <div class="desc"><b>${esc(label)}</b><small>${esc(displayDate(e.date))}</small></div>
       <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
     </div>`;
   }).join("") : `<div class="empty">No entries yet.</div>`;
@@ -1522,8 +1523,6 @@ function renderList(){
     }
   } else if(adminFilter==="deferred"){
     list = list.filter(c => getDeferredAmount(c)>0);
-  } else if(adminFilter==="paid"){
-    list = list.filter(c => getEffectiveBalance(c)<=0);
   }
   list.sort(byCardNo);
   const total=list.length;
@@ -2143,14 +2142,13 @@ async function renderCitizenDetail(id){
   const bal = getEffectiveBalance(c);
   const chrono = [...entries].sort((a,b)=>a.createdAt-b.createdAt);
 
-  const PERIOD_CUTOFF = "2026-01-01";
   const orderByPeriod = (entries)=>{
     const grouped = {};
     for(const e of entries){
       let key;
       if(e.type==="charge"){
         key = e.note ? (prettyPeriod(e.note) || e.note) : "Other";
-      } else if(e.date && e.date >= PERIOD_CUTOFF){
+      } else if(e.date && e.date >= DATE_DISPLAY_CUTOFF){
         const d = new Date(e.date);
         key = isNaN(d.getTime()) ? "Other" : d.toLocaleString('en-IN', {month:'long', year:'numeric'});
       } else if(e.note){
@@ -2202,7 +2200,7 @@ async function renderCitizenDetail(id){
       </label>`;
     }
     return `<div class="${rowClass}">
-      <div class="desc"><b>${esc(label)}</b><small>${esc(e.date||"")}</small> ${deferToggle}</div>
+      <div class="desc"><b>${esc(label)}</b><small>${esc(displayDate(e.date))}</small> ${deferToggle}</div>
       <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
       ${actions}
     </div>`;
