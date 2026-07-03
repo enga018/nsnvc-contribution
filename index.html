@@ -1124,23 +1124,17 @@ function makeFirebaseStore({ auth, db, fs, au }){
     async recalcAll(onProgress){
       let batch=fs.writeBatch(db), ops=0, done=0;
       const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
-      const ledSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
-      const byCitizen={};
-      ledSnap.docs.forEach(d=>{
-        const pid=d.ref.parent.parent.id;
-        if(!byCitizen[pid]) byCitizen[pid]={ entries:[] };
-        byCitizen[pid].entries.push(d.data());
-      });
-      const citizenIds=Object.keys(byCitizen);
+      const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
+      const citizenIds=cSnap.docs.map(d=>d.id);
       for(const id of citizenIds){
         let tc=0,tp=0,dt=0;
-        const entries=byCitizen[id].entries;
-        for(const e of entries){
+        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
+        for(const e of ledSnap.docs.map(d=>d.data())){
           if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
           else if(e.type==="payment") tp+=e.amount;
           else if(e.type==="forgive") tc-=e.amount;
         }
-        batch.update(fs.doc(db,"citizens",id),{ totalCharged:tc+dt, totalPaid:tp, balance:(tc+dt)-tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() }); ops++;
+        batch.update(fs.doc(db,"citizens",id),{ totalCharged:tc+dt, totalPaid:tp, balance:tc-tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() }); ops++;
         if(ops>=400) await flush();
         if((++done%50)===0&&onProgress) onProgress(done, citizenIds.length);
       }
