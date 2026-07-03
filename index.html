@@ -366,7 +366,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.22</footer>
+<footer>New Serchhip North Village Council · v1.22.1</footer>
 
 <script type="module">
 /* ============================================================
@@ -1363,6 +1363,13 @@ function renderStatement(){
   $("citizenResult").innerHTML = `
   <button class="back" id="backBtn">‹ Back</button>
   <div class="statement">
+    <div class="top">
+      <div>
+        <p class="name">${esc(c.name||"—")}</p>
+        <div class="meta">${esc(c.jobCard||id)}</div>
+      </div>
+      <span class="badge ${st}">${statusLabel[st]}</span>
+    </div>
     <div class="balance-block">
       <div class="label">Total to pay now</div>
       <div class="amount money ${toPay<=0?"zero":"owing"}">${fmt(toPay)}</div>
@@ -1371,13 +1378,6 @@ function renderStatement(){
     <div class="ledger">
       <button class="hist-toggle" id="histToggle">Show history (${chrono.length}) ▾</button>
       <div id="histBody" class="hidden">${rows}</div>
-    </div>
-    <div class="top">
-      <div>
-        <p class="name">${esc(c.name||"—")}</p>
-        <div class="meta">${esc(c.jobCard||id)}</div>
-      </div>
-      <span class="badge ${st}">${statusLabel[st]}</span>
     </div>
   </div>`;
   $("backBtn").addEventListener("click", goBack);
@@ -1527,19 +1527,33 @@ function renderList(){
     const small = adminFilter==="deferred"
       ? `${esc(c.jobCard||c.id)} · Deferred ${fmt(deferred)}`
       : esc(c.jobCard||c.id);
-    return `<button class="citizen-row" data-id="${esc(c.id)}">
+    const markPaidBtn = adminFilter==="pending" && bal>0
+      ? `<button class="btn small mark-paid-btn" data-id="${esc(c.id)}" data-amount="${bal}" style="white-space:nowrap">Mark paid</button>`
+      : '';
+    return `<div class="citizen-row" style="display:flex;align-items:center;gap:10px;padding:12px 15px;border-top:1px solid var(--border);width:100%">
       <span class="dot ${st}"></span>
-      <span class="info">
-        <b>${esc(c.name||"—")}</b>
-        <small>${small}</small>
+      <span class="info" style="flex:1;min-width:0">
+        <b style="display:block;font-weight:600;font-size:15px">${esc(c.name||"—")}</b>
+        <small style="font-size:12px;color:var(--muted);display:block;margin-top:2px">${small}</small>
       </span>
-      <span class="bal money" style="color:${adminFilter==="deferred"?'var(--partial)':(bal>0?'var(--due)':'var(--paid)')}">${adminFilter==="deferred" ? fmt(deferred) : fmt(Math.max(0,bal))}</span>
-    </button>`;
+      <span class="bal money" style="color:${adminFilter==="deferred"?'var(--partial)':(bal>0?'var(--due)':'var(--paid)');white-space:nowrap">${adminFilter==="deferred" ? fmt(deferred) : fmt(Math.max(0,bal))}</span>
+      ${markPaidBtn}
+      <button class="citizen-row-open" data-id="${esc(c.id)}" style="background:none;border:none;padding:8px;color:var(--muted);cursor:pointer;font-size:14px">→</button>
+    </div>`;
   }).join("");
   $("adminList").innerHTML = cards +
     (shown<total ? `<button class="btn block ghost small" id="adminMore" style="margin-top:12px">Show next ${Math.min(ADMIN_STEP, total-shown)}</button>` : ``);
-  document.querySelectorAll("#adminList .citizen-row").forEach(b=>
+  document.querySelectorAll("#adminList .citizen-row-open").forEach(b=>
     b.addEventListener("click",()=>openCitizen(b.dataset.id)));
+  document.querySelectorAll("#adminList .mark-paid-btn").forEach(b=>
+    b.addEventListener("click", (e)=>{
+      e.stopPropagation();
+      const id = b.dataset.id;
+      const amount = parseFloat(b.dataset.amount);
+      confirmAction(`Mark ${esc(allCitizens.find(c=>c.id===id)?.name||id)} fully paid (${fmt(amount)})?`).then(ok=>{
+        if(ok) markFullyPaid(id, amount);
+      });
+    }));
   if($("adminMore")) $("adminMore").addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
 }
 $("settingsBtn").addEventListener("click", openSettings);
@@ -1560,7 +1574,7 @@ function openSettings(){
     <div class="panel">
       <h4>App Info</h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6">
-        <div>Version: v1.22</div>
+        <div>Version: v1.22.1</div>
         <div>New Serchhip North Village Council</div>
       </div>
     </div>
@@ -2119,31 +2133,59 @@ async function renderCitizenDetail(id){
   const bal = getEffectiveBalance(c);
   const chrono = [...entries].sort((a,b)=>a.createdAt-b.createdAt);
 
-  const rows = chrono.length ? chrono.map((e, idx)=>{
-    const isPayment = e.type==="payment";
-    const isForgive = e.type==="forgive";
-    const isDeferred = e.deferred && e.type==="charge";
-    let label = entryLabel(e);
-    let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
-    let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
-    let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "");
-    const actions = `<span class="actions">
-      <button class="edit-entry" data-id="${e.entryId}" data-type="${e.type}">✏️</button>
-      <button class="del-entry" data-id="${e.entryId}">🗑️</button>
-    </span>`;
-    let deferToggle = '';
-    if(e.type==="charge"){
-      const checked = e.deferred ? 'checked' : '';
-      deferToggle = `<label style="font-size:12px;color:var(--muted);margin-left:8px;display:flex;align-items:center;gap:4px;">
-        <input type="checkbox" class="defer-chk" data-id="${e.entryId}" ${checked}> <span>Defer</span>
-      </label>`;
+  const groupByMonth = (entries)=>{
+    const grouped = {};
+    for(const e of entries){
+      const d = e.date ? new Date(e.date) : new Date();
+      const key = d.toLocaleString('en-IN', {month:'long', year:'numeric'});
+      if(!grouped[key]) grouped[key] = [];
+      grouped[key].push(e);
     }
-    return `<div class="${rowClass}">
-      <div class="desc"><b>${esc(label)}</b><small>${esc(e.date||"")}</small> ${deferToggle}</div>
-      <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
-      ${actions}
-    </div>`;
-  }).join("") : `<div class="empty">No entries yet.</div>`;
+    return Object.entries(grouped).reverse();
+  };
+
+  const monthRows = (entries)=>{
+    return entries.map((e)=>{
+      const isPayment = e.type==="payment";
+      const isForgive = e.type==="forgive";
+      const isDeferred = e.deferred && e.type==="charge";
+      let label = entryLabel(e);
+      let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
+      let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
+      let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "");
+      const actions = `<span class="actions">
+        <button class="edit-entry" data-id="${e.entryId}" data-type="${e.type}">✏️</button>
+        <button class="del-entry" data-id="${e.entryId}">🗑️</button>
+      </span>`;
+      let deferToggle = '';
+      if(e.type==="charge"){
+        const checked = e.deferred ? 'checked' : '';
+        deferToggle = `<label style="font-size:12px;color:var(--muted);margin-left:8px;display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" class="defer-chk" data-id="${e.entryId}" ${checked} style="cursor:pointer;width:16px;height:16px"> <span>Defer</span>
+        </label>`;
+      }
+      return `<div class="${rowClass}">
+        <div class="desc"><b>${esc(label)}</b><small>${esc(e.date||"")}</small> ${deferToggle}</div>
+        <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
+        ${actions}
+      </div>`;
+    }).join("");
+  };
+
+  const rows = chrono.length ? (() => {
+    const grouped = groupByMonth(chrono);
+    return grouped.map(([month, entries], idx) => `
+      <div style="margin-bottom:12px">
+        <button class="hist-month-toggle" data-month="${idx}" style="width:100%;text-align:left;background:var(--paper);border:1px solid var(--border);padding:12px 15px;border-radius:8px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;display:flex;justify-content:space-between;align-items:center">
+          <span>${esc(month)}</span>
+          <span class="toggle-icon">▶</span>
+        </button>
+        <div class="hist-month-body" data-month="${idx}" style="display:none;margin-top:8px">
+          ${monthRows(entries)}
+        </div>
+      </div>
+    `).join("");
+  })() : `<div class="empty">No entries yet.</div>`;
 
   const forgiveBlock = `<div class="panel" style="margin-top:12px;">
     <h4>Forgive debt</h4>
@@ -2190,8 +2232,13 @@ async function renderCitizenDetail(id){
     ${forgiveBlock}
 
     <div class="clist" style="box-shadow:none">
-      <h3 style="font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:0;padding:14px 15px 4px">History</h3>
-      ${rows}
+      <button id="historyToggle" style="width:100%;text-align:left;background:none;border:none;padding:14px 0 4px;font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:0;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-weight:600">
+        <span>History</span>
+        <span id="historyToggleIcon">▶</span>
+      </button>
+      <div id="historyBody" style="display:none;padding-top:12px">
+        ${rows}
+      </div>
     </div>
 
     <button class="btn ghost block small" id="delCitizen" style="margin-top:16px;color:var(--due);border-color:var(--due)">Delete this citizen</button>
@@ -2203,6 +2250,27 @@ async function renderCitizenDetail(id){
   if($("markPaid")) $("markPaid").addEventListener("click", ()=>markFullyPaid(id, bal));
   $("delCitizen").addEventListener("click", ()=>deleteCitizen(id));
   $("forgiveBtn").addEventListener("click", ()=>forgiveDebt(id));
+
+  // History toggle
+  $("historyToggle").addEventListener("click", ()=>{
+    const body = $("historyBody");
+    const icon = $("historyToggleIcon");
+    const isOpen = body.style.display !== "none";
+    body.style.display = isOpen ? "none" : "block";
+    icon.textContent = isOpen ? "▶" : "▼";
+  });
+
+  // Month toggles
+  document.querySelectorAll(".hist-month-toggle").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const month = btn.dataset.month;
+      const body = document.querySelector(`.hist-month-body[data-month="${month}"]`);
+      const icon = btn.querySelector(".toggle-icon");
+      const isOpen = body.style.display !== "none";
+      body.style.display = isOpen ? "none" : "block";
+      icon.textContent = isOpen ? "▶" : "▼";
+    });
+  });
 
   // Defer toggles
   document.querySelectorAll(".defer-chk").forEach(chk=>{
