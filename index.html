@@ -371,6 +371,7 @@
       </div>
       <div class="clist" id="adminList"></div>
     </div>
+    <div id="adminDetail" class="hidden"></div>
   </section>
 </main>
 
@@ -2133,8 +2134,17 @@ async function saveNewCitizen(){
    ============================================================ */
 async function openCitizen(id){
   const c = allCitizens.find(x=>x.id===id); if(!c) return;
-  openSheet(c.name||"Citizen", `<div id="cDetail" class="empty">Loading…</div>`);
+  $("dashboard").classList.add("hidden");
+  $("adminDetail").classList.remove("hidden");
+  $("adminDetail").innerHTML = `<div class="notice info">Loading…</div>`;
   await renderCitizenDetail(id);
+}
+
+function closeCitizenDetail(){
+  $("adminDetail").classList.add("hidden");
+  $("adminDetail").innerHTML = "";
+  $("dashboard").classList.remove("hidden");
+  renderList();
 }
 
 async function renderCitizenDetail(id){
@@ -2214,21 +2224,31 @@ async function renderCitizenDetail(id){
     </div>
   </div>`;
 
-  $("cDetail").outerHTML = `<div id="cDetail">
-    <div class="balance-block" style="padding-top:0">
+  const st = statusOf(c);
+  $("adminDetail").innerHTML = `
+  <button class="back" id="adminBackBtn">‹ Back</button>
+  <div class="statement">
+    <div class="top">
+      <div>
+        <p class="name">${esc(c.name||"—")}</p>
+        <div class="meta">${esc(c.jobCard||id)}${c.phone?" · "+esc(c.phone):""}</div>
+      </div>
+      <span class="badge ${st}">${statusLabel[st]}</span>
+    </div>
+    <div class="balance-block">
       <div class="label">Remaining balance</div>
       <div class="amount money ${bal<=0?'zero':'owing'}">${fmt(Math.max(0,bal))}</div>
-      <div class="meta">${esc(c.jobCard||id)}${c.phone?" · "+esc(c.phone):""}</div>
     </div>
-
-    ${actionPanel}
-
+    <div style="padding:0 18px">
+      ${actionPanel}
+    </div>
     <div class="ledger">
       <button class="hist-toggle" id="historyToggle">Show history (${chrono.length}) ▾</button>
       <div id="historyBody" class="hidden">${rows}</div>
     </div>
-
-    <button class="btn ghost block small" id="delCitizen" style="margin-top:16px;color:var(--due);border-color:var(--due)">Delete this citizen</button>
+    <div style="padding:16px 18px 18px">
+      <button class="btn ghost block small" id="delCitizen" style="color:var(--due);border-color:var(--due)">Delete this citizen</button>
+    </div>
   </div>`;
 
   // Attach event listeners
@@ -2266,6 +2286,7 @@ async function renderCitizenDetail(id){
   });
   if($("markPaid")) $("markPaid").addEventListener("click", ()=>markFullyPaid(id, bal));
   $("delCitizen").addEventListener("click", ()=>deleteCitizen(id));
+  $("adminBackBtn").addEventListener("click", closeCitizenDetail);
 
   // History toggle
   $("historyToggle").addEventListener("click", ()=>{
@@ -2347,7 +2368,7 @@ async function deleteCitizen(id){
   if(!(await confirmAction("Delete this citizen and all their records? This cannot be undone.", true))) return;
   try{
     await store.deleteCitizen(id);
-    closeSheet(); toast("Citizen deleted");
+    closeCitizenDetail(); toast("Citizen deleted");
   }catch(err){ toast("Couldn't delete."); console.error(err); }
 }
 
