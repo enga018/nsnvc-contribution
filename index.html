@@ -1040,19 +1040,13 @@ function makeFirebaseStore({ auth, db, fs, au }){
     async getImportedPeriods(){ const s=await fs.getDoc(fs.doc(db,"meta","imports")); return s.exists()? (s.data().periods||[]) : []; },
     async recordImportedPeriod(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { periods:fs.arrayUnion(p) }, {merge:true}); },
     async recalcAll(onProgress){
+      if(ledgerCache.size===0) await this.getAllLedgers();
       let batch=fs.writeBatch(db), ops=0, done=0;
       const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
-      const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
-      const citizenIds=cSnap.docs.map(d=>d.id);
+      const citizenIds=[...ledgerCache.keys()];
       for(const id of citizenIds){
-        let tc=0,tp=0,dt=0;
-        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",id,"ledger"));
-        for(const e of ledSnap.docs.map(d=>d.data())){
-          if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
-          else if(e.type==="payment") tp+=e.amount;
-          else if(e.type==="forgive") tc-=e.amount;
-        }
-        batch.update(fs.doc(db,"citizens",id),{ totalCharged:tc+dt, totalPaid:tp, balance:tc-tp, deferredTotal:dt, updatedAt:fs.serverTimestamp() }); ops++;
+        const {totalCharged, totalPaid, balance, deferredTotal} = recalcFromLedger(ledgerCache.get(id));
+        batch.update(fs.doc(db,"citizens",id),{ totalCharged, totalPaid, balance, deferredTotal, updatedAt:fs.serverTimestamp() }); ops++;
         if(ops>=400) await flush();
         if((++done%50)===0&&onProgress) onProgress(done, citizenIds.length);
       }
@@ -1342,123 +1336,117 @@ $("settingsBtn").addEventListener("click", openSettings);
 async function openSettings(){
   $("dashboard").classList.add("hidden");
   $("adminDetail").classList.remove("hidden");
-  $("adminDetail").innerHTML = `<div class="notice info">Loading…</div>`;
-  try{
-    $("adminDetail").innerHTML = `
-    <button class="back" id="settingsBackBtn">‹ Back</button>
-    <div class="statement">
-      <div class="top"><div><p class="name">Settings</p></div></div>
-      <div class="ledger">
-        <div style="padding:0 18px">
-          <button class="btn block" id="settingsManagePeriods">Manage Periods</button>
-          <button class="btn block ghost" id="settingsImport" style="margin-top:8px">Import / Export</button>
-          <button class="btn block ghost" id="settingsBackup" style="margin-top:8px">Backup / Restore</button>
-          <button class="btn block ghost" id="settingsRecalc" style="margin-top:8px">Recalculate all balances</button>
-          <button class="btn block ghost" id="settingsDeleteAll" style="margin-top:8px;color:var(--due);border-color:var(--due)">Delete all data</button>
-          <div style="border-top:1px solid var(--border);margin:14px 0"></div>
-          <button class="btn block ghost" id="settingsLogout" style="color:var(--due);border-color:var(--due)">Sign out</button>
-        </div>
-        <div id="settingsPeriodsSection" class="hidden" style="padding:0 18px;margin-top:16px;border-top:1px solid var(--border);padding-top:16px"></div>
-        <div id="settingsMsg" style="padding:0 18px;margin-top:12px"></div>
+  $("adminDetail").innerHTML = `
+  <button class="back" id="settingsBackBtn">‹ Back</button>
+  <div class="statement">
+    <div class="top"><div><p class="name">Settings</p></div></div>
+    <div class="ledger">
+      <div style="padding:0 18px">
+        <button class="btn block" id="settingsManagePeriods">Manage Periods</button>
+        <button class="btn block ghost" id="settingsImport" style="margin-top:8px">Import / Export</button>
+        <button class="btn block ghost" id="settingsBackup" style="margin-top:8px">Backup / Restore</button>
+        <button class="btn block ghost" id="settingsRecalc" style="margin-top:8px">Recalculate all balances</button>
+        <button class="btn block ghost" id="settingsDeleteAll" style="margin-top:8px;color:var(--due);border-color:var(--due)">Delete all data</button>
+        <div style="border-top:1px solid var(--border);margin:14px 0"></div>
+        <button class="btn block ghost" id="settingsLogout" style="color:var(--due);border-color:var(--due)">Sign out</button>
       </div>
+      <div id="settingsMsg" style="padding:0 18px;margin-top:12px"></div>
+    </div>
+  </div>`;
+  $("settingsBackBtn").addEventListener("click", closeSettings);
+  $("settingsManagePeriods").addEventListener("click", openManagePeriods);
+  $("settingsImport").addEventListener("click", openImportExport);
+  $("settingsBackup").addEventListener("click", openBackup);
+  $("settingsRecalc").addEventListener("click", doRecalcAllFromSettings);
+  $("settingsDeleteAll").addEventListener("click", doDeleteAllFromSettings);
+  $("settingsLogout").addEventListener("click", doLogout);
+}
+
+async function openManagePeriods(){
+  if(ledgerCache.size===0) await store.getAllLedgers();
+  const { periods, stats } = getPeriodStats();
+  const excluded = await store.getExcludedPeriods();
+  const pendingRenames = new Map();
+  const rows = periods.length ? periods.map(p => {
+    const s = stats.get(p) || {count:0, amount:0};
+    const isExcl = excluded.includes(p);
+    return `<div class="period-row" data-original="${esc(p)}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <label class="switch" style="flex:none"><input type="checkbox" class="period-toggle" value="${esc(p)}" ${!isExcl?"checked":""}><span class="switch-track"><span class="switch-thumb"></span></span></label>
+      <div style="flex:1;min-width:0"><span class="period-name"><b style="font-size:14px">${esc(prettyPeriod(p))}</b></span><br><small style="font-size:12px;color:var(--muted)">${s.count} charge${s.count===1?"":"s"} · ${fmt(s.amount)}</small></div>
+      <button class="period-rename-btn" data-period="${esc(p)}" style="background:transparent;border:none;cursor:pointer;font-size:14px;padding:4px;color:var(--muted)" title="Rename">✏️</button>
     </div>`;
-    $("settingsBackBtn").addEventListener("click", closeSettings);
-    $("settingsImport").addEventListener("click", openImportExport);
-    $("settingsBackup").addEventListener("click", openBackup);
-    $("settingsLogout").addEventListener("click", doLogout);
-    $("settingsRecalc").addEventListener("click", doRecalcAllFromSettings);
-    $("settingsDeleteAll").addEventListener("click", doDeleteAllFromSettings);
+  }).join("") : '<div style="color:var(--muted)">No periods found yet.</div>';
 
-    $("settingsManagePeriods").addEventListener("click", async ()=>{
-      const sec = $("settingsPeriodsSection");
-      if(!sec.classList.contains("hidden")){ sec.classList.add("hidden"); return; }
-      sec.classList.remove("hidden");
-      sec.innerHTML = `<div class="notice info">Loading periods…</div>`;
-      if(ledgerCache.size===0) await store.getAllLedgers();
-      const { periods, stats } = getPeriodStats();
-      const excluded = await store.getExcludedPeriods();
-      const pendingRenames = new Map();
-      const rows = periods.length ? periods.map(p => {
-        const s = stats.get(p) || {count:0, amount:0};
-        const isExcl = excluded.includes(p);
-        return `<div class="period-row" data-original="${esc(p)}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-          <label class="switch" style="flex:none"><input type="checkbox" class="period-toggle" value="${esc(p)}" ${!isExcl?"checked":""}><span class="switch-track"><span class="switch-thumb"></span></span></label>
-          <div style="flex:1;min-width:0"><span class="period-name"><b style="font-size:14px">${esc(prettyPeriod(p))}</b></span><br><small style="font-size:12px;color:var(--muted)">${s.count} charge${s.count===1?"":"s"} · ${fmt(s.amount)}</small></div>
-          <button class="period-rename-btn" data-period="${esc(p)}" style="background:transparent;border:none;cursor:pointer;font-size:14px;padding:4px;color:var(--muted)" title="Rename">✏️</button>
-        </div>`;
-      }).join("") : '<div style="color:var(--muted)">No periods found yet.</div>';
-      sec.innerHTML = `
-        <b style="font-size:14px">Manage Periods</b>
-        <p style="font-size:12.5px;color:var(--muted);margin:4px 0 10px">Toggle exclusion and rename periods inline.</p>
-        ${rows}
-        <button class="btn block" id="savePeriodsBtn" disabled style="margin-top:14px">Save</button>
-        <div id="periodsMsg" style="margin-top:12px"></div>`;
+  openSheet("Manage Periods", `
+    <p style="font-size:13px;color:var(--muted);margin:0 0 14px">Toggle exclusion and rename periods. Unchecked periods are excluded from balance calculations.</p>
+    ${rows}
+    <button class="btn block" id="savePeriodsBtn" disabled style="margin-top:14px">Save</button>
+    <div id="periodsMsg" style="margin-top:12px"></div>
+  `);
 
-      function updateSaveBtn(){
-        const renCount = pendingRenames.size;
-        const btn = $("savePeriodsBtn");
-        if(renCount===0){ btn.disabled=true; btn.textContent="Save"; return; }
-        btn.disabled=false;
-        btn.textContent=`Save (${renCount} rename${renCount===1?"":"s"})`;
+  function updateSaveBtn(){
+    const renCount = pendingRenames.size;
+    const btn = $("savePeriodsBtn");
+    if(renCount===0){ btn.disabled=true; btn.textContent="Save"; return; }
+    btn.disabled=false;
+    btn.textContent=`Save (${renCount} rename${renCount===1?"":"s"})`;
+  }
+  document.querySelectorAll(".period-rename-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const oldName = btn.dataset.period;
+      const row = btn.closest(".period-row");
+      if(pendingRenames.has(oldName)){
+        pendingRenames.delete(oldName);
+        row.classList.remove("period-row-renamed");
+        row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
+        btn.textContent="✏️";
+        updateSaveBtn();
+        return;
       }
-      document.querySelectorAll(".period-rename-btn").forEach(btn=>{
-        btn.addEventListener("click", ()=>{
-          const oldName = btn.dataset.period;
-          const row = btn.closest(".period-row");
-          if(pendingRenames.has(oldName)){
-            pendingRenames.delete(oldName);
-            row.classList.remove("period-row-renamed");
-            row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
-            btn.textContent="✏️";
-            updateSaveBtn();
-            return;
-          }
-          row.classList.add("period-row-renamed");
-          row.querySelector(".period-name").innerHTML=`<input class="period-rename-input" value="${esc(oldName)}">`;
+      row.classList.add("period-row-renamed");
+      row.querySelector(".period-name").innerHTML=`<input class="period-rename-input" value="${esc(oldName)}">`;
+      btn.textContent="✕";
+      const input = row.querySelector(".period-rename-input");
+      input.focus(); input.select();
+      function apply(){
+        const newVal = input.value.trim();
+        if(newVal && newVal !== oldName){
+          pendingRenames.set(oldName, newVal);
+          row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b> → <b style="font-size:14px;color:var(--green)">${esc(prettyPeriod(newVal))}</b>`;
           btn.textContent="✕";
-          const input = row.querySelector(".period-rename-input");
-          input.focus(); input.select();
-          function apply(){
-            const newVal = input.value.trim();
-            if(newVal && newVal !== oldName){
-              pendingRenames.set(oldName, newVal);
-              row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b> → <b style="font-size:14px;color:var(--green)">${esc(prettyPeriod(newVal))}</b>`;
-              btn.textContent="✕";
-            } else {
-              pendingRenames.delete(oldName);
-              row.classList.remove("period-row-renamed");
-              row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
-              btn.textContent="✏️";
-            }
-            updateSaveBtn();
-          }
-          input.addEventListener("keydown", e=>{ if(e.key==="Enter") apply(); if(e.key==="Escape"){ pendingRenames.delete(oldName); row.classList.remove("period-row-renamed"); row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`; btn.textContent="✏️"; updateSaveBtn(); }});
-          input.addEventListener("blur", apply);
-        });
-      });
-      $("savePeriodsBtn").addEventListener("click", async ()=>{
-        const msg=$("periodsMsg"); const btn=$("savePeriodsBtn"); btn.disabled=true;
-        msg.innerHTML='<div class="notice info">Saving…</div>';
-        try{
-          const excl=[];
-          document.querySelectorAll(".period-toggle").forEach(t=>{ if(!t.checked) excl.push(t.value); });
-          await store.setExcludedPeriods(excl);
-          excludedPeriods=excl; periodsReady=false; unpaidCache=new Map();
-          if(periodFilter && excludedPeriods.includes(periodFilter)) periodFilter="";
-          let renamed=0;
-          for(const [oldName,newName] of pendingRenames){
-            await store.renamePeriod(oldName, newName);
-            renamed++;
-          }
-          pendingRenames.clear();
-          msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excl.length} exclusions, ${renamed} rename${renamed===1?"":"s"}.</div>`;
-          toast("Periods updated");
-          await refreshDashboard(); loadPendingPeriods();
-        }catch(err){ console.error(err); msg.innerHTML='<div class="notice err">Failed to save.</div>'; btn.disabled=false; }
-      });
+        } else {
+          pendingRenames.delete(oldName);
+          row.classList.remove("period-row-renamed");
+          row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
+          btn.textContent="✏️";
+        }
+        updateSaveBtn();
+      }
+      input.addEventListener("keydown", e=>{ if(e.key==="Enter") apply(); if(e.key==="Escape"){ pendingRenames.delete(oldName); row.classList.remove("period-row-renamed"); row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`; btn.textContent="✏️"; updateSaveBtn(); }});
+      input.addEventListener("blur", apply);
     });
-  }catch(err){
-    console.error(err);
+  });
+  $("savePeriodsBtn").addEventListener("click", async ()=>{
+    const msg=$("periodsMsg"); const btn=$("savePeriodsBtn"); btn.disabled=true;
+    msg.innerHTML='<div class="notice info">Saving…</div>';
+    try{
+      const excl=[];
+      document.querySelectorAll(".period-toggle").forEach(t=>{ if(!t.checked) excl.push(t.value); });
+      await store.setExcludedPeriods(excl);
+      excludedPeriods=excl; periodsReady=false; unpaidCache=new Map();
+      if(periodFilter && excludedPeriods.includes(periodFilter)) periodFilter="";
+      let renamed=0;
+      for(const [oldName,newName] of pendingRenames){
+        await store.renamePeriod(oldName, newName);
+        renamed++;
+      }
+      pendingRenames.clear();
+      msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excl.length} exclusions, ${renamed} rename${renamed===1?"":"s"}.</div>`;
+      toast("Periods updated");
+      await refreshDashboard(); loadPendingPeriods();
+    }catch(err){ console.error(err); msg.innerHTML='<div class="notice err">Failed to save.</div>'; btn.disabled=false; }
+  });
+}
     $("adminDetail").innerHTML = `<button class="back" id="settingsBackBtn">‹ Back</button><div class="notice err">Failed to load: ${err.message||err}</div>`;
     $("settingsBackBtn").addEventListener("click", closeSettings);
   }
