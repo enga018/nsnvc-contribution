@@ -2188,13 +2188,24 @@ async function renderCitizenDetail(id){
     `).join("");
   })() : `<div class="empty">No entries yet.</div>`;
 
-  const forgiveBlock = `<div class="panel" style="margin-top:12px;">
-    <h4>Forgive debt</h4>
-    <div class="inline">
-      <div class="field"><label>Amount</label><input id="forgiveAmt" placeholder="0" value="${bal>0?bal:''}"></div>
-      <div class="field"><label>Note</label><input id="forgiveNote" placeholder="optional"></div>
+  const actionPanel = `<div class="panel">
+    <div class="seg" id="actionModeSeg" style="margin-bottom:14px">
+      <button type="button" data-mode="charge" class="active">Contribution</button>
+      <button type="button" data-mode="payment">Payment</button>
+      <button type="button" data-mode="forgive">Forgive</button>
     </div>
-    <button class="btn small" id="forgiveBtn" ${bal<=0?'disabled':''}>Forgive</button>
+    <div class="field"><label id="actAmtLabel">Amount (${CURRENCY})</label><input id="actAmt" inputmode="decimal" placeholder="0"></div>
+    <div class="inline" id="actNoteDateRow">
+      <div class="field"><label id="actNoteLabel">For</label><input id="actNote" value="${esc(monthLabel())}"></div>
+      <div class="field" id="actDateField"><label>Date</label><input id="actDate" type="date" value="${todayISO()}"></div>
+    </div>
+    <label id="actDeferRow" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);margin-top:10px">
+      <input id="actDeferred" type="checkbox"> <span>Mark as deferred</span>
+    </label>
+    <button class="btn block small" id="actSubmit" style="margin-top:10px">Add contribution</button>
+    <div id="markPaidWrap" class="hidden" style="margin-top:8px">
+      <button class="btn small ghost block" id="markPaid">Mark fully paid (${fmt(bal)})</button>
+    </div>
   </div>`;
 
   $("cDetail").outerHTML = `<div id="cDetail">
@@ -2204,33 +2215,7 @@ async function renderCitizenDetail(id){
       <div class="meta">${esc(c.jobCard||id)}${c.phone?" · "+esc(c.phone):""}</div>
     </div>
 
-    <div class="panel">
-      <h4>Add this month's contribution</h4>
-      <div class="field"><label>Amount (${CURRENCY})</label><input id="chAmt" inputmode="decimal" placeholder="0"></div>
-      <div class="inline">
-        <div class="field"><label>For</label><input id="chNote" value="${esc(monthLabel())}"></div>
-        <div class="field"><label>Date</label><input id="chDate" type="date" value="${todayISO()}"></div>
-      </div>
-      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);margin-top:10px">
-        <input id="chDeferred" type="checkbox"> <span>Mark as deferred</span>
-      </label>
-      <button class="btn block small" id="addCharge" style="margin-top:10px">Add contribution</button>
-    </div>
-
-    <div class="panel">
-      <h4>Record a payment</h4>
-      <div class="field"><label>Amount paid (${CURRENCY})</label><input id="pyAmt" inputmode="decimal" placeholder="0"></div>
-      <div class="inline">
-        <div class="field"><label>Note</label><input id="pyNote" placeholder="optional (e.g. cash)"></div>
-        <div class="field"><label>Date</label><input id="pyDate" type="date" value="${todayISO()}"></div>
-      </div>
-      <div class="inline-buttons" style="margin-top:10px;">
-        <button class="btn small ghost" id="addPayment" style="flex:1">Record this amount</button>
-        ${bal>0 ? `<button class="btn small" id="markPaid" style="flex:1">Mark fully paid (${fmt(bal)})</button>` : ``}
-      </div>
-    </div>
-
-    ${forgiveBlock}
+    ${actionPanel}
 
     <div class="clist" style="box-shadow:none">
       <button id="historyToggle" style="width:100%;text-align:left;background:none;border:none;padding:14px 0 4px;font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:0;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-weight:600">
@@ -2246,11 +2231,40 @@ async function renderCitizenDetail(id){
   </div>`;
 
   // Attach event listeners
-  $("addCharge").addEventListener("click", ()=>addEntry(id,"charge"));
-  $("addPayment").addEventListener("click", ()=>addEntry(id,"payment"));
+  let actionMode = "charge";
+  function updateActionMode(){
+    const amtLabel=$("actAmtLabel"), noteLabel=$("actNoteLabel"), noteInput=$("actNote"),
+          amtInput=$("actAmt"), dateField=$("actDateField"), deferRow=$("actDeferRow"),
+          submitBtn=$("actSubmit"), markPaidWrap=$("markPaidWrap");
+    document.querySelectorAll("#actionModeSeg button").forEach(b=>b.classList.toggle("active", b.dataset.mode===actionMode));
+    if(actionMode==="charge"){
+      amtLabel.textContent=`Amount (${CURRENCY})`; noteLabel.textContent="For";
+      noteInput.value=monthLabel(); amtInput.value="";
+      dateField.classList.remove("hidden"); deferRow.classList.remove("hidden");
+      submitBtn.textContent="Add contribution"; markPaidWrap.classList.add("hidden");
+    } else if(actionMode==="payment"){
+      amtLabel.textContent=`Amount paid (${CURRENCY})`; noteLabel.textContent="Note";
+      noteInput.value=""; amtInput.value="";
+      dateField.classList.remove("hidden"); deferRow.classList.add("hidden");
+      submitBtn.textContent="Record payment"; markPaidWrap.classList.toggle("hidden", !(bal>0));
+    } else {
+      amtLabel.textContent="Amount"; noteLabel.textContent="Note";
+      noteInput.value=""; amtInput.value=bal>0?bal:"";
+      dateField.classList.add("hidden"); deferRow.classList.add("hidden");
+      submitBtn.textContent="Forgive debt"; markPaidWrap.classList.add("hidden");
+    }
+    submitBtn.disabled = actionMode==="forgive" && !(bal>0);
+  }
+  document.querySelectorAll("#actionModeSeg button").forEach(btn=>{
+    btn.addEventListener("click", ()=>{ actionMode=btn.dataset.mode; updateActionMode(); });
+  });
+  $("actSubmit").addEventListener("click", ()=>{
+    if(actionMode==="charge") addEntry(id,"charge");
+    else if(actionMode==="payment") addEntry(id,"payment");
+    else forgiveDebt(id);
+  });
   if($("markPaid")) $("markPaid").addEventListener("click", ()=>markFullyPaid(id, bal));
   $("delCitizen").addEventListener("click", ()=>deleteCitizen(id));
-  $("forgiveBtn").addEventListener("click", ()=>forgiveDebt(id));
 
   // History toggle
   $("historyToggle").addEventListener("click", ()=>{
@@ -2316,27 +2330,24 @@ async function markFullyPaid(id, bal){
 }
 
 async function addEntry(id, type){
-  const amtEl = type==="charge" ? $("chAmt") : $("pyAmt");
-  const noteEl = type==="charge" ? $("chNote") : $("pyNote");
-  const dateEl = type==="charge" ? $("chDate") : $("pyDate");
-  const amount = parseFloat(amtEl.value);
+  const amount = parseFloat($("actAmt").value);
   if(!(amount>0)){ toast("Enter a valid amount"); return; }
-  const btn = type==="charge" ? $("addCharge") : $("addPayment");
+  const btn = $("actSubmit");
   btn.disabled=true;
   try{
-    const deferred = type==="charge" && $("chDeferred") && $("chDeferred").checked;
-    await store.addEntry(id, type, amount, noteEl.value.trim(), dateEl.value||todayISO(), deferred);
+    const note = $("actNote").value.trim();
+    const date = $("actDate").value || todayISO();
+    const deferred = type==="charge" && $("actDeferred").checked;
+    await store.addEntry(id, type, amount, note, date, deferred);
     toast(type==="charge" ? (deferred ? "Deferred contribution added" : "Contribution added") : "Payment recorded");
     await renderCitizenDetail(id);
   }catch(err){ toast("Couldn't save. Try again."); console.error(err); btn.disabled=false; }
 }
 
 async function forgiveDebt(id){
-  const amtInput = $("forgiveAmt");
-  const noteInput = $("forgiveNote");
-  const amount = parseFloat(amtInput.value);
+  const amount = parseFloat($("actAmt").value);
   if(!(amount>0)){ toast("Enter a valid amount"); return; }
-  const note = noteInput.value.trim() || "Forgiven";
+  const note = $("actNote").value.trim() || "Forgiven";
   if(!(await confirmAction(`Forgive ${fmt(amount)} for this citizen?`))) return;
   try{
     await store.forgiveDebt(id, amount, note);
