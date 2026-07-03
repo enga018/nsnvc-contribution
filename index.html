@@ -282,13 +282,31 @@
         <select id="periodSel" class="period-sel"><option value="">All pending (any period)</option></select>
       </div>
       <div class="clist" id="adminList"></div>
+      <div id="settingsPanel" class="hidden" style="margin-top:16px">
+        <div class="panel" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <h3 style="margin:0;font-size:16px">Periods</h3>
+            <button class="btn small ghost" id="settingsPanelClose">✕</button>
+          </div>
+          <div id="periodsTable">Loading periods…</div>
+          <div style="border-top:1px solid var(--border);margin:14px 0"></div>
+          <div class="inline-buttons">
+            <button class="btn small ghost" id="settingsRename">Rename period</button>
+            <button class="btn small ghost" id="settingsBackup">Backup / Restore</button>
+            <button class="btn small ghost" id="settingsImport">Import / Export</button>
+          </div>
+          <div style="border-top:1px solid var(--border);margin:14px 0"></div>
+          <button class="btn block ghost" id="settingsLogout" style="color:var(--due);border-color:var(--due)">Sign out</button>
+          <div id="settingsMsg" style="margin-top:12px"></div>
+        </div>
+      </div>
     </div>
     <div id="adminDetail" class="hidden"></div>
   </section>
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.23.10</footer>
+<footer>New Serchhip North Village Council · v1.23.11</footer>
 
 <script type="module">
 /* ============================================================
@@ -1304,25 +1322,66 @@ function renderList(){
     }));
   if($("adminMore")) $("adminMore").addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
 }
-$("settingsBtn").addEventListener("click", openSettings);
+$("settingsBtn").addEventListener("click", toggleSettings);
 
-function openSettings(){
-  openSheet("Settings", `
-    <div class="panel" style="margin-bottom:16px">
-      <h4>Quick Actions</h4>
-      <button class="btn block ghost" id="settingsPeriods">Manage periods</button>
-      <button class="btn block ghost" id="settingsBackup" style="margin-top:8px">Backup / Restore</button>
-      <button class="btn block ghost" id="settingsImport" style="margin-top:8px">Import / Export</button>
-    </div>
-    <div class="panel">
-      <h4>Account</h4>
-      <button class="btn block ghost" id="settingsLogout" style="color:var(--due);border-color:var(--due)">Sign out</button>
-    </div>
-  `);
-  $("settingsPeriods").addEventListener("click", ()=>{ closeSheet(); openPeriods(); });
-  $("settingsBackup").addEventListener("click", ()=>{ closeSheet(); openBackup(); });
-  $("settingsImport").addEventListener("click", ()=>{ closeSheet(); openImportExport(); });
+function toggleSettings(){
+  const panel = $("settingsPanel");
+  const wasHidden = panel.classList.contains("hidden");
+  panel.classList.toggle("hidden");
+  if(wasHidden) loadPeriodsTable();
+  if(!wasHidden) return;
+  $("settingsPanelClose").addEventListener("click", ()=> panel.classList.add("hidden"));
+  $("settingsRename").addEventListener("click", ()=>{ $("settingsPanel").classList.add("hidden"); openRenamePeriod(); });
+  $("settingsBackup").addEventListener("click", ()=>{ $("settingsPanel").classList.add("hidden"); openBackup(); });
+  $("settingsImport").addEventListener("click", ()=>{ $("settingsPanel").classList.add("hidden"); openImportExport(); });
   $("settingsLogout").addEventListener("click", doLogout);
+}
+
+async function loadPeriodsTable(){
+  const el = $("periodsTable"); el.innerHTML = "Loading…";
+  try{
+    const [periods, excluded, ledgers] = await Promise.all([
+      store.getAllPeriods(), store.getExcludedPeriods(), store.getAllLedgers()
+    ]);
+    const stats = {};
+    for(const cid in ledgers){
+      for(const e of (ledgers[cid]||[])){
+        if(e.type==="charge" && e.note){
+          if(!stats[e.note]) stats[e.note] = { count:0, amount:0 };
+          stats[e.note].count++;
+          stats[e.note].amount += Number(e.amount||0);
+        }
+      }
+    }
+    if(!periods.length){ el.innerHTML = '<div style="color:var(--muted)">No periods found yet.</div>'; return; }
+    const rows = periods.sort((a,b)=>periodKey(a)-periodKey(b)).map(p => {
+      const s = stats[p] || {count:0, amount:0};
+      const isExcl = excluded.includes(p);
+      return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <label class="switch" style="flex:none"><input type="checkbox" class="period-toggle" value="${esc(p)}" ${!isExcl?"checked":""}><span class="switch-track"><span class="switch-thumb"></span></span></label>
+        <div style="flex:1;min-width:0"><b style="font-size:14px">${esc(prettyPeriod(p))}</b><br><small style="font-size:12px;color:var(--muted)">${s.count} charge${s.count===1?"":"s"} · ${fmt(s.amount)}</small></div>
+      </div>`;
+    }).join("");
+    el.innerHTML = rows + `<button class="btn block" id="savePeriodsBtn" style="margin-top:14px">Save exclusion changes</button>`;
+    $("savePeriodsBtn").addEventListener("click", saveInlinePeriods);
+  }catch(err){ console.error(err); el.innerHTML = `<div class="notice err">Failed: ${err.message||err}</div>`; }
+}
+
+async function saveInlinePeriods(){
+  const msg = $("settingsMsg"); const btn = $("savePeriodsBtn"); btn.disabled=true;
+  msg.innerHTML = '<div class="notice info">Saving…</div>';
+  try{
+    const excluded = [];
+    document.querySelectorAll(".period-toggle").forEach(t=>{ if(!t.checked) excluded.push(t.value); });
+    await store.setExcludedPeriods(excluded);
+    excludedPeriods = excluded;
+    periodsReady = false; unpaidCache = new Map();
+    if(periodFilter && excludedPeriods.includes(periodFilter)) periodFilter = "";
+    msg.innerHTML = `<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excluded.length} periods excluded.</div>`;
+    toast("Periods updated");
+    await refreshDashboard(); loadPendingPeriods();
+  }catch(err){ console.error(err); msg.innerHTML = '<div class="notice err">Failed to save.</div>'; }
+  finally{ btn.disabled=false; }
 }
 
 function doLogout(){
