@@ -110,7 +110,7 @@
   .ledger{border-top:1px solid var(--border)}
   .ledger h3{font-size:12.5px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:0; padding:14px 18px 6px}
   .row{
-    display:flex; align-items:center; gap:10px; padding:11px 18px; border-top:1px solid var(--border);
+    display:flex; align-items:center; gap:10px; padding:7px 18px; border-top:1px solid var(--border);
   }
   .row .desc{flex:1; min-width:0}
   .row .desc b{font-size:14px; font-weight:600; display:block}
@@ -2143,68 +2143,70 @@ async function renderCitizenDetail(id){
   const bal = getEffectiveBalance(c);
   const chrono = [...entries].sort((a,b)=>a.createdAt-b.createdAt);
 
-  const groupByMonth = (entries)=>{
+  const PERIOD_CUTOFF = "2026-01-01";
+  const orderByPeriod = (entries)=>{
     const grouped = {};
     for(const e of entries){
       let key;
-      if(e.type==="charge" && e.note){
-        key = prettyPeriod(e.note) || e.note;
-      } else if(e.date){
+      if(e.type==="charge"){
+        key = e.note ? (prettyPeriod(e.note) || e.note) : "Other";
+      } else if(e.date && e.date >= PERIOD_CUTOFF){
         const d = new Date(e.date);
         key = isNaN(d.getTime()) ? "Other" : d.toLocaleString('en-IN', {month:'long', year:'numeric'});
+      } else if(e.note){
+        key = prettyPeriod(e.note) || e.note;
       } else {
         key = "Other";
       }
       if(!grouped[key]) grouped[key] = [];
       grouped[key].push(e);
     }
-    return Object.entries(grouped).sort((a,b)=>{
+    const groups = Object.entries(grouped).sort((a,b)=>{
       const maxA = Math.max(...a[1].map(e=>e.createdAt||0));
       const maxB = Math.max(...b[1].map(e=>e.createdAt||0));
       return maxA - maxB;
     });
+    const flat = [];
+    for(const [, groupEntries] of groups){
+      groupEntries.sort((a,b)=>{
+        const rank = t => t==="charge" ? 0 : 1;
+        const ra = rank(a.type), rb = rank(b.type);
+        return ra!==rb ? ra-rb : (a.createdAt||0)-(b.createdAt||0);
+      });
+      flat.push(...groupEntries);
+    }
+    return flat;
   };
 
-  const monthRows = (entries)=>{
-    return entries.map((e, idx)=>{
-      const isPayment = e.type==="payment";
-      const isForgive = e.type==="forgive";
-      const isDeferred = e.deferred && e.type==="charge";
-      let label = entryLabel(e);
-      let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
-      let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
-      const prevCharge = idx>0 && entries[idx-1].type==="charge";
-      let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "") + (isPayment && prevCharge ? " no-top-border" : "");
-      const actions = `<span class="actions">
-        <button class="edit-entry" data-id="${e.entryId}" data-type="${e.type}">✏️</button>
-        <button class="del-entry" data-id="${e.entryId}">🗑️</button>
-      </span>`;
-      let deferToggle = '';
-      if(e.type==="charge"){
-        const checked = e.deferred ? 'checked' : '';
-        deferToggle = `<label class="switch" data-id="${e.entryId}" style="margin-left:8px">
-          <input type="checkbox" class="defer-chk" data-id="${e.entryId}" ${checked}>
-          <span class="switch-track"><span class="switch-thumb"></span></span>
-          <span class="switch-label">Defer</span>
-        </label>`;
-      }
-      return `<div class="${rowClass}">
-        <div class="desc"><b>${esc(label)}</b><small>${esc(e.date||"")}</small> ${deferToggle}</div>
-        <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
-        ${actions}
-      </div>`;
-    }).join("");
-  };
-
-  const rows = chrono.length ? (() => {
-    const grouped = groupByMonth(chrono);
-    return grouped.map(([month, entries]) => `
-      <div style="margin-bottom:12px">
-        <div style="padding:8px 2px;font-size:12.5px;font-weight:650;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">${esc(month)}</div>
-        ${monthRows(entries)}
-      </div>
-    `).join("");
-  })() : `<div class="empty">No entries yet.</div>`;
+  const ordered = orderByPeriod(chrono);
+  const rows = ordered.length ? ordered.map((e, idx)=>{
+    const isPayment = e.type==="payment";
+    const isForgive = e.type==="forgive";
+    const isDeferred = e.deferred && e.type==="charge";
+    const prevCharge = idx>0 && ordered[idx-1].type==="charge";
+    let label = (isPayment && prevCharge) ? "Payment" : entryLabel(e);
+    let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
+    let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
+    let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "") + ((isPayment||isForgive) && prevCharge ? " no-top-border" : "");
+    const actions = `<span class="actions">
+      <button class="edit-entry" data-id="${e.entryId}" data-type="${e.type}">✏️</button>
+      <button class="del-entry" data-id="${e.entryId}">🗑️</button>
+    </span>`;
+    let deferToggle = '';
+    if(e.type==="charge"){
+      const checked = e.deferred ? 'checked' : '';
+      deferToggle = `<label class="switch" data-id="${e.entryId}" style="margin-left:8px">
+        <input type="checkbox" class="defer-chk" data-id="${e.entryId}" ${checked}>
+        <span class="switch-track"><span class="switch-thumb"></span></span>
+        <span class="switch-label">Defer</span>
+      </label>`;
+    }
+    return `<div class="${rowClass}">
+      <div class="desc"><b>${esc(label)}</b><small>${esc(e.date||"")}</small> ${deferToggle}</div>
+      <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
+      ${actions}
+    </div>`;
+  }).join("") : `<div class="empty">No entries yet.</div>`;
 
   const actionPanel = `<div class="panel">
     <div class="seg" id="actionModeSeg" style="margin-bottom:14px">
