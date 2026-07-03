@@ -282,31 +282,13 @@
         <select id="periodSel" class="period-sel"><option value="">All pending (any period)</option></select>
       </div>
       <div class="clist" id="adminList"></div>
-      <div id="settingsPanel" class="hidden" style="margin-top:16px">
-        <div class="panel" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-            <h3 style="margin:0;font-size:16px">Periods</h3>
-            <button class="btn small ghost" id="settingsPanelClose">✕</button>
-          </div>
-          <div id="periodsTable">Loading periods…</div>
-          <div style="border-top:1px solid var(--border);margin:14px 0"></div>
-          <div class="inline-buttons">
-            <button class="btn small ghost" id="settingsRename">Rename period</button>
-            <button class="btn small ghost" id="settingsBackup">Backup / Restore</button>
-            <button class="btn small ghost" id="settingsImport">Import / Export</button>
-          </div>
-          <div style="border-top:1px solid var(--border);margin:14px 0"></div>
-          <button class="btn block ghost" id="settingsLogout" style="color:var(--due);border-color:var(--due)">Sign out</button>
-          <div id="settingsMsg" style="margin-top:12px"></div>
-        </div>
-      </div>
     </div>
     <div id="adminDetail" class="hidden"></div>
   </section>
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.23.11</footer>
+<footer>New Serchhip North Village Council · v1.23.12</footer>
 
 <script type="module">
 /* ============================================================
@@ -1322,23 +1304,12 @@ function renderList(){
     }));
   if($("adminMore")) $("adminMore").addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
 }
-$("settingsBtn").addEventListener("click", toggleSettings);
+$("settingsBtn").addEventListener("click", openSettings);
 
-function toggleSettings(){
-  const panel = $("settingsPanel");
-  const wasHidden = panel.classList.contains("hidden");
-  panel.classList.toggle("hidden");
-  if(wasHidden) loadPeriodsTable();
-  if(!wasHidden) return;
-  $("settingsPanelClose").addEventListener("click", ()=> panel.classList.add("hidden"));
-  $("settingsRename").addEventListener("click", ()=>{ $("settingsPanel").classList.add("hidden"); openRenamePeriod(); });
-  $("settingsBackup").addEventListener("click", ()=>{ $("settingsPanel").classList.add("hidden"); openBackup(); });
-  $("settingsImport").addEventListener("click", ()=>{ $("settingsPanel").classList.add("hidden"); openImportExport(); });
-  $("settingsLogout").addEventListener("click", doLogout);
-}
-
-async function loadPeriodsTable(){
-  const el = $("periodsTable"); el.innerHTML = "Loading…";
+async function openSettings(){
+  $("dashboard").classList.add("hidden");
+  $("adminDetail").classList.remove("hidden");
+  $("adminDetail").innerHTML = `<div class="notice info">Loading…</div>`;
   try{
     const [periods, excluded, ledgers] = await Promise.all([
       store.getAllPeriods(), store.getExcludedPeriods(), store.getAllLedgers()
@@ -1353,21 +1324,57 @@ async function loadPeriodsTable(){
         }
       }
     }
-    if(!periods.length){ el.innerHTML = '<div style="color:var(--muted)">No periods found yet.</div>'; return; }
-    const rows = periods.sort((a,b)=>periodKey(a)-periodKey(b)).map(p => {
+    const rows = periods.length ? periods.sort((a,b)=>periodKey(a)-periodKey(b)).map(p => {
       const s = stats[p] || {count:0, amount:0};
       const isExcl = excluded.includes(p);
-      return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+      return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
         <label class="switch" style="flex:none"><input type="checkbox" class="period-toggle" value="${esc(p)}" ${!isExcl?"checked":""}><span class="switch-track"><span class="switch-thumb"></span></span></label>
         <div style="flex:1;min-width:0"><b style="font-size:14px">${esc(prettyPeriod(p))}</b><br><small style="font-size:12px;color:var(--muted)">${s.count} charge${s.count===1?"":"s"} · ${fmt(s.amount)}</small></div>
       </div>`;
-    }).join("");
-    el.innerHTML = rows + `<button class="btn block" id="savePeriodsBtn" style="margin-top:14px">Save exclusion changes</button>`;
-    $("savePeriodsBtn").addEventListener("click", saveInlinePeriods);
-  }catch(err){ console.error(err); el.innerHTML = `<div class="notice err">Failed: ${err.message||err}</div>`; }
+    }).join("") : '<div style="color:var(--muted)">No periods found yet.</div>';
+
+    $("adminDetail").innerHTML = `
+    <button class="back" id="settingsBackBtn">‹ Back</button>
+    <div class="statement">
+      <div class="top"><div><p class="name">Settings</p><div class="meta">Manage periods, backup, and account</div></div></div>
+      <div class="ledger">
+        <div class="ledger-head"><b>Periods</b></div>
+        <div style="padding:0 18px">
+          ${rows}
+          <button class="btn block" id="savePeriodsBtn" style="margin-top:14px">Save exclusion changes</button>
+          <div id="settingsMsg" style="margin-top:12px"></div>
+        </div>
+        <div style="border-top:1px solid var(--border);margin:16px 0"></div>
+        <div style="padding:0 18px">
+          <button class="btn block ghost" id="settingsRename">Rename period</button>
+          <button class="btn block ghost" id="settingsBackup" style="margin-top:8px">Backup / Restore</button>
+          <button class="btn block ghost" id="settingsImport" style="margin-top:8px">Import / Export</button>
+          <div style="border-top:1px solid var(--border);margin:14px 0"></div>
+          <button class="btn block ghost" id="settingsLogout" style="color:var(--due);border-color:var(--due)">Sign out</button>
+        </div>
+      </div>
+    </div>`;
+    $("settingsBackBtn").addEventListener("click", closeSettings);
+    $("savePeriodsBtn").addEventListener("click", saveSettingsPeriods);
+    $("settingsRename").addEventListener("click", ()=>{ closeSettings(); setTimeout(openRenamePeriod, 100); });
+    $("settingsBackup").addEventListener("click", ()=>{ closeSettings(); setTimeout(openBackup, 100); });
+    $("settingsImport").addEventListener("click", ()=>{ closeSettings(); setTimeout(openImportExport, 100); });
+    $("settingsLogout").addEventListener("click", doLogout);
+  }catch(err){
+    console.error(err);
+    $("adminDetail").innerHTML = `<button class="back" id="settingsBackBtn">‹ Back</button><div class="notice err">Failed to load: ${err.message||err}</div>`;
+    $("settingsBackBtn").addEventListener("click", closeSettings);
+  }
 }
 
-async function saveInlinePeriods(){
+function closeSettings(){
+  $("adminDetail").classList.add("hidden");
+  $("adminDetail").innerHTML = "";
+  $("dashboard").classList.remove("hidden");
+  renderList();
+}
+
+async function saveSettingsPeriods(){
   const msg = $("settingsMsg"); const btn = $("savePeriodsBtn"); btn.disabled=true;
   msg.innerHTML = '<div class="notice info">Saving…</div>';
   try{
