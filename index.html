@@ -1363,13 +1363,6 @@ function renderStatement(){
   $("citizenResult").innerHTML = `
   <button class="back" id="backBtn">‹ Back</button>
   <div class="statement">
-    <div class="top">
-      <div>
-        <p class="name">${esc(c.name||"—")}</p>
-        <div class="meta">${esc(c.jobCard||id)}</div>
-      </div>
-      <span class="badge ${st}">${statusLabel[st]}</span>
-    </div>
     <div class="balance-block">
       <div class="label">Total to pay now</div>
       <div class="amount money ${toPay<=0?"zero":"owing"}">${fmt(toPay)}</div>
@@ -1378,6 +1371,13 @@ function renderStatement(){
     <div class="ledger">
       <button class="hist-toggle" id="histToggle">Show history (${chrono.length}) ▾</button>
       <div id="histBody" class="hidden">${rows}</div>
+    </div>
+    <div class="top">
+      <div>
+        <p class="name">${esc(c.name||"—")}</p>
+        <div class="meta">${esc(c.jobCard||id)}</div>
+      </div>
+      <span class="badge ${st}">${statusLabel[st]}</span>
     </div>
   </div>`;
   $("backBtn").addEventListener("click", goBack);
