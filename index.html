@@ -986,12 +986,15 @@ function makeFirebaseStore({ auth, db, fs, au }){
       return count;
     },
     async getAllPeriods(){
-      const ledSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
+      const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
       const periods=new Set();
-      ledSnap.docs.forEach(d=>{
-        const e=d.data();
-        if(e.type==="charge" && e.note) periods.add(e.note);
-      });
+      for(const d of cSnap.docs){
+        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
+        ledSnap.docs.forEach(ld=>{
+          const e=ld.data();
+          if(e.type==="charge" && e.note) periods.add(e.note);
+        });
+      }
       return Array.from(periods).sort();
     },
     async getExcludedPeriods(){
