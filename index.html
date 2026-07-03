@@ -295,7 +295,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.24.1</footer>
+<footer>New Serchhip North Village Council · v1.24.2</footer>
 
 <script type="module">
 /* ============================================================
@@ -1379,8 +1379,8 @@ async function openSettings(){
       </div>
     </div>`;
     $("settingsBackBtn").addEventListener("click", closeSettings);
-    $("settingsBackup").addEventListener("click", ()=>{ closeSettings(); setTimeout(openBackup, 100); });
-    $("settingsImport").addEventListener("click", ()=>{ closeSettings(); setTimeout(openImportExport, 100); });
+    $("settingsBackup").addEventListener("click", openBackup);
+    $("settingsImport").addEventListener("click", openImportExport);
     $("settingsLogout").addEventListener("click", doLogout);
 
     function updateSaveBtn(){
