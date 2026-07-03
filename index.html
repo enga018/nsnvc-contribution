@@ -288,7 +288,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.23.9</footer>
+<footer>New Serchhip North Village Council · v1.23.10</footer>
 
 <script type="module">
 /* ============================================================
@@ -1311,7 +1311,6 @@ function openSettings(){
     <div class="panel" style="margin-bottom:16px">
       <h4>Quick Actions</h4>
       <button class="btn block ghost" id="settingsPeriods">Manage periods</button>
-      <button class="btn block ghost" id="settingsRename" style="margin-top:8px">Rename period</button>
       <button class="btn block ghost" id="settingsBackup" style="margin-top:8px">Backup / Restore</button>
       <button class="btn block ghost" id="settingsImport" style="margin-top:8px">Import / Export</button>
     </div>
@@ -1321,7 +1320,6 @@ function openSettings(){
     </div>
   `);
   $("settingsPeriods").addEventListener("click", ()=>{ closeSheet(); openPeriods(); });
-  $("settingsRename").addEventListener("click", ()=>{ closeSheet(); openRenamePeriod(); });
   $("settingsBackup").addEventListener("click", ()=>{ closeSheet(); openBackup(); });
   $("settingsImport").addEventListener("click", ()=>{ closeSheet(); openImportExport(); });
   $("settingsLogout").addEventListener("click", doLogout);
@@ -1468,10 +1466,13 @@ async function openPeriods(){
     <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">Select which periods are included in balance calculations. Unchecked periods are excluded.</p>
     <div id="periodsList" style="margin-bottom:16px">Loading periods…</div>
     <button class="btn block" id="savePeriodsBtn">Save changes</button>
+    <div style="border-top:1px solid var(--border);margin:16px 0"></div>
+    <button class="btn block ghost" id="renamePeriodBtn">Rename period</button>
     <div id="periodsMsg" style="margin-top:12px"></div>
   `);
   loadPeriods();
   $("savePeriodsBtn").addEventListener("click", savePeriods);
+  $("renamePeriodBtn").addEventListener("click", ()=>{ closeSheet(); openRenamePeriod(); });
 }
 async function loadPeriods(){
   try{
