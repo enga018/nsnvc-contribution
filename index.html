@@ -1336,10 +1336,10 @@ function renderStatement(){
     const isPayment = e.type==="payment";
     const isForgive = e.type==="forgive";
     const isDeferred = e.deferred && e.type==="charge";
-    let label = entryLabel(e);
+    const prevCharge = idx>0 && chrono[idx-1].type==="charge";
+    let label = (isPayment && prevCharge) ? "Payment" : entryLabel(e);
     let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
     let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
-    const prevCharge = idx>0 && chrono[idx-1].type==="charge";
     let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "") + (isPayment && prevCharge ? " no-top-border" : "");
     sum += e.type==="charge" ? e.amount : -e.amount;
     return `<div class="${rowClass}">
