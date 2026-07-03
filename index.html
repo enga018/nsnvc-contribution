@@ -366,7 +366,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.21.0</footer>
+<footer>New Serchhip North Village Council · v1.22.0</footer>
 
 <script type="module">
 /* ============================================================
@@ -1255,7 +1255,7 @@ function goBack(){
 
 /* ---------- public list ---------- */
 let pubAll=[], pubShown=6, backTarget="list";
-const PUB_STEP=6;
+const PUB_STEP=10;
 
 function showList(){
   backTarget="list";
@@ -1275,12 +1275,18 @@ async function loadOwing(){
       requestAnimationFrame(()=>{
         const more = pubAll.slice(pubShown, Math.min(pubShown + PUB_STEP, pubAll.length));
         if(more.length){
-          const current = $("citizenList").innerHTML;
-          const extra = more.map(c=>personCardHTML(c.id, c)).join("");
-          const marker = current.includes('id="seeMore"') ? '<button class="btn block ghost small" id="seeMore" style="margin-top:12px">Show next 6</button>' : '';
-          $("citizenList").innerHTML = current.replace(marker, marker + extra);
-          document.querySelectorAll("#citizenList .result-card").forEach(b=>
-            b.addEventListener("click", ()=>openMatch(b.dataset.id, true)));
+          const seeMoreBtn = $("seeMore");
+          if(seeMoreBtn){
+            const frag = document.createDocumentFragment();
+            more.forEach(c=>{
+              const tmp = document.createElement("div");
+              tmp.innerHTML = personCardHTML(c.id, c);
+              const card = tmp.firstElementChild;
+              card.addEventListener("click", ()=>openMatch(c.id, true));
+              frag.appendChild(card);
+            });
+            seeMoreBtn.parentNode.insertBefore(frag, seeMoreBtn);
+          }
         }
       });
     }
@@ -1311,6 +1317,7 @@ function renderStatement(){
   const st = statusOf(c);
 
   const chrono = [...entries].sort((a,b)=>a.createdAt-b.createdAt);
+  let sum = 0;
   let rows = chrono.length ? chrono.map((e, idx)=>{
     const isPayment = e.type==="payment";
     const isForgive = e.type==="forgive";
@@ -1319,11 +1326,19 @@ function renderStatement(){
     let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
     let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
     let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "");
+    sum += e.type==="charge" ? e.amount : -e.amount;
     return `<div class="${rowClass}">
       <div class="desc"><b>${esc(label)}</b><small>${esc(e.date||"")}</small></div>
       <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
     </div>`;
   }).join("") : `<div class="empty">No entries yet.</div>`;
+  if(chrono.length){
+    const sumClass = sum > 0 ? "owing" : "payment";
+    rows += `<div class="row" style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px;font-weight:700">
+      <div class="desc">Total</div>
+      <div class="amt ${sumClass}" style="color:var(--due)">${sum > 0 ? "+ " : ""}${fmt(sum)}</div>
+    </div>`;
+  }
 
   let upiButton = '';
   if(toPay > 0){
@@ -1537,7 +1552,7 @@ function openSettings(){
     <div class="panel">
       <h4>App Info</h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6">
-        <div>Version: v1.21.0</div>
+        <div>Version: v1.22.0</div>
         <div>New Serchhip North Village Council</div>
       </div>
     </div>
