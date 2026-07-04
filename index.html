@@ -301,7 +301,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.25.4</footer>
+<footer>New Serchhip North Village Council · v1.25.5</footer>
 
 <script type="module">
 /* ============================================================
@@ -2098,8 +2098,9 @@ async function renderCitizenDetail(id){
     </div>
     <div class="balance-block">
       <div class="label">Remaining balance</div>
-      <div class="amount money ${bal<=0?'zero':'owing'}">${fmt(Math.max(0,bal))}</div>
-      ${bal<0 ? `<div style="font-size:13px;color:var(--paid);margin-top:2px">${fmt(Math.abs(bal))} overpaid</div>` : ''}
+      ${bal<0
+        ? `<div class="amount money zero">${fmt(Math.abs(bal))} <span style="font-size:14px;font-weight:400;color:var(--paid)">overpaid</span></div>`
+        : `<div class="amount money ${bal<=0?'zero':'owing'}">${fmt(Math.max(0,bal))}</div>`}
     </div>
     ${actionBadges}
     <div class="ledger">
