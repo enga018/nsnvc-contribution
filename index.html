@@ -67,6 +67,12 @@
   .badge.paid{background:#e6f4ea; color:var(--paid)}
   .badge.partial{background:#fdf1e3; color:var(--partial)}
   .badge.due{background:#fdeaea; color:var(--due)}
+  .badge.action{cursor:pointer; transition:opacity .15s}
+  .badge.action:active{opacity:.7}
+  .badge.action-paid{background:#e6f4ea; color:var(--paid)}
+  .badge.action-pay{background:#e8f0fe; color:#1a73e8}
+  .badge.action-waive{background:#fdf1e3; color:var(--partial)}
+  .badge-row{display:flex; gap:8px; flex-wrap:wrap}
 
   .balance-block{padding:20px 18px; text-align:center; background:linear-gradient(180deg,#fbfbf8,transparent)}
   .balance-block .label{font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted)}
@@ -295,7 +301,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.24.7</footer>
+<footer>New Serchhip North Village Council · v1.25.0</footer>
 
 <script type="module">
 /* ============================================================
@@ -373,7 +379,7 @@ function entryLabel(e){
     const isPeriod = note && prettyPeriod(note)!==note;
     return (note && !isPeriod) ? `Payment (${note})` : "Payment";
   }
-  if(e.type==="forgive") return "Forgiven";
+  if(e.type==="forgive") return "Waived";
   return prettyPeriod(e.note) || "Contribution";
 }
 function suffixOf(s){ s=String(s||"").trim(); const i=s.lastIndexOf("/"); return (i>=0?s.slice(i+1):s).trim().toLowerCase(); }
@@ -1315,34 +1321,19 @@ function renderList(){
     const small = adminFilter==="deferred"
       ? `${esc(c.jobCard||c.id)} · Deferred ${fmt(deferred)}`
       : esc(c.jobCard||c.id);
-    const markPaidBtn = adminFilter==="pending" && bal>0
-      ? `<button class="btn small mark-paid-btn" data-id="${esc(c.id)}" data-amount="${bal}" style="white-space:nowrap">Mark paid</button>`
-      : '';
-    return `<div class="citizen-row" style="display:flex;align-items:center;gap:10px;padding:12px 15px;border-top:1px solid var(--border);width:100%">
+    return `<div class="citizen-row" data-id="${esc(c.id)}" style="display:flex;align-items:center;gap:10px;padding:12px 15px;border-top:1px solid var(--border);width:100%;cursor:pointer">
       <span class="dot ${st}"></span>
       <span class="info" style="flex:1;min-width:0">
         <b style="display:block;font-weight:600;font-size:15px">${esc(c.name||"—")}</b>
         <small style="font-size:12px;color:var(--muted);display:block;margin-top:2px">${small}</small>
       </span>
       <span class="bal money" style="white-space:nowrap;color:${adminFilter==="deferred"?'var(--partial)':(bal>0?'var(--due)':'var(--paid)')}">${adminFilter==="deferred" ? fmt(deferred) : fmt(Math.max(0,bal))}</span>
-      ${markPaidBtn}
-      <button class="citizen-row-open" data-id="${esc(c.id)}" style="background:none;border:none;padding:8px;color:var(--muted);cursor:pointer;font-size:14px">→</button>
     </div>`;
   }).join("");
   $("adminList").innerHTML = cards +
     (shown<total ? `<button class="btn block ghost small" id="adminMore" style="margin-top:12px">Show next ${Math.min(ADMIN_STEP, total-shown)}</button>` : ``);
-  document.querySelectorAll("#adminList .citizen-row-open").forEach(b=>
+  document.querySelectorAll("#adminList .citizen-row").forEach(b=>
     b.addEventListener("click",()=>openCitizen(b.dataset.id)));
-  document.querySelectorAll("#adminList .mark-paid-btn").forEach(b=>
-    b.addEventListener("click", async (e)=>{
-      e.stopPropagation();
-      const id = b.dataset.id;
-      const amount = parseFloat(b.dataset.amount);
-      const citizen = allCitizens.find(c=>c.id===id);
-      const name = citizen?.name || id;
-      const ok = await confirmAction(`Mark ${name} fully paid (${fmt(amount)})?`);
-      if(ok) markFullyPaid(id, amount);
-    }));
   if($("adminMore")) $("adminMore").addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
 }
 $("settingsBtn").addEventListener("click", openSettings);
@@ -2103,27 +2094,16 @@ async function renderCitizenDetail(id){
     </div>`;
   }).join("") : `<div class="empty">No entries yet.</div>`;
 
-  const actionPanel = `<div class="panel">
-    <div class="seg" id="actionModeSeg" style="margin-bottom:14px">
-      <button type="button" data-mode="charge" class="active">Contribution</button>
-      <button type="button" data-mode="payment">Payment</button>
-      <button type="button" data-mode="forgive">Forgive</button>
-    </div>
-    <div class="field"><label id="actAmtLabel">Amount (${CURRENCY})</label><input id="actAmt" inputmode="decimal" placeholder="0"></div>
-    <div class="inline" id="actNoteDateRow">
-      <div class="field"><label id="actNoteLabel">For</label><input id="actNote" value="${esc(monthLabel())}"></div>
-      <div class="field" id="actDateField"><label>Date</label><input id="actDate" type="date" value="${todayISO()}"></div>
-    </div>
-    <label id="actDeferRow" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);margin-top:10px">
-      <input id="actDeferred" type="checkbox"> <span>Mark as deferred</span>
-    </label>
-    <button class="btn block small" id="actSubmit" style="margin-top:10px">Add contribution</button>
-    <div id="markPaidWrap" class="hidden" style="margin-top:8px">
-      <button class="btn small ghost block" id="markPaid">Mark fully paid (${fmt(bal)})</button>
-    </div>
-  </div>`;
-
   const st = statusOf(c);
+  const hasOwing = bal > 0;
+  const headerBadge = hasOwing
+    ? `<span class="badge action action-paid" id="hdrMarkPaid">Mark Paid</span>`
+    : `<span class="badge paid">Cleared</span>`;
+  const actionBadges = hasOwing ? `<div class="badge-row" style="padding:0 18px 14px">
+    <span class="badge action action-pay" id="btnPayment">Payment</span>
+    <span class="badge action action-waive" id="btnWaive">Waive</span>
+  </div>` : '';
+
   $("adminDetail").innerHTML = `
   <button class="back" id="adminBackBtn">‹ Back</button>
   <div class="statement">
@@ -2132,15 +2112,13 @@ async function renderCitizenDetail(id){
         <p class="name">${esc(c.name||"—")}</p>
         <div class="meta">${esc(c.jobCard||id)}${c.phone?" · "+esc(c.phone):""}</div>
       </div>
-      <span class="badge ${st}">${statusLabel[st]}</span>
+      ${headerBadge}
     </div>
     <div class="balance-block">
       <div class="label">Remaining balance</div>
       <div class="amount money ${bal<=0?'zero':'owing'}">${fmt(Math.max(0,bal))}</div>
     </div>
-    <div style="padding:0 18px">
-      ${actionPanel}
-    </div>
+    ${actionBadges}
     <div class="ledger">
       <button class="hist-toggle" id="historyToggle">Show history (${chrono.length}) ▾</button>
       <div id="historyBody" class="hidden">${rows}</div>
@@ -2150,40 +2128,19 @@ async function renderCitizenDetail(id){
     </div>
   </div>`;
 
-  // Attach event listeners
-  let actionMode = "charge";
-  function updateActionMode(){
-    const amtLabel=$("actAmtLabel"), noteLabel=$("actNoteLabel"), noteInput=$("actNote"),
-          amtInput=$("actAmt"), dateField=$("actDateField"), deferRow=$("actDeferRow"),
-          submitBtn=$("actSubmit"), markPaidWrap=$("markPaidWrap");
-    document.querySelectorAll("#actionModeSeg button").forEach(b=>b.classList.toggle("active", b.dataset.mode===actionMode));
-    if(actionMode==="charge"){
-      amtLabel.textContent=`Amount (${CURRENCY})`; noteLabel.textContent="For";
-      noteInput.value=monthLabel(); amtInput.value="";
-      dateField.classList.remove("hidden"); deferRow.classList.remove("hidden");
-      submitBtn.textContent="Add contribution"; markPaidWrap.classList.add("hidden");
-    } else if(actionMode==="payment"){
-      amtLabel.textContent=`Amount paid (${CURRENCY})`; noteLabel.textContent="Note";
-      noteInput.value=""; amtInput.value="";
-      dateField.classList.remove("hidden"); deferRow.classList.add("hidden");
-      submitBtn.textContent="Record payment"; markPaidWrap.classList.toggle("hidden", !(bal>0));
-    } else {
-      amtLabel.textContent="Amount"; noteLabel.textContent="Note";
-      noteInput.value=""; amtInput.value=bal>0?bal:"";
-      dateField.classList.add("hidden"); deferRow.classList.add("hidden");
-      submitBtn.textContent="Forgive debt"; markPaidWrap.classList.add("hidden");
-    }
-    submitBtn.disabled = (actionMode==="forgive" || actionMode==="payment") && !(bal>0);
-  }
-  document.querySelectorAll("#actionModeSeg button").forEach(btn=>{
-    btn.addEventListener("click", ()=>{ actionMode=btn.dataset.mode; updateActionMode(); });
+  // Mark Paid
+  if($("hdrMarkPaid")) $("hdrMarkPaid").addEventListener("click", async ()=>{
+    const name = c.name || id;
+    const ok = await confirmAction(`Mark ${name} fully paid (${fmt(bal)})?`);
+    if(ok) await markFullyPaid(id, bal);
   });
-  $("actSubmit").addEventListener("click", ()=>{
-    if(actionMode==="charge") addEntry(id,"charge");
-    else if(actionMode==="payment") addEntry(id,"payment");
-    else forgiveDebt(id);
-  });
-  if($("markPaid")) $("markPaid").addEventListener("click", ()=>markFullyPaid(id, bal));
+
+  // Payment badge → open sheet
+  if($("btnPayment")) $("btnPayment").addEventListener("click", ()=> openPaymentSheet(id, bal));
+
+  // Waive badge → open sheet
+  if($("btnWaive")) $("btnWaive").addEventListener("click", ()=> openWaiveSheet(id, bal));
+
   $("delCitizen").addEventListener("click", ()=>deleteCitizen(id));
   $("adminBackBtn").addEventListener("click", closeCitizenDetail);
 
@@ -2228,39 +2185,71 @@ async function renderCitizenDetail(id){
 
 async function markFullyPaid(id, bal){
   if(!(bal>0)) return;
-  const btn=$("markPaid"); if(btn) btn.disabled=true;
   try{
     await store.addEntry(id, "payment", bal, "Paid in full", todayISO());
     toast("Marked fully paid");
     await renderCitizenDetail(id);
-  }catch(err){ toast("Couldn't save. Try again."); console.error(err); if(btn) btn.disabled=false; }
+  }catch(err){ toast("Couldn't save. Try again."); console.error(err); }
 }
 
-async function addEntry(id, type){
-  const amount = parseFloat($("actAmt").value);
-  if(!(amount>0)){ toast("Enter a valid amount"); return; }
-  const btn = $("actSubmit");
-  btn.disabled=true;
-  try{
-    const note = $("actNote").value.trim();
-    const date = $("actDate").value || todayISO();
-    const deferred = type==="charge" && $("actDeferred").checked;
-    await store.addEntry(id, type, amount, note, date, deferred);
-    toast(type==="charge" ? (deferred ? "Deferred contribution added" : "Contribution added") : "Payment recorded");
-    await renderCitizenDetail(id);
-  }catch(err){ toast("Couldn't save. Try again."); console.error(err); btn.disabled=false; }
+function openPaymentSheet(id, bal){
+  openSheet("Record payment", `
+    <div class="field"><label>Amount paid (${CURRENCY})</label>
+      <input id="payAmt" inputmode="decimal" placeholder="0"></div>
+    <div class="field"><label>Note</label>
+      <input id="payNote" placeholder="Optional"></div>
+    <div class="field"><label>Date</label>
+      <input id="payDate" type="date" value="${todayISO()}"></div>
+    <button class="btn block" id="paySubmit">Record payment</button>
+    <div id="payMsg" style="margin-top:10px"></div>
+  `);
+  $("paySubmit").addEventListener("click", async ()=>{
+    const amount = parseFloat($("payAmt").value);
+    if(!(amount>0)){ toast("Enter a valid amount"); return; }
+    const note = $("payNote").value.trim();
+    const date = $("payDate").value || todayISO();
+    $("paySubmit").disabled=true;
+    try{
+      await store.addEntry(id, "payment", amount, note, date);
+      toast("Payment recorded");
+      closeSheet();
+      await renderCitizenDetail(id);
+    }catch(err){ toast("Couldn't save. Try again."); console.error(err); $("paySubmit").disabled=false; }
+  });
 }
 
-async function forgiveDebt(id){
-  const amount = parseFloat($("actAmt").value);
-  if(!(amount>0)){ toast("Enter a valid amount"); return; }
-  const note = $("actNote").value.trim() || "Forgiven";
-  if(!(await confirmAction(`Forgive ${fmt(amount)} for this citizen?`))) return;
+function openWaiveSheet(id, bal){
+  openSheet("Waive debt", `
+    <div class="field"><label>Amount</label>
+      <input id="waiveAmt" inputmode="decimal" placeholder="0" value="${bal>0?bal:""}"></div>
+    <div class="field"><label>Note</label>
+      <input id="waiveNote" value="Waived"></div>
+    <button class="btn block" id="waiveSubmit">Waive debt</button>
+    <div id="waiveMsg" style="margin-top:10px"></div>
+  `);
+  $("waiveSubmit").addEventListener("click", async ()=>{
+    const amount = parseFloat($("waiveAmt").value);
+    if(!(amount>0)){ toast("Enter a valid amount"); return; }
+    const note = $("waiveNote").value.trim() || "Waived";
+    if(!(await confirmAction(`Waive ${fmt(amount)} for this citizen?`))) return;
+    $("waiveSubmit").disabled=true;
+    try{
+      await store.forgiveDebt(id, amount, note);
+      toast("Debt waived");
+      closeSheet();
+      await renderCitizenDetail(id);
+    }catch(err){ toast("Couldn't save. Try again."); console.error(err); $("waiveSubmit").disabled=false; }
+  });
+}
+
+
+async function forgiveDebt(id, amount, note){
+  if(!(amount>0)) return;
   try{
     await store.forgiveDebt(id, amount, note);
-    toast("Debt forgiven");
+    toast("Debt waived");
     await renderCitizenDetail(id);
-  }catch(err){ toast("Failed"); console.error(err); }
+  }catch(err){ toast("Couldn't save. Try again."); console.error(err); }
 }
 
 async function deleteCitizen(id){
