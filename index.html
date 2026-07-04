@@ -792,8 +792,19 @@ function makeFirebaseStore({ auth, db, fs, au }){
       const entries=ledgerCache.get(id)||[];
       entries.push(entry);
       ledgerCache.set(id,entries); periodStatsCache=null;
-      const totals=recalcFromLedger(entries);
-      await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
+      const updates={ updatedAt:fs.serverTimestamp() };
+      if(type==="charge"){
+        updates.totalCharged=fs.increment(amount);
+        if(deferred) updates.deferredTotal=fs.increment(amount);
+        else updates.balance=fs.increment(amount);
+      } else if(type==="payment"){
+        updates.totalPaid=fs.increment(amount);
+        updates.balance=fs.increment(-amount);
+      } else if(type==="forgive"){
+        updates.totalCharged=fs.increment(-amount);
+        updates.balance=fs.increment(-amount);
+      }
+      await fs.updateDoc(fs.doc(db,"citizens",id),updates);
     },
     async toggleDefer(id, entryId, deferred){
       const ref = fs.doc(db, "citizens", id, "ledger", entryId);
@@ -802,8 +813,11 @@ function makeFirebaseStore({ auth, db, fs, au }){
       const e=entries.find(x=>x.entryId===entryId);
       if(e) e.deferred=deferred;
       ledgerCache.set(id,entries); periodStatsCache=null;
-      const totals=recalcFromLedger(entries);
-      await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
+      const amt = e ? Number(e.amount||0) : 0;
+      const updates = { updatedAt:fs.serverTimestamp() };
+      if(deferred){ updates.balance=fs.increment(-amt); updates.deferredTotal=fs.increment(amt); }
+      else { updates.balance=fs.increment(amt); updates.deferredTotal=fs.increment(-amt); }
+      await fs.updateDoc(fs.doc(db,"citizens",id),updates);
     },
     async forgiveDebt(id, amount, note){
       await this.addEntry(id, "forgive", amount, note, todayISO());
