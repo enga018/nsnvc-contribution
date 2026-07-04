@@ -278,7 +278,7 @@
       </div>
       <div class="toolbar">
         <input id="adminSearch" type="text" placeholder="Search job card no. or name" />
-        <button class="btn small" id="addCitizenBtn">+ Add</button>
+        <button class="btn small ghost" id="clearSearchBtn" style="display:none">Clear</button>
       </div>
       <div id="pendingContainer" class="hidden" style="margin-bottom:12px;">
         <div class="panel" style="background:var(--surface);border:1px solid #f0d99a;">
@@ -301,7 +301,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.25.2</footer>
+<footer>New Serchhip North Village Council · v1.25.3</footer>
 
 <script type="module">
 /* ============================================================
@@ -1285,7 +1285,15 @@ async function loadPendingPeriods(){
   renderList();
 }
 
-$("adminSearch").addEventListener("input", ()=>{ adminShown=20; renderList(); });
+$("adminSearch").addEventListener("input", ()=>{
+  $("clearSearchBtn").style.display = $("adminSearch").value ? "" : "none";
+  adminShown=20; renderList();
+});
+$("clearSearchBtn").addEventListener("click", ()=>{
+  $("adminSearch").value = "";
+  $("clearSearchBtn").style.display = "none";
+  adminShown=20; renderList();
+});
 document.querySelectorAll("#adminFilter button").forEach(b=>
   b.addEventListener("click", ()=>{
     adminFilter=b.dataset.f; adminShown=20;
@@ -1315,7 +1323,7 @@ function renderList(){
   }
   list.sort(byCardNo);
   const total=list.length;
-  if(!total){ $("adminList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet. Tap + Add to begin."}</div>`; return; }
+  if(!total){ $("adminList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet."}</div>`; return; }
   const shown=Math.min(adminShown, total);
   const cards = list.slice(0, shown).map(c=>{
     const bal=getEffectiveBalance(c); const deferred=getDeferredAmount(c); const st=statusOf(c);
@@ -1946,7 +1954,7 @@ async function runBank(){
 /* ============================================================
    ADMIN — add citizen
    ============================================================ */
-$("addCitizenBtn").addEventListener("click", openAddCitizen);
+
 
 function openSheet(title, bodyHTML){
   $("modalRoot").innerHTML = `
@@ -2099,7 +2107,7 @@ async function renderCitizenDetail(id){
         <button class="btn small ghost" id="histEditBtn" style="font-size:12px;padding:4px 10px">Edit</button>
       </div>
       <div id="historyBody">${renderRows(visibleEntries, false)}</div>
-      ${hiddenCount > 0 ? `<button class="btn block ghost small" id="histMore" style="margin:8px 18px 14px">See more (${hiddenCount} more)</button>` : ''}
+      ${hiddenCount > 0 ? `<button class="btn block ghost small" id="histMore" style="margin:4px 18px 10px">See more (${hiddenCount} more)</button>` : ''}
     </div>
     <div style="padding:16px 18px 18px">
       <button class="btn ghost block small" id="delCitizen" style="color:var(--due);border-color:var(--due)">Delete this citizen</button>
