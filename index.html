@@ -301,7 +301,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.25.0</footer>
+<footer>New Serchhip North Village Council · v1.25.1</footer>
 
 <script type="module">
 /* ============================================================
@@ -2028,71 +2028,41 @@ async function renderCitizenDetail(id){
   const c = allCitizens.find(x=>x.id===id);
   const entries = ledgerCache.get(id) || await store.getLedger(id);
   const bal = getEffectiveBalance(c);
-  const chrono = [...entries].sort((a,b)=>a.createdAt-b.createdAt);
+  const allSorted = [...entries].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const INITIAL_HISTORY = 3;
+  let historyExpanded = false;
+  let historyEditing = false;
 
-  const orderByPeriod = (entries)=>{
-    const grouped = {};
-    for(const e of entries){
-      let key;
+  const renderRows = (list, editing)=>{
+    if(!list.length) return `<div class="empty">No entries yet.</div>`;
+    return list.map(e=>{
+      const isPayment = e.type==="payment";
+      const isForgive = e.type==="forgive";
+      const isDeferred = e.deferred && e.type==="charge";
+      let label = entryLabel(e);
+      let amtClass = e.type==="payment" ? "payment" : (isForgive ? "payment" : "charge");
+      let amtSign = e.type==="payment" ? "− " : (isForgive ? "− " : "+ ");
+      let rowClass = "row" + (isDeferred ? " deferred" : "");
+      const actions = editing ? `<span class="actions">
+        <button class="edit-entry" data-id="${e.entryId}" data-type="${e.type}">✏️</button>
+        <button class="del-entry" data-id="${e.entryId}">🗑️</button>
+      </span>` : '';
+      let deferToggle = '';
       if(e.type==="charge"){
-        key = e.note ? (prettyPeriod(e.note) || e.note) : "Other";
-      } else if(e.date && e.date >= DATE_DISPLAY_CUTOFF){
-        const d = new Date(e.date);
-        key = isNaN(d.getTime()) ? "Other" : d.toLocaleString('en-IN', {month:'long', year:'numeric'});
-      } else if(e.note){
-        key = prettyPeriod(e.note) || e.note;
-      } else {
-        key = "Other";
+        const checked = e.deferred ? 'checked' : '';
+        deferToggle = `<label class="switch" data-id="${e.entryId}" style="margin-left:8px">
+          <input type="checkbox" class="defer-chk" data-id="${e.entryId}" ${checked}>
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span class="switch-label">Defer</span>
+        </label>`;
       }
-      if(!grouped[key]) grouped[key] = [];
-      grouped[key].push(e);
-    }
-    const groups = Object.entries(grouped).sort((a,b)=>{
-      const maxA = Math.max(...a[1].map(e=>e.createdAt||0));
-      const maxB = Math.max(...b[1].map(e=>e.createdAt||0));
-      return maxA - maxB;
-    });
-    const flat = [];
-    for(const [, groupEntries] of groups){
-      groupEntries.sort((a,b)=>{
-        const rank = t => t==="charge" ? 0 : 1;
-        const ra = rank(a.type), rb = rank(b.type);
-        return ra!==rb ? ra-rb : (a.createdAt||0)-(b.createdAt||0);
-      });
-      flat.push(...groupEntries);
-    }
-    return flat;
+      return `<div class="${rowClass}">
+        <div class="desc"><div class="desc-head"><b>${esc(label)}</b> ${deferToggle}</div><small>${esc(displayDate(e.date))}</small></div>
+        <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
+        ${actions}
+      </div>`;
+    }).join("");
   };
-
-  const ordered = orderByPeriod(chrono);
-  const rows = ordered.length ? ordered.map((e, idx)=>{
-    const isPayment = e.type==="payment";
-    const isForgive = e.type==="forgive";
-    const isDeferred = e.deferred && e.type==="charge";
-    const prevCharge = idx>0 && ordered[idx-1].type==="charge";
-    let label = (isPayment && prevCharge) ? "Payment" : entryLabel(e);
-    let amtClass = e.type==="payment" ? "payment" : (e.type==="forgive" ? "payment" : "charge");
-    let amtSign = e.type==="payment" ? "− " : (e.type==="forgive" ? "− " : "+ ");
-    let rowClass = "row" + (isPayment ? " payment-indent" : "") + (isDeferred ? " deferred" : "") + ((isPayment||isForgive) && prevCharge ? " no-top-border" : "");
-    const actions = `<span class="actions">
-      <button class="edit-entry" data-id="${e.entryId}" data-type="${e.type}">✏️</button>
-      <button class="del-entry" data-id="${e.entryId}">🗑️</button>
-    </span>`;
-    let deferToggle = '';
-    if(e.type==="charge"){
-      const checked = e.deferred ? 'checked' : '';
-      deferToggle = `<label class="switch" data-id="${e.entryId}" style="margin-left:8px">
-        <input type="checkbox" class="defer-chk" data-id="${e.entryId}" ${checked}>
-        <span class="switch-track"><span class="switch-thumb"></span></span>
-        <span class="switch-label">Defer</span>
-      </label>`;
-    }
-    return `<div class="${rowClass}">
-      <div class="desc"><div class="desc-head"><b>${esc(label)}</b> ${deferToggle}</div><small>${esc(displayDate(e.date))}</small></div>
-      <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
-      ${actions}
-    </div>`;
-  }).join("") : `<div class="empty">No entries yet.</div>`;
 
   const st = statusOf(c);
   const hasOwing = bal > 0;
@@ -2103,6 +2073,9 @@ async function renderCitizenDetail(id){
     <span class="badge action action-pay" id="btnPayment">Payment</span>
     <span class="badge action action-waive" id="btnWaive">Waive</span>
   </div>` : '';
+  const totalEntries = allSorted.length;
+  const visibleEntries = historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
+  const hiddenCount = totalEntries - Math.min(INITIAL_HISTORY, totalEntries);
 
   $("adminDetail").innerHTML = `
   <button class="back" id="adminBackBtn">‹ Back</button>
@@ -2120,8 +2093,12 @@ async function renderCitizenDetail(id){
     </div>
     ${actionBadges}
     <div class="ledger">
-      <button class="hist-toggle" id="historyToggle">Show history (${chrono.length}) ▾</button>
-      <div id="historyBody" class="hidden">${rows}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px 6px">
+        <b style="font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">History (${totalEntries})</b>
+        <button class="btn small ghost" id="histEditBtn" style="font-size:12px;padding:4px 10px">Edit</button>
+      </div>
+      <div id="historyBody">${renderRows(visibleEntries, false)}</div>
+      ${hiddenCount > 0 ? `<button class="btn block ghost small" id="histMore" style="margin:8px 18px 14px">See more (${hiddenCount} more)</button>` : ''}
     </div>
     <div style="padding:16px 18px 18px">
       <button class="btn ghost block small" id="delCitizen" style="color:var(--due);border-color:var(--due)">Delete this citizen</button>
@@ -2144,13 +2121,32 @@ async function renderCitizenDetail(id){
   $("delCitizen").addEventListener("click", ()=>deleteCitizen(id));
   $("adminBackBtn").addEventListener("click", closeCitizenDetail);
 
-  // History toggle
-  $("historyToggle").addEventListener("click", ()=>{
-    const body=$("historyBody"); const open=!body.classList.contains("hidden");
-    body.classList.toggle("hidden", open);
-    $("historyToggle").textContent = open ? `Show history (${chrono.length}) ▾` : `Hide history ▴`;
+  // Edit button — toggles edit mode
+  $("histEditBtn").addEventListener("click", ()=>{
+    historyEditing = !historyEditing;
+    $("histEditBtn").textContent = historyEditing ? "Done" : "Edit";
+    $("historyBody").innerHTML = renderRows(visibleEntries, historyEditing);
+    attachHistoryListeners(id, historyEditing);
   });
 
+  // See more / Show less
+  if($("histMore")) $("histMore").addEventListener("click", ()=>{
+    historyExpanded = !historyExpanded;
+    const vis = historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
+    const hid = totalEntries - vis.length;
+    $("historyBody").innerHTML = renderRows(vis, historyEditing);
+    if(hid > 0){
+      $("histMore").textContent = historyExpanded ? "Show less" : `See more (${hid} more)`;
+    } else {
+      $("histMore").remove();
+    }
+    attachHistoryListeners(id, historyEditing);
+  });
+
+  attachHistoryListeners(id, false);
+}
+
+function attachHistoryListeners(id, editing){
   // Defer toggles
   document.querySelectorAll(".defer-chk").forEach(chk=>{
     chk.addEventListener("change", async ()=>{
@@ -2161,11 +2157,14 @@ async function renderCitizenDetail(id){
     });
   });
 
+  if(!editing) return;
+
   // Edit entry
   document.querySelectorAll(".edit-entry").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
+    btn.addEventListener("click", async ()=>{
       const entryId = btn.dataset.id;
-      const entry = chrono.find(e=>e.entryId===entryId);
+      const entries = ledgerCache.get(id) || await store.getLedger(id);
+      const entry = entries.find(e=>e.entryId===entryId);
       if(!entry) return;
       openEditEntry(id, entryId, entry);
     });
