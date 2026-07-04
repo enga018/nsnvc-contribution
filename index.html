@@ -301,7 +301,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.25.3</footer>
+<footer>New Serchhip North Village Council · v1.25.4</footer>
 
 <script type="module">
 /* ============================================================
@@ -1336,7 +1336,7 @@ function renderList(){
         <b style="display:block;font-weight:600;font-size:15px">${esc(c.name||"—")}</b>
         <small style="font-size:12px;color:var(--muted);display:block;margin-top:2px">${small}</small>
       </span>
-      <span class="bal money" style="white-space:nowrap;color:${adminFilter==="deferred"?'var(--partial)':(bal>0?'var(--due)':'var(--paid)')}">${adminFilter==="deferred" ? fmt(deferred) : fmt(Math.max(0,bal))}</span>
+      <span class="bal money" style="white-space:nowrap;color:${adminFilter==="deferred"?'var(--partial)':(bal>0?'var(--due)':'var(--paid)')}">${adminFilter==="deferred" ? fmt(deferred) : (bal<0 ? `₹0 (+${fmt(Math.abs(bal))})` : fmt(Math.max(0,bal)))}</span>
     </div>`;
   }).join("");
   $("adminList").innerHTML = cards +
@@ -2099,6 +2099,7 @@ async function renderCitizenDetail(id){
     <div class="balance-block">
       <div class="label">Remaining balance</div>
       <div class="amount money ${bal<=0?'zero':'owing'}">${fmt(Math.max(0,bal))}</div>
+      ${bal<0 ? `<div style="font-size:13px;color:var(--paid);margin-top:2px">${fmt(Math.abs(bal))} overpaid</div>` : ''}
     </div>
     ${actionBadges}
     <div class="ledger">
@@ -2107,7 +2108,7 @@ async function renderCitizenDetail(id){
         <button class="btn small ghost" id="histEditBtn" style="font-size:12px;padding:4px 10px">Edit</button>
       </div>
       <div id="historyBody">${renderRows(visibleEntries, false)}</div>
-      ${hiddenCount > 0 ? `<button class="btn block ghost small" id="histMore" style="margin:4px 18px 10px">See more (${hiddenCount} more)</button>` : ''}
+      ${hiddenCount > 0 ? `<button class="btn ghost small" id="histMore" style="width:calc(100% - 36px);margin:4px 18px 10px">See more (${hiddenCount} more)</button>` : ''}
     </div>
     <div style="padding:16px 18px 18px">
       <button class="btn ghost block small" id="delCitizen" style="color:var(--due);border-color:var(--due)">Delete this citizen</button>
