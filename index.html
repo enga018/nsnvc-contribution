@@ -301,7 +301,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.25.1</footer>
+<footer>New Serchhip North Village Council · v1.25.2</footer>
 
 <script type="module">
 /* ============================================================
@@ -376,8 +376,9 @@ function prettyPeriod(note){
 function entryLabel(e){
   if(e.type==="payment"){
     const note=e.note;
-    const isPeriod = note && prettyPeriod(note)!==note;
-    return (note && !isPeriod) ? `Payment (${note})` : "Payment";
+    const modes=["cash","bank","upi"];
+    if(note && modes.includes(note.toLowerCase())) return note.charAt(0).toUpperCase()+note.slice(1).toLowerCase();
+    return "Payment";
   }
   if(e.type==="forgive") return "Waived";
   return prettyPeriod(e.note) || "Contribution";
@@ -1768,7 +1769,7 @@ function buildUploadItems(){
         charges.push({ id, jobCard:full, cardNo:suffixOf(full), name:nm, amount:chargeAmtVal }); chargeAmt+=chargeAmtVal;
       }
       if(payAmtVal>0){
-        const note = modeVal.includes("cash") ? "Cash" : "Bank";
+        const note = modeVal.includes("upi") ? "UPI" : modeVal.includes("cash") ? "Cash" : "Bank";
         payments.push({ id, amount:payAmtVal, name:nm, jobCard:full, note }); payAmt+=payAmtVal;
       }
     }else if(cand.length>1){ ambiguous.push(full+(nm?" ("+nm+")":"")); }
@@ -2040,15 +2041,15 @@ async function renderCitizenDetail(id){
       const isForgive = e.type==="forgive";
       const isDeferred = e.deferred && e.type==="charge";
       let label = entryLabel(e);
-      let amtClass = e.type==="payment" ? "payment" : (isForgive ? "payment" : "charge");
-      let amtSign = e.type==="payment" ? "− " : (isForgive ? "− " : "+ ");
+      let amtClass = isPayment ? "payment" : (isForgive ? "payment" : "charge");
+      let amtSign = isPayment ? "− " : (isForgive ? "− " : "+ ");
       let rowClass = "row" + (isDeferred ? " deferred" : "");
       const actions = editing ? `<span class="actions">
         <button class="edit-entry" data-id="${e.entryId}" data-type="${e.type}">✏️</button>
         <button class="del-entry" data-id="${e.entryId}">🗑️</button>
       </span>` : '';
       let deferToggle = '';
-      if(e.type==="charge"){
+      if(editing && e.type==="charge"){
         const checked = e.deferred ? 'checked' : '';
         deferToggle = `<label class="switch" data-id="${e.entryId}" style="margin-left:8px">
           <input type="checkbox" class="defer-chk" data-id="${e.entryId}" ${checked}>
@@ -2125,7 +2126,8 @@ async function renderCitizenDetail(id){
   $("histEditBtn").addEventListener("click", ()=>{
     historyEditing = !historyEditing;
     $("histEditBtn").textContent = historyEditing ? "Done" : "Edit";
-    $("historyBody").innerHTML = renderRows(visibleEntries, historyEditing);
+    const vis = historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
+    $("historyBody").innerHTML = renderRows(vis, historyEditing);
     attachHistoryListeners(id, historyEditing);
   });
 
@@ -2185,7 +2187,7 @@ function attachHistoryListeners(id, editing){
 async function markFullyPaid(id, bal){
   if(!(bal>0)) return;
   try{
-    await store.addEntry(id, "payment", bal, "Paid in full", todayISO());
+    await store.addEntry(id, "payment", bal, "Cash", todayISO());
     toast("Marked fully paid");
     await renderCitizenDetail(id);
   }catch(err){ toast("Couldn't save. Try again."); console.error(err); }
@@ -2195,8 +2197,12 @@ function openPaymentSheet(id, bal){
   openSheet("Record payment", `
     <div class="field"><label>Amount paid (${CURRENCY})</label>
       <input id="payAmt" inputmode="decimal" placeholder="0"></div>
-    <div class="field"><label>Note</label>
-      <input id="payNote" placeholder="Optional"></div>
+    <div class="field"><label>Payment mode</label>
+      <select id="payMode" class="period-sel">
+        <option value="Cash">Cash</option>
+        <option value="Bank">Bank</option>
+        <option value="UPI">UPI</option>
+      </select></div>
     <div class="field"><label>Date</label>
       <input id="payDate" type="date" value="${todayISO()}"></div>
     <button class="btn block" id="paySubmit">Record payment</button>
@@ -2205,11 +2211,11 @@ function openPaymentSheet(id, bal){
   $("paySubmit").addEventListener("click", async ()=>{
     const amount = parseFloat($("payAmt").value);
     if(!(amount>0)){ toast("Enter a valid amount"); return; }
-    const note = $("payNote").value.trim();
+    const mode = $("payMode").value;
     const date = $("payDate").value || todayISO();
     $("paySubmit").disabled=true;
     try{
-      await store.addEntry(id, "payment", amount, note, date);
+      await store.addEntry(id, "payment", amount, mode, date);
       toast("Payment recorded");
       closeSheet();
       await renderCitizenDetail(id);
