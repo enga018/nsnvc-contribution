@@ -590,10 +590,11 @@ function makeLocalStore(){
     onAuth(cb){ authCbs.add(cb); cb(loggedIn); },
     async exportOwingCsv(){
       const owing = await this.listOwing();
+      const ledgers = await Promise.all(owing.map(c=>this.getLedger(c.id)));
       let csv = "Name,Job Card,Outstanding (₹),Payment History\n";
-      for(const c of owing){
-        const entries = await this.getLedger(c.id);
-        const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
+      for(let i=0;i<owing.length;i++){
+        const c=owing[i];
+        const payments = ledgers[i].filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
         csv += `"${esc(c.name)}","${esc(c.jobCard)}",${c.balance},"${esc(payments)}"\n`;
       }
       return csv;
@@ -949,10 +950,11 @@ function makeFirebaseStore({ auth, db, fs, au }){
     onAuth(cb){ au.onAuthStateChanged(auth, u=>cb(!!u)); },
     async exportOwingCsv(){
       const owing = await this.listOwing();
+      const ledgers = await Promise.all(owing.map(c=>this.getLedger(c.id)));
       let csv = "Name,Job Card,Outstanding (₹),Payment History\n";
-      for(const c of owing){
-        const entries = await this.getLedger(c.id);
-        const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
+      for(let i=0;i<owing.length;i++){
+        const c=owing[i];
+        const payments = ledgers[i].filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
         csv += `"${esc(c.name)}","${esc(c.jobCard)}",${c.balance},"${esc(payments)}"\n`;
       }
       return csv;
@@ -1463,11 +1465,10 @@ async function openManagePeriods(){
       await store.setExcludedPeriods(excl);
       excludedPeriods=excl; periodsReady=false; unpaidCache=new Map();
       if(periodFilter && excludedPeriods.includes(periodFilter)) periodFilter="";
-      let renamed=0;
-      for(const [oldName,newName] of pendingRenames){
-        await store.renamePeriod(oldName, newName);
-        renamed++;
-      }
+      const renameResults = await Promise.all(
+        Array.from(pendingRenames).map(([oldName,newName])=>store.renamePeriod(oldName,newName))
+      );
+      const renamed = renameResults.reduce((sum,n)=>sum+n,0);
       pendingRenames.clear();
       msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excl.length} exclusions, ${renamed} rename${renamed===1?"":"s"}.</div>`;
       toast("Periods updated");
