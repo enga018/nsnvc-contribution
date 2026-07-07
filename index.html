@@ -98,6 +98,7 @@ const DASHBOARD_REFRESH_DEBOUNCE_MS = 250;
 const CACHE_REFRESH_DELAY_MS = 5000;
 const SHEET_CLOSE_DELAY_MS = 900;
 const PAGE_RELOAD_DELAY_MS = 1500;
+const LOGOUT_DELAY_MS = 1000;
 const FIRESTORE_BATCH_SIZE = 400;
 const BACKUP_MAX_SIZE_BYTES = 5*1024*1024;
 const BACKUP_MAX_HOUSEHOLDS = 10000;
@@ -1481,7 +1482,7 @@ async function doDeleteAllFromSettings(){
 function doLogout(){
   store.signOut();
   toast("Signed out");
-  setTimeout(()=>location.reload(),1000);
+  setTimeout(()=>location.reload(),LOGOUT_DELAY_MS);
 }
 
 /* ============================================================
@@ -2061,7 +2062,7 @@ async function runBank(){
   try{
     await store.bulkAppendPayments(items,(d,t)=>{ prog.innerHTML=`<div class="notice info">Recording… ${d} / ${t}</div>`; });
     prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${items.length} bank payments recorded.</div>`;
-    pendingBank=null; setTimeout(()=>{ closeSheet(); toast("Bank payments recorded"); },900);
+    pendingBank=null; setTimeout(()=>{ closeSheet(); toast("Bank payments recorded"); },SHEET_CLOSE_DELAY_MS);
   }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Recording failed partway. Check connection and try again.</div>`; btn.disabled=false; }
 }
 
