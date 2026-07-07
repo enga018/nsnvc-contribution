@@ -375,6 +375,7 @@ function prettyPeriod(note){
   return String(note||"").trim();
 }
 function entryLabel(e){
+  if(!e || !e.type) return "Unknown";
   if(e.type==="payment"){
     const note=e.note;
     const modes=["cash","bank","upi"];
@@ -1157,6 +1158,25 @@ if(notConfigured){
 if(isLocalMode) addTestLoginHint();
 store.onAuth(onAuth);
 
+let consecutiveErrors = 0;
+let connectionWarningShown = false;
+function handleOperationError(operation, error){
+  consecutiveErrors++;
+  if(consecutiveErrors > 2 && !connectionWarningShown){
+    connectionWarningShown = true;
+    showModeBanner("⚠️ Connection issues detected. Some changes may not be saved. Check your internet connection.");
+  }
+  console.error(`Operation "${operation}" failed:`, error);
+}
+function clearOperationErrors(){
+  consecutiveErrors = 0;
+  if(connectionWarningShown){
+    connectionWarningShown = false;
+    const banner = document.querySelector(".config-warn");
+    if(banner && banner.textContent.includes("Connection issues")) banner.remove();
+  }
+}
+
 function showModeBanner(msg){
   document.querySelector("main").insertAdjacentHTML("afterbegin", `<div class="config-warn">${msg}</div>`);
 }
@@ -1892,9 +1912,14 @@ async function runUpload(){
       const payItems=pendingUpload.payments.map(it=>({...it, date:dateStr, when}));
       await store.bulkAppendPayments(payItems,(d,t)=>{ done=pendingUpload.charges.length+d; prog.innerHTML=`<div class="notice info">Processing payments… ${d} / ${t}</div>`; });
     }
+    clearOperationErrors();
     prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${pendingUpload.charges.length} charges and ${pendingUpload.payments.length} payments processed.</div>`;
     pendingUpload=null; setTimeout(()=>{ closeSheet(); toast("Upload complete"); },900);
-  }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Update failed partway. Check connection and try again.</div>`; btn.disabled=false; }
+  }catch(err){
+    handleOperationError("bulkUpload", err);
+    prog.innerHTML=`<div class="notice err">Update failed partway. Check connection and try again.</div>`;
+    btn.disabled=false;
+  }
 }
 
 function openBank(){
@@ -2235,10 +2260,11 @@ function attachHistoryListeners(id, editing){
       const prevState = !chk.checked;
       try{
         await store.toggleDefer(id, entryId, chk.checked);
+        clearOperationErrors();
         toast("Deferral updated");
         await renderCitizenDetail(id);
       } catch(e){
-        console.error("Failed to toggle deferral:", e);
+        handleOperationError("toggleDefer", e);
         chk.checked = prevState;
         toast("Failed to update deferral. Please try again.");
       }
@@ -2278,9 +2304,13 @@ async function markFullyPaid(id, bal){
   if(!(bal>0)) return;
   try{
     await store.addEntry(id, "payment", bal, "Cash", todayISO());
+    clearOperationErrors();
     toast("Marked fully paid");
     await renderCitizenDetail(id);
-  }catch(err){ toast("Couldn't save. Try again."); console.error(err); }
+  }catch(err){
+    handleOperationError("markFullyPaid", err);
+    toast("Couldn't save. Try again.");
+  }
 }
 
 function openPaymentSheet(id, bal){
@@ -2301,15 +2331,21 @@ function openPaymentSheet(id, bal){
   $("paySubmit").addEventListener("click", async ()=>{
     const amount = parseFloat($("payAmt").value);
     if(!(amount>0)){ toast("Enter a valid amount"); return; }
+    if(isNaN(amount)){ toast("Enter a valid amount"); return; }
     const mode = $("payMode").value;
     const date = $("payDate").value || todayISO();
     $("paySubmit").disabled=true;
     try{
       await store.addEntry(id, "payment", amount, mode, date);
+      clearOperationErrors();
       toast("Payment recorded");
       closeSheet();
       await renderCitizenDetail(id);
-    }catch(err){ toast("Couldn't save. Try again."); console.error(err); $("paySubmit").disabled=false; }
+    }catch(err){
+      handleOperationError("recordPayment", err);
+      toast("Couldn't save. Try again.");
+      $("paySubmit").disabled=false;
+    }
   });
 }
 
@@ -2325,15 +2361,21 @@ function openWaiveSheet(id, bal){
   $("waiveSubmit").addEventListener("click", async ()=>{
     const amount = parseFloat($("waiveAmt").value);
     if(!(amount>0)){ toast("Enter a valid amount"); return; }
+    if(isNaN(amount)){ toast("Enter a valid amount"); return; }
     const note = $("waiveNote").value.trim() || "Waived";
     if(!(await confirmAction(`Waive ${fmt(amount)} for this citizen?`))) return;
     $("waiveSubmit").disabled=true;
     try{
       await store.forgiveDebt(id, amount, note);
+      clearOperationErrors();
       toast("Debt waived");
       closeSheet();
       await renderCitizenDetail(id);
-    }catch(err){ toast("Couldn't save. Try again."); console.error(err); $("waiveSubmit").disabled=false; }
+    }catch(err){
+      handleOperationError("waiveDebt", err);
+      toast("Couldn't save. Try again.");
+      $("waiveSubmit").disabled=false;
+    }
   });
 }
 
@@ -2342,17 +2384,26 @@ async function forgiveDebt(id, amount, note){
   if(!(amount>0)) return;
   try{
     await store.forgiveDebt(id, amount, note);
+    clearOperationErrors();
     toast("Debt waived");
     await renderCitizenDetail(id);
-  }catch(err){ toast("Couldn't save. Try again."); console.error(err); }
+  }catch(err){
+    handleOperationError("forgiveDebt", err);
+    toast("Couldn't save. Try again.");
+  }
 }
 
 async function deleteCitizen(id){
   if(!(await confirmAction("Delete this citizen and all their records? This cannot be undone.", true))) return;
   try{
     await store.deleteCitizen(id);
-    closeCitizenDetail(); toast("Citizen deleted");
-  }catch(err){ toast("Couldn't delete."); console.error(err); }
+    clearOperationErrors();
+    closeCitizenDetail();
+    toast("Citizen deleted");
+  }catch(err){
+    handleOperationError("deleteCitizen", err);
+    toast("Couldn't delete.");
+  }
 }
 
 function openEditEntry(citizenId, entryId, entry){
@@ -2365,14 +2416,19 @@ function openEditEntry(citizenId, entryId, entry){
   $("saveEdit").addEventListener("click", async ()=>{
     const amt = parseFloat($("editAmt").value);
     if(!(amt>0)){ toast("Enter valid amount"); return; }
+    if(isNaN(amt)){ toast("Enter valid amount"); return; }
     const note = $("editNote").value.trim();
     const date = $("editDate").value;
     try{
       await store.editEntry(citizenId, entryId, { amount:amt, note, date });
+      clearOperationErrors();
       toast("Entry updated");
       closeSheet();
       await renderCitizenDetail(citizenId);
-    }catch(err){ toast("Failed to update"); console.error(err); }
+    }catch(err){
+      handleOperationError("editEntry", err);
+      toast("Failed to update");
+    }
   });
 }
 
@@ -2386,6 +2442,7 @@ async function doExportCsv(){
   let url;
   try{
     const csv = await store.exportOwingCsv();
+    clearOperationErrors();
     const blob = new Blob([csv], {type:"text/csv"});
     try{
       url = URL.createObjectURL(blob);
@@ -2405,7 +2462,10 @@ async function doExportCsv(){
       console.error("Failed to trigger download:", e);
       toast("Export failed: could not trigger download");
     }
-  }catch(err){ toast("Export failed"); console.error(err); }
+  }catch(err){
+    handleOperationError("exportOwingCsv", err);
+    toast("Export failed");
+  }
   finally{
     if(url) URL.revokeObjectURL(url);
     exportBusy=false;
@@ -2420,6 +2480,7 @@ async function doExportAll(){
   try{
     const citizens = allCitizens;
     const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
+    clearOperationErrors();
     let csv = "Name,Job Card,Total Charged (₹),Total Paid (₹),Balance (₹),Status,Payment History\n";
     for(const c of citizens){
       const entries = ledgers[c.id] || [];
@@ -2446,7 +2507,10 @@ async function doExportAll(){
       console.error("Failed to trigger download:", e);
       toast("Export failed: could not trigger download");
     }
-  }catch(err){ toast("Export failed"); console.error(err); }
+  }catch(err){
+    handleOperationError("exportAllHouseholds", err);
+    toast("Export failed");
+  }
   finally{
     if(url) URL.revokeObjectURL(url);
     exportBusy=false;
