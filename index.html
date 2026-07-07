@@ -1521,20 +1521,118 @@ async function openSettings(){
   $("settingsLogout").addEventListener("click", doLogout);
 }
 
+function buildPeriodRowHTML(period, stats, isExcluded){
+  return `<div class="period-row" data-original="${esc(period)}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+    <label class="switch" style="flex:none"><input type="checkbox" class="period-toggle" value="${esc(period)}" ${!isExcluded?"checked":""}><span class="switch-track"><span class="switch-thumb"></span></span></label>
+    <div style="flex:1;min-width:0"><span class="period-name"><b style="font-size:14px">${esc(prettyPeriod(period))}</b></span><br><small style="font-size:12px;color:var(--muted)">${stats.count} charge${stats.count===1?"":"s"} · ${fmt(stats.amount)}</small></div>
+    <button class="period-rename-btn" data-period="${esc(period)}" style="background:transparent;border:none;cursor:pointer;font-size:14px;padding:4px;color:var(--muted)" title="Rename">✏️</button>
+  </div>`;
+}
+
+function renderPeriodsList(periods, stats, excluded){
+  if(!periods.length) return '<div style="color:var(--muted)">No periods found yet.</div>';
+  return periods.map(p => {
+    const s = stats.get(p) || {count:0, amount:0};
+    const isExcl = excluded.includes(p);
+    return buildPeriodRowHTML(p, s, isExcl);
+  }).join("");
+}
+
+function updatePeriodsSaveBtn(pendingRenames){
+  const renCount = pendingRenames.size;
+  const btn = $("savePeriodsBtn");
+  if(renCount===0){ btn.disabled=true; btn.textContent="Save"; return; }
+  btn.disabled=false;
+  btn.textContent=`Save (${renCount} rename${renCount===1?"":"s"})`;
+}
+
+function handlePeriodRename(btn, row, pendingRenames, updateSaveBtn){
+  const oldName = btn.dataset.period;
+  if(pendingRenames.has(oldName)){
+    pendingRenames.delete(oldName);
+    row.classList.remove("period-row-renamed");
+    row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
+    btn.textContent="✏️";
+    updateSaveBtn(pendingRenames);
+    return;
+  }
+
+  row.classList.add("period-row-renamed");
+  row.querySelector(".period-name").innerHTML=`<input class="period-rename-input" value="${esc(oldName)}">`;
+  btn.textContent="✕";
+  const input = row.querySelector(".period-rename-input");
+  input.focus(); input.select();
+
+  function applyRename(){
+    const newVal = input.value.trim();
+    if(newVal && newVal !== oldName){
+      pendingRenames.set(oldName, newVal);
+      row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b> → <b style="font-size:14px;color:var(--green)">${esc(prettyPeriod(newVal))}</b>`;
+      btn.textContent="✕";
+    } else {
+      pendingRenames.delete(oldName);
+      row.classList.remove("period-row-renamed");
+      row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
+      btn.textContent="✏️";
+    }
+    updateSaveBtn(pendingRenames);
+  }
+
+  input.addEventListener("keydown", e=>{
+    if(e.key==="Enter") applyRename();
+    if(e.key==="Escape"){
+      pendingRenames.delete(oldName);
+      row.classList.remove("period-row-renamed");
+      row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
+      btn.textContent="✏️";
+      updateSaveBtn(pendingRenames);
+    }
+  });
+  input.addEventListener("blur", applyRename);
+}
+
+async function handlePeriodsSave(pendingRenames){
+  const msg=$("periodsMsg");
+  const btn=$("savePeriodsBtn");
+  btn.disabled=true;
+  msg.innerHTML='<div class="notice info">Saving…</div>';
+  try{
+    const excl=[];
+    document.querySelectorAll(".period-toggle").forEach(t=>{ if(!t.checked) excl.push(t.value); });
+    await store.setExcludedPeriods(excl);
+    excludedPeriods=excl; periodsReady=false; unpaidCache=new Map();
+    if(periodFilter && excludedPeriods.includes(periodFilter)) periodFilter="";
+    const renameResults = await Promise.all(
+      Array.from(pendingRenames).map(([oldName,newName])=>store.renamePeriod(oldName,newName))
+    );
+    const renamed = renameResults.reduce((sum,n)=>sum+n,0);
+    pendingRenames.clear();
+    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excl.length} exclusions, ${renamed} rename${renamed===1?"":"s"}.</div>`;
+    toast("Periods updated");
+    await refreshDashboard(); loadPendingPeriods();
+  }catch(err){
+    console.error(err);
+    msg.innerHTML='<div class="notice err">Failed to save.</div>';
+    btn.disabled=false;
+  }
+}
+
+function attachPeriodListeners(pendingRenames){
+  document.querySelectorAll(".period-rename-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const row = btn.closest(".period-row");
+      handlePeriodRename(btn, row, pendingRenames, updatePeriodsSaveBtn);
+    });
+  });
+  $("savePeriodsBtn").addEventListener("click", ()=>handlePeriodsSave(pendingRenames));
+}
+
 async function openManagePeriods(){
   if(ledgerCache.size===0) await store.getAllLedgers();
   const { periods, stats } = getPeriodStats();
   const excluded = await store.getExcludedPeriods();
   const pendingRenames = new Map();
-  const rows = periods.length ? periods.map(p => {
-    const s = stats.get(p) || {count:0, amount:0};
-    const isExcl = excluded.includes(p);
-    return `<div class="period-row" data-original="${esc(p)}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-      <label class="switch" style="flex:none"><input type="checkbox" class="period-toggle" value="${esc(p)}" ${!isExcl?"checked":""}><span class="switch-track"><span class="switch-thumb"></span></span></label>
-      <div style="flex:1;min-width:0"><span class="period-name"><b style="font-size:14px">${esc(prettyPeriod(p))}</b></span><br><small style="font-size:12px;color:var(--muted)">${s.count} charge${s.count===1?"":"s"} · ${fmt(s.amount)}</small></div>
-      <button class="period-rename-btn" data-period="${esc(p)}" style="background:transparent;border:none;cursor:pointer;font-size:14px;padding:4px;color:var(--muted)" title="Rename">✏️</button>
-    </div>`;
-  }).join("") : '<div style="color:var(--muted)">No periods found yet.</div>';
+  const rows = renderPeriodsList(periods, stats, excluded);
 
   openSheet("Manage Periods", `
     <p style="font-size:13px;color:var(--muted);margin:0 0 14px">Toggle exclusion and rename periods. Unchecked periods are excluded from balance calculations.</p>
@@ -1543,67 +1641,7 @@ async function openManagePeriods(){
     <div id="periodsMsg" style="margin-top:12px"></div>
   `);
 
-  function updateSaveBtn(){
-    const renCount = pendingRenames.size;
-    const btn = $("savePeriodsBtn");
-    if(renCount===0){ btn.disabled=true; btn.textContent="Save"; return; }
-    btn.disabled=false;
-    btn.textContent=`Save (${renCount} rename${renCount===1?"":"s"})`;
-  }
-  document.querySelectorAll(".period-rename-btn").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const oldName = btn.dataset.period;
-      const row = btn.closest(".period-row");
-      if(pendingRenames.has(oldName)){
-        pendingRenames.delete(oldName);
-        row.classList.remove("period-row-renamed");
-        row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
-        btn.textContent="✏️";
-        updateSaveBtn();
-        return;
-      }
-      row.classList.add("period-row-renamed");
-      row.querySelector(".period-name").innerHTML=`<input class="period-rename-input" value="${esc(oldName)}">`;
-      btn.textContent="✕";
-      const input = row.querySelector(".period-rename-input");
-      input.focus(); input.select();
-      function apply(){
-        const newVal = input.value.trim();
-        if(newVal && newVal !== oldName){
-          pendingRenames.set(oldName, newVal);
-          row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b> → <b style="font-size:14px;color:var(--green)">${esc(prettyPeriod(newVal))}</b>`;
-          btn.textContent="✕";
-        } else {
-          pendingRenames.delete(oldName);
-          row.classList.remove("period-row-renamed");
-          row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
-          btn.textContent="✏️";
-        }
-        updateSaveBtn();
-      }
-      input.addEventListener("keydown", e=>{ if(e.key==="Enter") apply(); if(e.key==="Escape"){ pendingRenames.delete(oldName); row.classList.remove("period-row-renamed"); row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`; btn.textContent="✏️"; updateSaveBtn(); }});
-      input.addEventListener("blur", apply);
-    });
-  });
-  $("savePeriodsBtn").addEventListener("click", async ()=>{
-    const msg=$("periodsMsg"); const btn=$("savePeriodsBtn"); btn.disabled=true;
-    msg.innerHTML='<div class="notice info">Saving…</div>';
-    try{
-      const excl=[];
-      document.querySelectorAll(".period-toggle").forEach(t=>{ if(!t.checked) excl.push(t.value); });
-      await store.setExcludedPeriods(excl);
-      excludedPeriods=excl; periodsReady=false; unpaidCache=new Map();
-      if(periodFilter && excludedPeriods.includes(periodFilter)) periodFilter="";
-      const renameResults = await Promise.all(
-        Array.from(pendingRenames).map(([oldName,newName])=>store.renamePeriod(oldName,newName))
-      );
-      const renamed = renameResults.reduce((sum,n)=>sum+n,0);
-      pendingRenames.clear();
-      msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excl.length} exclusions, ${renamed} rename${renamed===1?"":"s"}.</div>`;
-      toast("Periods updated");
-      await refreshDashboard(); loadPendingPeriods();
-    }catch(err){ console.error(err); msg.innerHTML='<div class="notice err">Failed to save.</div>'; btn.disabled=false; }
-  });
+  attachPeriodListeners(pendingRenames);
 }
 
 function closeSettings(){
