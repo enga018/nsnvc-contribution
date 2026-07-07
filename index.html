@@ -768,26 +768,28 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     async listOwing(){
       const snap=await fs.getDocs(fs.collection(db,"citizens"));
-      const out=[];
-      for(const d of snap.docs){
-        const c=d.data();
-        if(!excludedPeriods.length){
-          const effBal = Number(c.balance || 0);
-          if(effBal>0) out.push({ id:d.id, ...c, balance:effBal });
-          continue;
-        }
-        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
-        let includedCharged=0;
-        ledSnap.docs.forEach(doc=>{
-          const e=doc.data();
-          if(e.type==="charge" && !e.deferred && !isChargeExcluded(e)){
-            includedCharged += Number(e.amount || 0);
-          }
-        });
-        const effBal = includedCharged - Number(c.totalPaid || 0);
-        if(effBal>0) out.push({ id:d.id, ...c, balance:effBal });
+      if(!excludedPeriods.length){
+        return snap.docs
+          .map(d=>({ id:d.id, ...d.data(), balance:Number(d.data().balance || 0) }))
+          .filter(c=>c.balance>0);
       }
-      return out;
+      const ledgerPromises = snap.docs.map(d=>
+        fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"))
+          .then(ledSnap=>{
+            const c=d.data();
+            let includedCharged=0;
+            ledSnap.docs.forEach(doc=>{
+              const e=doc.data();
+              if(e.type==="charge" && !e.deferred && !isChargeExcluded(e)){
+                includedCharged += Number(e.amount || 0);
+              }
+            });
+            const effBal = includedCharged - Number(c.totalPaid || 0);
+            return effBal>0 ? { id:d.id, ...c, balance:effBal } : null;
+          })
+      );
+      const results = await Promise.all(ledgerPromises);
+      return results.filter(r=>r!==null);
     },
     async exists(id){ return (await fs.getDoc(fs.doc(db,"citizens",id))).exists(); },
     async addCitizen(id, d){
@@ -847,17 +849,18 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     async getPendingPayments(){
       const snap=await fs.getDocs(fs.collection(db,"citizens"));
-      const all=[];
-      for(const d of snap.docs){
+      const ppPromises = snap.docs.map(d=>{
         const id=d.id;
         const c=d.data();
-        const ppSnap=await fs.getDocs(fs.collection(db,"citizens",id,"pendingPayments"));
-        ppSnap.docs.forEach(doc=>{
-          const p=doc.data();
-          if(p.status==="pending") all.push({ citizenId:id, id:doc.id, ...p, name:c.name, jobCard:c.jobCard });
-        });
-      }
-      return all;
+        return fs.getDocs(fs.collection(db,"citizens",id,"pendingPayments"))
+          .then(ppSnap=>
+            ppSnap.docs
+              .filter(doc=>doc.data().status==="pending")
+              .map(doc=>({ citizenId:id, id:doc.id, ...doc.data(), name:c.name, jobCard:c.jobCard }))
+          );
+      });
+      const allResults = await Promise.all(ppPromises);
+      return allResults.flat();
     },
     async deleteEntry(id, entryId){
       await fs.deleteDoc(fs.doc(db,"citizens",id,"ledger",entryId));
@@ -1144,14 +1147,13 @@ async function onAuth(isIn){
   if(isIn){
     $("loginCard").classList.add("hidden");
     $("dashboard").classList.remove("hidden");
-    // Excluded periods live in Firestore behind admin-only read rules now that
-    // there's no public view. Load them *before* subscribing to the citizen
-    // list so the first dashboard render already has the right exclusions,
-    // instead of a stale/default value that self-corrects a moment later.
-    try{ excludedPeriods = await store.getExcludedPeriods(); }
-    catch(err){ console.error("Failed to load excluded periods:", err); }
-    subscribeCitizens();
-    refreshPending();
+    try{
+      await Promise.all([
+        store.getExcludedPeriods().then(p=>{ excludedPeriods = p; }),
+        Promise.resolve(subscribeCitizens())
+      ]);
+    } catch(err){ console.error("Failed to load excluded periods:", err); }
+    setTimeout(refreshPending, 0);
   } else {
     $("loginCard").classList.remove("hidden");
     $("dashboard").classList.add("hidden");
