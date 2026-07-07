@@ -586,7 +586,12 @@ function makeLocalStore(){
       persist(); notify(); invalidateLedgerCache(); if(onProgress) onProgress(items.length, items.length);
       return items.length;
     },
-    async signIn(){ loggedIn=true; authCbs.forEach(cb=>cb(true)); },
+    async signIn(email, pass){
+      if(pass !== "dev-mode-only") throw new Error("Invalid credentials for test mode. Use password: dev-mode-only");
+      loggedIn=true;
+      authCbs.forEach(cb=>cb(true));
+      console.warn("⚠️ Test mode login - for development only. This app should run against Firebase in production.");
+    },
     signOut(){ loggedIn=false; authCbs.forEach(cb=>cb(false)); },
     onAuth(cb){ authCbs.add(cb); cb(loggedIn); },
     async exportOwingCsv(){
@@ -814,26 +819,33 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     async exists(id){ return (await fs.getDoc(fs.doc(db,"citizens",id))).exists(); },
     async addCitizen(id, d){
+      if(typeof id !== 'string' || !id) throw new Error("Invalid citizen ID");
+      if(!d.name || typeof d.name !== 'string') throw new Error("Citizen name is required");
+      if(!d.jobCard || typeof d.jobCard !== 'string') throw new Error("Job card is required");
       await fs.setDoc(fs.doc(db,"citizens",id), {...d, createdAt:fs.serverTimestamp(), updatedAt:fs.serverTimestamp()});
     },
     async addEntry(id, type, amount, note, date, deferred=false){
+      const validTypes = ["charge", "payment", "forgive"];
+      if(!validTypes.includes(type)) throw new Error("Invalid entry type");
+      const amt = Number(amount);
+      if(!Number.isFinite(amt) || amt <= 0) throw new Error("Amount must be a positive number");
       const eRef=fs.doc(fs.collection(db,"citizens",id,"ledger"));
-      await fs.setDoc(eRef, { entryId:eRef.id, type, amount, note, date, deferred, createdAt:fs.serverTimestamp() });
-      const entry={ entryId:eRef.id, type, amount, note, date, deferred, createdAt:Date.now() };
+      await fs.setDoc(eRef, { entryId:eRef.id, type, amount:amt, note:String(note||""), date:String(date||""), deferred, createdAt:fs.serverTimestamp() });
+      const entry={ entryId:eRef.id, type, amount:amt, note, date, deferred, createdAt:Date.now() };
       const entries=ledgerCache.get(id)||[];
       entries.push(entry);
       ledgerCache.set(id,entries); periodStatsCache=null;
       const updates={ updatedAt:fs.serverTimestamp() };
       if(type==="charge"){
-        updates.totalCharged=fs.increment(amount);
-        if(deferred) updates.deferredTotal=fs.increment(amount);
-        else updates.balance=fs.increment(amount);
+        updates.totalCharged=fs.increment(amt);
+        if(deferred) updates.deferredTotal=fs.increment(amt);
+        else updates.balance=fs.increment(amt);
       } else if(type==="payment"){
-        updates.totalPaid=fs.increment(amount);
-        updates.balance=fs.increment(-amount);
+        updates.totalPaid=fs.increment(amt);
+        updates.balance=fs.increment(-amt);
       } else if(type==="forgive"){
-        updates.totalCharged=fs.increment(-amount);
-        updates.balance=fs.increment(-amount);
+        updates.totalCharged=fs.increment(-amt);
+        updates.balance=fs.increment(-amt);
       }
       await fs.updateDoc(fs.doc(db,"citizens",id),updates);
     },
@@ -854,10 +866,12 @@ function makeFirebaseStore({ auth, db, fs, au }){
       await this.addEntry(id, "forgive", amount, note, todayISO());
     },
     async addPendingPayment(id, amount){
+      const amt = Number(amount);
+      if(!Number.isFinite(amt) || amt <= 0) throw new Error("Amount must be a positive number");
       const ppRef=fs.collection(db,"citizens",id,"pendingPayments");
       const newRef=fs.doc(ppRef);
-      await fs.setDoc(newRef, { id:newRef.id, amount, date:todayISO(), status:"pending", createdAt:fs.serverTimestamp() });
-      return { id:newRef.id, amount, status:"pending" };
+      await fs.setDoc(newRef, { id:newRef.id, amount:amt, date:todayISO(), status:"pending", createdAt:fs.serverTimestamp() });
+      return { id:newRef.id, amount:amt, status:"pending" };
     },
     async confirmPendingPayment(id, pendingId){
       const ppRef=fs.doc(db,"citizens",id,"pendingPayments",pendingId);
@@ -893,6 +907,13 @@ function makeFirebaseStore({ auth, db, fs, au }){
       await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
     },
     async editEntry(id, entryId, updates){
+      if(updates.amount !== undefined){
+        const amt = Number(updates.amount);
+        if(!Number.isFinite(amt) || amt <= 0) throw new Error("Amount must be a positive number");
+        updates.amount = amt;
+      }
+      if(updates.note !== undefined) updates.note = String(updates.note || "");
+      if(updates.date !== undefined) updates.date = String(updates.date || "");
       const ref=fs.doc(db,"citizens",id,"ledger",entryId);
       await fs.updateDoc(ref, updates);
       const entries=ledgerCache.get(id)||[];
@@ -1678,7 +1699,7 @@ async function loadPeriods(){
       </label>
     `).join('');
     $("periodsList").innerHTML = list || '<div style="color:var(--muted)">No periods found yet.</div>';
-  }catch(err){ console.error("Load periods error:", err); $("periodsList").innerHTML=`<div class="notice err">Failed to load periods: ${err.message||err}</div>`; }
+  }catch(err){ console.error("Load periods error:", err); $("periodsList").innerHTML=`<div class="notice err">Failed to load periods. Try again.</div>`; }
 }
 async function savePeriods(){
   const toggles = document.querySelectorAll('input[name="period-toggle"]');
@@ -1716,11 +1737,42 @@ async function doBackup(){
   }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Backup failed. Check connection and try again.</div>`; }
   finally{ backupBusy=false; if(btn) btn.disabled=false; }
 }
+function validateBackupSchema(backup) {
+  if (!backup || typeof backup !== 'object') throw new Error("Backup must be an object");
+  if (!Array.isArray(backup.citizens)) throw new Error("Backup must contain citizens array");
+  if (backup.citizens.length > 10000) throw new Error("Backup too large (max 10000 households)");
+
+  const validTypes = ["charge", "payment", "forgive"];
+  for (let i = 0; i < backup.citizens.length; i++) {
+    const c = backup.citizens[i];
+    if (typeof c.id !== 'string' || !c.id) throw new Error(`Citizen ${i}: missing or invalid id`);
+    if (typeof c.name !== 'string') throw new Error(`Citizen ${i}: missing or invalid name`);
+    if (!Number.isFinite(c.totalCharged) || !Number.isFinite(c.totalPaid) || !Number.isFinite(c.balance)) {
+      throw new Error(`Citizen ${i}: invalid numeric fields`);
+    }
+
+    if (Array.isArray(c.ledger)) {
+      for (let j = 0; j < c.ledger.length; j++) {
+        const e = c.ledger[j];
+        if (!validTypes.includes(e.type)) throw new Error(`Citizen ${i}, entry ${j}: invalid type`);
+        if (!Number.isFinite(e.amount) || e.amount < 0) throw new Error(`Citizen ${i}, entry ${j}: invalid amount`);
+        if (typeof e.note !== 'string') e.note = '';
+        if (typeof e.date !== 'string') e.date = '';
+      }
+    }
+  }
+}
+
 async function doRestore(e){
   const file=e.target.files[0]; if(!file) return;
+  if (file.size > 5*1024*1024) {
+    $("backupMsg").innerHTML=`<div class="notice err">Backup file too large (max 5 MB).</div>`;
+    e.target.value="";
+    return;
+  }
   const msg=$("backupMsg"); let backup;
-  try{ backup = JSON.parse(await file.text()); }catch(err){ msg.innerHTML=`<div class="notice err">That file isn't a valid backup.</div>`; e.target.value=""; return; }
-  if(!backup || !Array.isArray(backup.citizens)){ msg.innerHTML=`<div class="notice err">That file isn't a valid backup.</div>`; e.target.value=""; return; }
+  try{ backup = JSON.parse(await file.text()); }catch(err){ msg.innerHTML=`<div class="notice err">Invalid JSON in backup file.</div>`; e.target.value=""; return; }
+  try{ validateBackupSchema(backup); }catch(err){ msg.innerHTML=`<div class="notice err">Backup format invalid: ${esc(err.message)}</div>`; e.target.value=""; return; }
   const ok = await confirmAction(`Restore ${backup.citizens.length} households from this backup? It overwrites their current records and history.`, true);
   if(!ok){ e.target.value=""; return; }
   msg.innerHTML=`<div class="notice info">Restoring…</div>`;
