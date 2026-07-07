@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nsnvc-tracker-v1.25.6';
+const CACHE_NAME = 'nsnvc-tracker-v1.26.0';
 const urlsToCache = [
   './',
   './index.html',
