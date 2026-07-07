@@ -651,13 +651,21 @@ function makeLocalStore(){
     },
     async importAll(backup, onProgress){
       if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
+      const validTypes = ["charge", "payment", "forgive"];
       let done=0;
       for(const r of backup.citizens){
+        const ledger = (r.ledger||[])
+          .filter(e => e && validTypes.includes(e.type) && e.amount)
+          .map(e=>{
+            const amt = Number(e.amount);
+            if(isNaN(amt) || amt <= 0) return null;
+            return { entryId:e.entryId||String(++clock), type:e.type, amount:amt, note:e.note||"",
+              date:e.date||"", deferred:e.deferred||false, createdAt:(e.createdAtMs||++clock) };
+          })
+          .filter(e => e !== null);
         data.citizens[r.id]={ jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, phone:r.phone||"",
           totalCharged:r.totalCharged||0, totalPaid:r.totalPaid||0, balance:r.balance||0, deferredTotal:r.deferredTotal||0,
-          createdAt:++clock, updatedAt:++clock, pendingPayments:[],
-          ledger:(r.ledger||[]).map(e=>({ entryId:e.entryId||String(++clock), type:e.type, amount:e.amount, note:e.note,
-            date:e.date||"", deferred:e.deferred||false, createdAt:(e.createdAtMs||++clock) })) };
+          createdAt:++clock, updatedAt:++clock, pendingPayments:[], ledger };
         recalcTotals(data.citizens[r.id]);
         if((++done % 50)===0 && onProgress) onProgress(done, backup.citizens.length);
       }
@@ -765,7 +773,18 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     subscribe(cb){
       const q=fs.query(fs.collection(db,"citizens"), fs.orderBy("name"));
-      return fs.onSnapshot(q, snap=> cb(snap.docs.map(d=>({ id:d.id, ...d.data() }))));
+      return fs.onSnapshot(q,
+        snap=>{
+          try{
+            cb(snap.docs.map(d=>({ id:d.id, ...d.data() })));
+          } catch(e){
+            console.error("Error in subscribe callback:", e);
+          }
+        },
+        error=>{
+          console.error("Firestore subscribe error:", error);
+        }
+      );
     },
     async listOwing(){
       const snap=await fs.getDocs(fs.collection(db,"citizens"));
@@ -1037,32 +1056,53 @@ function makeFirebaseStore({ auth, db, fs, au }){
       if(onProgress) onProgress(0, 3);
       const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
       let batch=fs.writeBatch(db), ops=0;
-      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
-      for(const d of cSnap.docs){
-        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
-        ledSnap.docs.forEach(ld => { batch.delete(ld.ref); if(++ops>=400) { } });
-        if(ops>=400) await flush();
-        batch.delete(d.ref); if(ops>=400) await flush();
-      }
-      await flush();
-      if(onProgress) onProgress(1, 3);
-      batch=fs.writeBatch(db); ops=0; let done=0;
-      for(const r of backup.citizens){
-        const cRef=fs.doc(db,"citizens",r.id);
-        batch.set(cRef,{ jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, phone:r.phone||"",
-          totalCharged:r.totalCharged||0, totalPaid:r.totalPaid||0, balance:r.balance||0, deferredTotal:r.deferredTotal||0,
-          updatedAt:fs.serverTimestamp() }); if(++ops>=400) await flush();
-        for(const e of (r.ledger||[])){
-          const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));
-          batch.set(eRef,{ entryId:e.entryId||eRef.id, type:e.type, amount:e.amount, note:e.note, date:e.date||"", deferred:e.deferred||false,
-            createdAt: e.createdAtMs? fs.Timestamp.fromMillis(e.createdAtMs) : fs.serverTimestamp() }); if(++ops>=400) await flush();
+      const flush=async()=>{
+        if(ops>0){
+          try{
+            await batch.commit();
+            batch=fs.writeBatch(db);
+            ops=0;
+          } catch(e){
+            console.error("Batch commit failed during importAll:", e);
+            throw new Error(`Database write failed: ${e.message}`);
+          }
         }
-        if((++done % 50)===0 && onProgress) onProgress(2, 3);
+      };
+      try{
+        for(const d of cSnap.docs){
+          const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
+          ledSnap.docs.forEach(ld => { batch.delete(ld.ref); if(++ops>=400) { } });
+          if(ops>=400) await flush();
+          batch.delete(d.ref); if(++ops>=400) await flush();
+        }
+        await flush();
+        if(onProgress) onProgress(1, 3);
+        batch=fs.writeBatch(db); ops=0; let done=0;
+        const validTypes = ["charge", "payment", "forgive"];
+        for(const r of backup.citizens){
+          const cRef=fs.doc(db,"citizens",r.id);
+          batch.set(cRef,{ jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, phone:r.phone||"",
+            totalCharged:r.totalCharged||0, totalPaid:r.totalPaid||0, balance:r.balance||0, deferredTotal:r.deferredTotal||0,
+            updatedAt:fs.serverTimestamp() }); if(++ops>=400) await flush();
+          for(const e of (r.ledger||[])){
+            if(!e || !validTypes.includes(e.type) || !e.amount) continue;
+            const amt = Number(e.amount);
+            if(isNaN(amt) || amt <= 0) continue;
+            const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));
+            batch.set(eRef,{ entryId:e.entryId||eRef.id, type:e.type, amount:amt, note:e.note||"", date:e.date||"", deferred:e.deferred||false,
+              createdAt: e.createdAtMs? fs.Timestamp.fromMillis(e.createdAtMs) : fs.serverTimestamp() });
+            if(++ops>=400) await flush();
+          }
+          if((++done % 50)===0 && onProgress) onProgress(2, 3);
+        }
+        await flush();
+        invalidateLedgerCache();
+        if(onProgress) onProgress(3, 3);
+        return backup.citizens.length;
+      } catch(e){
+        console.error("importAll failed:", e);
+        throw e;
       }
-      await flush();
-      invalidateLedgerCache();
-      if(onProgress) onProgress(3, 3);
-      return backup.citizens.length;
     },
     async getImportedPeriods(){ const s=await fs.getDoc(fs.doc(db,"meta","imports")); return s.exists()? (s.data().periods||[]) : []; },
     async recordImportedPeriod(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { periods:fs.arrayUnion(p) }, {merge:true}); },
@@ -1190,9 +1230,12 @@ function invalidateLedgerCache(id){
 function recalcFromLedger(entries){
   let tc=0, tp=0, dt=0;
   for(const e of entries){
-    if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
-    else if(e.type==="payment") tp+=e.amount;
-    else if(e.type==="forgive") tc-=e.amount;
+    if(!e || typeof e.amount === 'undefined') continue;
+    const amt = Number(e.amount) || 0;
+    if(isNaN(amt)) { console.warn("Invalid amount in ledger entry:", e); continue; }
+    if(e.type==="charge"){ if(e.deferred) dt+=amt; else tc+=amt; }
+    else if(e.type==="payment") tp+=amt;
+    else if(e.type==="forgive") tc-=amt;
   }
   return { totalCharged:tc+dt, totalPaid:tp, balance:tc-tp, deferredTotal:dt };
 }
@@ -1219,16 +1262,22 @@ function scheduleDashboardRefresh(){
   clearTimeout(dashboardRefreshTimer);
   dashboardRefreshTimer = setTimeout(refreshDashboard, 250);
   clearTimeout(cacheRefreshTimer);
-  cacheRefreshTimer = setTimeout(()=>{ if(excludedPeriods.length) store.getAllLedgers().catch(()=>{}); }, 5000);
+  cacheRefreshTimer = setTimeout(()=>{
+    if(excludedPeriods.length) store.getAllLedgers().catch(e=>{
+      console.warn("Background ledger cache refresh failed:", e);
+    });
+  }, 5000);
 }
 async function refreshDashboard(){
   const seq = ++dashboardRefreshSeq;
-  let list = rawCitizens;
+  let list = rawCitizens || [];
   if(excludedPeriods.length){
     if(ledgerCache.size===0){
       try{ await store.getAllLedgers(); }catch(e){ console.error("Failed to load ledgers:", e); }
     }
-    list = list.map(c => ({...c, ledger: ledgerCache.get(c.id) || []}));
+    if(list.length > 0) {
+      list = list.map(c => ({...c, ledger: ledgerCache.get(c.id) || []}));
+    }
   }
   if(seq !== dashboardRefreshSeq) return; // superseded by a newer refresh; drop this stale result
   allCitizens = list;
@@ -1738,7 +1787,7 @@ function loadSheet(ws){
   const guessCharge=_findCol(h,/charge|contribution|amount/i);
   const guessPayment=_findCol(h,/payment|paid|pay/i);
   const guessMode=_findCol(h,/mode|method|cash|bank/i);
-  const sample = rows.find((r,i)=> i>0 && r && r.some(v=>v!=null)) || rows[1];
+  const sample = rows.find((r,i)=> i>0 && r && r.some(v=>v!=null)) || (rows.length > 1 ? rows[1] : []);
   uploadRaw={ rows };
   $("impMsg").innerHTML=`<div class="notice info">Confirm which column is which, then Continue.</div>`;
   $("impPreview").innerHTML=`
@@ -2050,12 +2099,17 @@ function closeCitizenDetail(){
 
 async function renderCitizenDetail(id){
   const c = allCitizens.find(x=>x.id===id);
-  const entries = ledgerCache.get(id) || await store.getLedger(id);
-  const bal = getEffectiveBalance(c);
-  const allSorted = [...entries].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-  const INITIAL_HISTORY = 3;
-  let historyExpanded = false;
-  let historyEditing = false;
+  if(!c){
+    $("adminDetail").innerHTML = `<div class="notice err">Citizen not found. Please refresh and try again.</div>`;
+    return;
+  }
+  try{
+    const entries = ledgerCache.get(id) || await store.getLedger(id) || [];
+    const bal = getEffectiveBalance(c);
+    const allSorted = [...entries].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    const INITIAL_HISTORY = 3;
+    let historyExpanded = false;
+    let historyEditing = false;
 
   const renderRows = (list, editing)=>{
     if(!list.length) return `<div class="empty">No entries yet.</div>`;
@@ -2178,9 +2232,16 @@ function attachHistoryListeners(id, editing){
   document.querySelectorAll(".defer-chk").forEach(chk=>{
     chk.addEventListener("change", async ()=>{
       const entryId = chk.dataset.id;
-      await store.toggleDefer(id, entryId, chk.checked);
-      toast("Deferral updated");
-      await renderCitizenDetail(id);
+      const prevState = !chk.checked;
+      try{
+        await store.toggleDefer(id, entryId, chk.checked);
+        toast("Deferral updated");
+        await renderCitizenDetail(id);
+      } catch(e){
+        console.error("Failed to toggle deferral:", e);
+        chk.checked = prevState;
+        toast("Failed to update deferral. Please try again.");
+      }
     });
   });
 
@@ -2207,6 +2268,10 @@ function attachHistoryListeners(id, editing){
       await renderCitizenDetail(id);
     });
   });
+  } catch(e){
+    console.error("Failed to render citizen detail:", e);
+    $("adminDetail").innerHTML = `<div class="notice err">Error loading citizen details. Please try again.</div>`;
+  }
 }
 
 async function markFullyPaid(id, bal){
@@ -2318,21 +2383,40 @@ let exportBusy=false;
 async function doExportCsv(){
   if(exportBusy) return; exportBusy=true;
   const btn=$("exportCsvBtn2"); if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
+  let url;
   try{
     const csv = await store.exportOwingCsv();
     const blob = new Blob([csv], {type:"text/csv"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `owing_${todayISO()}.csv`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast("CSV exported");
+    try{
+      url = URL.createObjectURL(blob);
+    } catch(e){
+      console.error("Failed to create object URL:", e);
+      toast("Export failed: could not create download link");
+      return;
+    }
+    const a = document.createElement("a");
+    try{
+      a.href = url; a.download = `owing_${todayISO()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast("CSV exported");
+    } catch(e){
+      console.error("Failed to trigger download:", e);
+      toast("Export failed: could not trigger download");
+    }
   }catch(err){ toast("Export failed"); console.error(err); }
-  finally{ exportBusy=false; if(btn){ btn.disabled=false; btn.textContent="Export owing list (CSV)"; } }
+  finally{
+    if(url) URL.revokeObjectURL(url);
+    exportBusy=false;
+    if(btn){ btn.disabled=false; btn.textContent="Export owing list (CSV)"; }
+  }
 }
 
 async function doExportAll(){
   if(exportBusy) return; exportBusy=true;
   const btn=$("exportAllBtn"); if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
+  let url;
   try{
     const citizens = allCitizens;
     const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
@@ -2344,13 +2428,30 @@ async function doExportAll(){
       csv += `"${esc(c.name)}","${esc(c.jobCard)}",${c.totalCharged||0},${c.totalPaid||0},${c.balance||0},"${statusLabel[status]}","${esc(payments)}"\n`;
     }
     const blob = new Blob([csv], {type:"text/csv"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `all_households_${todayISO()}.csv`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast("CSV exported");
+    try{
+      url = URL.createObjectURL(blob);
+    } catch(e){
+      console.error("Failed to create object URL:", e);
+      toast("Export failed: could not create download link");
+      return;
+    }
+    const a = document.createElement("a");
+    try{
+      a.href = url; a.download = `all_households_${todayISO()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast("CSV exported");
+    } catch(e){
+      console.error("Failed to trigger download:", e);
+      toast("Export failed: could not trigger download");
+    }
   }catch(err){ toast("Export failed"); console.error(err); }
-  finally{ exportBusy=false; if(btn){ btn.disabled=false; btn.textContent="Export all households (CSV)"; } }
+  finally{
+    if(url) URL.revokeObjectURL(url);
+    exportBusy=false;
+    if(btn){ btn.disabled=false; btn.textContent="Export all households (CSV)"; }
+  }
 }
 
 async function openExportPeriod(){
