@@ -979,12 +979,23 @@ if(notConfigured){
   showModeBanner("Test mode — running on this device with sample data. Add citizens, contributions and payments to try it out; everything is saved in this browser only. Paste your Firebase config into the file to go live.");
 } else {
   try{
-    store=makeFirebaseStore(await loadFirebase(firebaseConfig));
+    console.log("Initializing Firebase...");
+    const fbModule = await loadFirebase(firebaseConfig);
+    console.log("Firebase loaded successfully");
+    store=makeFirebaseStore(fbModule);
+    console.log("Firebase store created");
   }catch(err){
-    console.error(err);
-    isLocalMode=true; store=makeLocalStore();
-    showModeBanner("Couldn't reach the database, so the app is running in local test mode. Check your connection or Firebase settings.");
+    console.error("Firebase initialization failed:", err);
+    isLocalMode=true;
+    store=makeLocalStore();
+    console.log("Switched to local test mode");
+    showModeBanner("Couldn't reach Firebase, running in local test mode. Check your connection or Firebase settings.");
   }
+}
+if(!store) {
+  console.warn("WARNING: Store not initialized, forcing local mode");
+  isLocalMode=true;
+  store=makeLocalStore();
 }
 if(isLocalMode) addTestLoginHint();
 
@@ -1025,11 +1036,28 @@ function addTestLoginHint(){
 /* ============================================================
    ADMIN AUTH
    ============================================================ */
-$("loginBtn").addEventListener("click", login);
-$("adminPass").addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
-$("logoutBtn").addEventListener("click", ()=>{ store.signOut(); });
+// Attach listeners immediately at module load (before async Firebase initialization)
+try {
+  const loginBtn = $("loginBtn");
+  if(loginBtn) loginBtn.addEventListener("click", login);
+} catch(e) { console.error("Failed to attach login button listener:", e); }
+
+try {
+  const adminPass = $("adminPass");
+  if(adminPass) adminPass.addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
+} catch(e) { console.error("Failed to attach password enter listener:", e); }
+
+try {
+  const logoutBtn = $("logoutBtn");
+  if(logoutBtn) logoutBtn.addEventListener("click", ()=>{ if(store) store.signOut(); });
+} catch(e) { console.error("Failed to attach logout button listener:", e); }
 
 async function login(){
+  if(!store){
+    $("loginErr").innerHTML=`<div class="notice err">App is still loading... please wait</div>`;
+    console.warn("Store not ready yet");
+    return;
+  }
   const email=$("adminEmail").value.trim(), pass=$("adminPass").value.trim();
   if(!email || !pass){
     $("loginErr").innerHTML=`<div class="notice err">${!email?"Email is required":"Password is required"}</div>`;
