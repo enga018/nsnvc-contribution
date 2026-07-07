@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -q '^main$'; then echo '{\"systemMessage\": \"💡 Consider bumping the version: major for big changes (1.1.1→1.2.0), minor for small (1.1.1→1.1.2). Run `claude version bump` when ready.\"}'; fi",
+            "if": "Bash(git commit*)",
+            "statusMessage": "Checking for version bump needed..."
+          }
+        ]
+      }
+    ]
+  }
+}
