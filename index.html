@@ -1843,9 +1843,10 @@ async function encryptBackupData(data, password){
 
 let backupBusy=false;
 async function doBackup(){
-  if(backupBusy) return; backupBusy=true;
-  const btn=$("backupBtn"); if(btn){ btn.disabled=true; }
-  const msg=$("backupMsg");
+  if(backupBusy) return;
+  backupBusy=true;
+  const btn=$("backupBtn");
+  if(btn) btn.disabled=true;
 
   openSheet("Download backup", `
     <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Backup contains all household data including names, phone numbers, and payment history. Consider encrypting it with a password.</p>
@@ -1853,6 +1854,7 @@ async function doBackup(){
       <input id="backupPw" type="password" placeholder="Leave empty for unencrypted backup"></div>
     <button class="btn block" id="backupConfirm">Download backup</button>
   `);
+
   $("backupConfirm").addEventListener("click", async ()=>{
     const pw = $("backupPw").value;
     $("backupConfirm").disabled = true;
@@ -1868,6 +1870,8 @@ async function doBackup(){
       toast("Backup failed");
     }finally{
       $("backupConfirm").disabled = false;
+      backupBusy=false;
+      if(btn) btn.disabled=false;
     }
   });
 }
