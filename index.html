@@ -9,233 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="NSNVC Tracker">
-<style>
-  :root{
-    --green:#1b4d3e; --green-dark:#143a2f; --green-soft:#e8efe9;
-    --paper:#f7f6f2; --surface:#ffffff; --ink:#1c2724; --muted:#6b7672;
-    --border:#e3e1d8; --border-strong:#cfd0c7;
-    --paid:#15803d; --partial:#b45309; --due:#b91c1c;
-    --shadow:0 1px 2px rgba(20,40,30,.06),0 6px 20px rgba(20,40,30,.06);
-    --radius:14px;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;padding:0}
-  body{
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    background:var(--paper); color:var(--ink); line-height:1.45;
-    -webkit-font-smoothing:antialiased;
-  }
-  .money{font-variant-numeric:tabular-nums; font-feature-settings:"tnum"}
-  button{font-family:inherit; cursor:pointer}
-  input{font-family:inherit}
-
-  /* Header */
-  header{
-    background:var(--green); color:#fff; padding:14px 16px;
-    display:flex; align-items:center; justify-content:space-between; gap:10px;
-    position:sticky; top:0; z-index:20;
-  }
-  .brand{display:flex; flex-direction:column; line-height:1.2}
-  .brand b{font-size:15px; font-weight:650; letter-spacing:.2px}
-  .brand span{font-size:11px; opacity:.8; text-transform:uppercase; letter-spacing:1px}
-  main{max-width:680px; margin:0 auto; padding:18px 16px 60px}
-
-  .btn{
-    background:var(--green); color:#fff; border:none; padding:13px 18px;
-    border-radius:10px; font-size:15px; font-weight:600; white-space:nowrap;
-  }
-  .btn:active{background:var(--green-dark)}
-  .btn.block{width:100%}
-  .btn.ghost{background:transparent; color:var(--green); border:1.5px solid var(--green)}
-  .btn.small{padding:9px 13px; font-size:13.5px}
-  .btn.danger{background:var(--due)}
-  .btn[disabled]{opacity:.5; pointer-events:none}
-
-  /* Statement / receipt */
-  .statement{
-    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
-    box-shadow:var(--shadow); margin-top:18px; overflow:hidden; animation:rise .25s ease;
-  }
-  @keyframes rise{from{opacity:0; transform:translateY(8px)}to{opacity:1; transform:none}}
-  .statement .top{
-    padding:18px; border-bottom:1px dashed var(--border-strong);
-    display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
-  }
-  .statement .name{font-size:18px; font-weight:650; margin:0}
-  .statement .meta{font-size:12.5px; color:var(--muted); margin-top:3px}
-  .badge{font-size:11px; font-weight:700; padding:5px 10px; border-radius:99px; white-space:nowrap; text-transform:uppercase; letter-spacing:.5px}
-  .badge.paid{background:#e6f4ea; color:var(--paid)}
-  .badge.partial{background:#fdf1e3; color:var(--partial)}
-  .badge.due{background:#fdeaea; color:var(--due)}
-  .badge.action{cursor:pointer; transition:opacity .15s}
-  .badge.action:active{opacity:.7}
-  .badge.action-paid{background:#e6f4ea; color:var(--paid)}
-  .badge.action-pay{background:#e8f0fe; color:#1a73e8}
-  .badge.action-waive{background:#fdf1e3; color:var(--partial)}
-  .badge-row{display:flex; gap:8px; flex-wrap:wrap}
-
-  .balance-block{padding:20px 18px; text-align:center; background:linear-gradient(180deg,#fbfbf8,transparent)}
-  .balance-block .label{font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted)}
-  .balance-block .amount{font-size:40px; font-weight:700; margin:4px 0 2px; letter-spacing:-1px}
-  .balance-block .amount.zero{color:var(--paid)}
-  .balance-block .amount.owing{color:var(--due)}
-  .split{display:flex; border-top:1px solid var(--border)}
-  .split div{flex:1; padding:13px; text-align:center}
-  .split div+div{border-left:1px solid var(--border)}
-  .split .k{font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px}
-  .split .v{font-size:17px; font-weight:650; margin-top:2px}
-
-  .ledger{border-top:1px solid var(--border)}
-  .ledger h3{font-size:12.5px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:0; padding:14px 18px 6px}
-  .row{
-    display:flex; align-items:center; gap:10px; padding:7px 18px; border-top:1px solid var(--border);
-  }
-  .row .desc{flex:1; min-width:0}
-  .row .desc b{font-size:14px; font-weight:600; display:block}
-  .row .desc .desc-head{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
-  .row .desc small{font-size:12px; color:var(--muted)}
-  .row .amt{font-size:14.5px; font-weight:650; white-space:nowrap}
-  .amt.charge{color:var(--ink)}
-  .amt.payment{color:var(--paid)}
-  .empty{padding:18px; text-align:center; color:var(--muted); font-size:13.5px}
-
-  /* Back link */
-  .back{background:none; border:none; color:var(--green); font-size:13.5px; font-weight:600;
-    padding:14px 4px 2px; display:inline-flex; align-items:center; gap:4px}
-
-  /* Monthly breakdown (step 2) */
-  .breakdown{padding:6px 18px 8px}
-  .brow{display:flex; justify-content:space-between; align-items:center; gap:12px;
-    padding:10px 0; font-size:14.5px; border-bottom:1px solid var(--border)}
-  .brow span{color:var(--muted)}
-  .brow b{font-weight:650; white-space:nowrap}
-  .brow.total{border-bottom:none; border-top:2px solid var(--border-strong); margin-top:2px; padding-top:13px; font-size:16.5px}
-  .brow.total span{color:var(--ink); font-weight:700}
-  .brow b.credit{color:var(--paid)}
-  .carry-note{font-size:12.5px; color:var(--paid); padding:0 18px 16px; text-align:center}
-
-  .notice{padding:16px; border-radius:10px; font-size:14px; margin-top:16px}
-  .notice.err{background:#fdeaea; color:#7a1d1d; border:1px solid #f3c4c4}
-  .notice.info{background:var(--green-soft); color:var(--green-dark); border:1px solid #cfe0d5}
-
-  /* Admin */
-  .hidden{display:none !important}
-  .login-card{max-width:360px; margin:30px auto; background:var(--surface); border:1px solid var(--border);
-    border-radius:var(--radius); padding:24px 20px; box-shadow:var(--shadow)}
-  .login-card h2{margin:0 0 16px; font-size:18px}
-  .field{margin-bottom:12px}
-  .field label{display:block; font-size:12.5px; font-weight:600; color:var(--muted); margin-bottom:5px}
-  .field input{width:100%; padding:11px 12px; font-size:15px; border:1.5px solid var(--border-strong); border-radius:9px; outline:none}
-  .field input:focus{border-color:var(--green)}
-
-  .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px}
-  .stat{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 12px; box-shadow:var(--shadow)}
-  .stat .k{font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted)}
-  .stat .v{font-size:20px; font-weight:700; margin-top:3px}
-  .stat .v.due{color:var(--due)}
-  .stat .v.paid{color:var(--paid)}
-
-  .toolbar{display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap}
-  .toolbar input{flex:1; padding:11px 12px; font-size:15px; border:1.5px solid var(--border-strong); border-radius:9px; outline:none; min-width:0}
-  .toolbar input:focus{border-color:var(--green)}
-
-  .clist{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden}
-  .citizen-row{
-    display:flex; align-items:center; gap:10px; padding:12px 15px;
-    border-top:1px solid var(--border); width:100%; background:none;
-    border-left:none; border-right:none; text-align:left;
-    transition:background .15s;
-  }
-  .citizen-row:first-child{border-top:none}
-  .citizen-row:active{background:var(--paper)}
-  .citizen-row .info{flex:1; min-width:0}
-  .citizen-row .info b{font-size:15px; display:block; font-weight:600}
-  .citizen-row .info small{font-size:12px; color:var(--muted); display:block; margin-top:2px}
-  .citizen-row .bal{font-size:15px; font-weight:700; white-space:nowrap}
-  .dot{width:8px; height:8px; border-radius:50%; flex:none}
-  .dot.paid{background:var(--paid)} .dot.partial{background:var(--partial)} .dot.due{background:var(--due)}
-
-  /* Sheet modal */
-  .overlay{position:fixed; inset:0; background:rgba(20,30,25,.45); z-index:40; display:flex; align-items:flex-end; justify-content:center}
-  .sheet{background:var(--surface); width:100%; max-width:680px; max-height:92vh; overflow-y:auto;
-    border-radius:18px 18px 0 0; animation:slideup .25s ease}
-  @keyframes slideup{from{transform:translateY(100%)}to{transform:none}}
-  .sheet-head{position:sticky; top:0; background:var(--surface); padding:16px 18px; border-bottom:1px solid var(--border);
-    display:flex; justify-content:space-between; align-items:center; z-index:2}
-  .sheet-head h2{margin:0; font-size:17px}
-  .x{background:var(--paper); border:1px solid var(--border); width:34px; height:34px; border-radius:50%; font-size:18px; line-height:1; color:var(--muted)}
-  .sheet-body{padding:18px}
-  .panel{background:var(--paper); border:1px solid var(--border); border-radius:12px; padding:15px; margin-bottom:14px}
-  .panel h4{margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted)}
-  .inline{display:flex; gap:8px}
-  .inline .field{flex:1; margin-bottom:0}
-  .seg{display:flex; gap:8px; margin-bottom:12px}
-  .seg button{flex:1; padding:10px; border:1.5px solid var(--border-strong); background:var(--surface); border-radius:9px; font-weight:600; font-size:14px; color:var(--muted)}
-  .seg button.active{border-color:var(--green); background:var(--green-soft); color:var(--green-dark)}
-  .period-sel{width:100%; padding:11px 12px; border:1.5px solid var(--border-strong); border-radius:9px;
-    background:var(--surface); font-size:14px; color:var(--ink); -webkit-appearance:none; appearance:none}
-  .action-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px; }
-  .action-grid .btn{ width:100%; }
-
-  .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff;
-    padding:12px 18px; border-radius:99px; font-size:14px; z-index:60; box-shadow:var(--shadow); animation:rise .2s ease}
-
-  .hist-toggle{width:100%; text-align:left; background:none; border:none; border-top:1px solid var(--border);
-    padding:14px 18px; font-size:13px; font-weight:650; color:var(--green); text-transform:uppercase; letter-spacing:.5px; cursor:pointer}
-  .dash-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px}
-  .dash-title{font-size:13px; font-weight:650; text-transform:uppercase; letter-spacing:1px; color:var(--muted)}
-
-  footer{text-align:center; color:var(--muted); font-size:11.5px; padding:24px 16px}
-  .config-warn{background:#fff7e6; border:1px solid #f0d99a; color:#7a5a12; padding:14px 16px; border-radius:10px; font-size:13px; margin:16px; line-height:1.5}
-
-  /* New styles for indentation, inline actions, etc. */
-  .row.payment-indent .desc{ margin-left:24px; }
-  .row .actions{display:flex; gap:4px; flex-shrink:0;}
-  .row .actions button{background:transparent; border:none; font-size:14px; padding:2px 4px; color:var(--muted);}
-  .row .actions button:hover{color:var(--ink)}
-  .row.deferred{opacity:0.6; background:#f9f9f6;}
-  .row.deferred .desc b::after{content:" (deferred)"; font-weight:400; color:var(--muted); font-size:11px; margin-left:6px;}
-  .row.no-top-border{border-top:none;}
-  .inline-buttons{display:flex; gap:8px; flex-wrap:wrap;}
-  .inline-buttons .btn{flex:1; min-width:80px;}
-  .pending-badge{background:#fef3c7; color:#92400e; padding:2px 10px; border-radius:99px; font-size:12px; font-weight:600;}
-  .pending-list .pending-row{
-    display:flex; justify-content:space-between; align-items:center;
-    padding:10px 0; border-bottom:1px solid var(--border);
-  }
-  .pending-list .pending-row:last-child{border-bottom:none;}
-  .pending-list .confirm-btn{background:var(--paid); color:#fff; border:none; padding:4px 12px; border-radius:99px; font-size:12px;}
-  /* styled confirm dialog */
-  .confirm-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex;
-    align-items:center; justify-content:center; z-index:9999; padding:24px; }
-  .confirm-box{ background:var(--surface); border-radius:16px; padding:20px; max-width:340px;
-    width:100%; box-shadow:0 12px 40px rgba(0,0,0,.25); }
-  .confirm-msg{ font-size:15px; color:var(--ink); margin-bottom:18px; line-height:1.5; }
-  .confirm-btns{ display:flex; gap:10px; }
-  .confirm-btns .btn{ flex:1; }
-
-
-  /* Pending list improvements */
-  .pending-list .pending-row .info {
-    flex:1; min-width:0;
-  }
-  .pending-list .pending-row .info b { display:block; font-weight:600; }
-  .pending-list .pending-row .info small { font-size:12px; color:var(--muted); display:block; }
-
-  /* Toggle switch (defer) */
-  .switch{ display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; color:var(--muted); }
-  .switch input{ position:absolute; opacity:0; width:0; height:0; }
-  .switch-track{ position:relative; width:34px; height:20px; background:var(--border-strong); border-radius:99px; flex:none; transition:background .15s; }
-  .switch-thumb{ position:absolute; top:2px; left:2px; width:16px; height:16px; background:#fff; border-radius:50%; transition:transform .15s; box-shadow:0 1px 2px rgba(0,0,0,.2); }
-  .switch input:checked + .switch-track{ background:var(--green); }
-  .switch input:checked + .switch-track .switch-thumb{ transform:translateX(14px); }
-  .switch-label{ font-weight:600; }
-  .period-row-renamed{ background:var(--green-soft); border-radius:8px; padding:10px 12px !important; }
-  .period-rename-input{ border:1px solid var(--border-strong); border-radius:6px; padding:4px 8px; font-size:14px; font-weight:600; width:100%; max-width:200px; }
-  .period-rename-input:focus{ outline:none; border-color:var(--green); box-shadow:0 0 0 2px var(--green-soft); }
-  .period-rename-cancel{ background:transparent; border:none; cursor:pointer; font-size:16px; padding:2px 6px; color:var(--muted); }
-  .period-rename-cancel:hover{ color:var(--due); }
-</style>
+<style>:root{--green:#1b4d3e;--green-dark:#143a2f;--green-soft:#e8efe9;--paper:#f7f6f2;--surface:#fff;--ink:#1c2724;--muted:#6b7672;--border:#e3e1d8;--border-strong:#cfd0c7;--paid:#15803d;--partial:#b45309;--due:#b91c1c;--shadow:0 1px 2px rgba(20,40,30,.06),0 6px 20px rgba(20,40,30,.06);--radius:14px}*{box-sizing:border-box}html,body{margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--paper);color:var(--ink);line-height:1.45;-webkit-font-smoothing:antialiased}.money{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}button{font-family:inherit;cursor:pointer}input{font-family:inherit}header{background:var(--green);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;position:sticky;top:0;z-index:20}.brand{display:flex;flex-direction:column;line-height:1.2}.brand b{font-size:15px;font-weight:650;letter-spacing:.2px}.brand span{font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px}main{max-width:680px;margin:0 auto;padding:18px 16px 60px}.btn{background:var(--green);color:#fff;border:none;padding:13px 18px;border-radius:10px;font-size:15px;font-weight:600;white-space:nowrap}.btn:active{background:var(--green-dark)}.btn.block{width:100%}.btn.ghost{background:0;color:var(--green);border:1.5px solid var(--green)}.btn.small{padding:9px 13px;font-size:13.5px}.btn.danger{background:var(--due)}.btn[disabled]{opacity:.5;pointer-events:none}.statement{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);margin-top:18px;overflow:hidden;animation:rise .25s ease}@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}.statement .top{padding:18px;border-bottom:1px dashed var(--border-strong);display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.statement .name{font-size:18px;font-weight:650;margin:0}.statement .meta{font-size:12.5px;color:var(--muted);margin-top:3px}.badge{font-size:11px;font-weight:700;padding:5px 10px;border-radius:99px;white-space:nowrap;text-transform:uppercase;letter-spacing:.5px}.badge.paid{background:#e6f4ea;color:var(--paid)}.badge.partial{background:#fdf1e3;color:var(--partial)}.badge.due{background:#fdeaea;color:var(--due)}.badge.action{cursor:pointer;transition:opacity .15s}.badge.action:active{opacity:.7}.badge.action-paid{background:#e6f4ea;color:var(--paid)}.badge.action-pay{background:#e8f0fe;color:#1a73e8}.badge.action-waive{background:#fdf1e3;color:var(--partial)}.badge-row{display:flex;gap:8px;flex-wrap:wrap}.balance-block{padding:20px 18px;text-align:center;background:linear-gradient(180deg,#fbfbf8,0)}.balance-block .label{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}.balance-block .amount{font-size:40px;font-weight:700;margin:4px 0 2px;letter-spacing:-1px}.balance-block .amount.zero{color:var(--paid)}.balance-block .amount.owing{color:var(--due)}.split{display:flex;border-top:1px solid var(--border)}.split div{flex:1;padding:13px;text-align:center}.split div+div{border-left:1px solid var(--border)}.split .k{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}.split .v{font-size:17px;font-weight:650;margin-top:2px}.ledger{border-top:1px solid var(--border)}.ledger h3{font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:0;padding:14px 18px 6px}.row{display:flex;align-items:center;gap:10px;padding:7px 18px;border-top:1px solid var(--border)}.row .desc{flex:1;min-width:0}.row .desc b{font-size:14px;font-weight:600;display:block}.row .desc .desc-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.row .desc small{font-size:12px;color:var(--muted)}.row .amt{font-size:14.5px;font-weight:650;white-space:nowrap}.amt.charge{color:var(--ink)}.amt.payment{color:var(--paid)}.empty{padding:18px;text-align:center;color:var(--muted);font-size:13.5px}.back{background:0;border:none;color:var(--green);font-size:13.5px;font-weight:600;padding:14px 4px 2px;display:inline-flex;align-items:center;gap:4px}.breakdown{padding:6px 18px 8px}.brow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;font-size:14.5px;border-bottom:1px solid var(--border)}.brow span{color:var(--muted)}.brow b{font-weight:650;white-space:nowrap}.brow.total{border-bottom:0;border-top:2px solid var(--border-strong);margin-top:2px;padding-top:13px;font-size:16.5px}.brow.total span{color:var(--ink);font-weight:700}.brow b.credit{color:var(--paid)}.carry-note{font-size:12.5px;color:var(--paid);padding:0 18px 16px;text-align:center}.notice{padding:16px;border-radius:10px;font-size:14px;margin-top:16px}.notice.err{background:#fdeaea;color:#7a1d1d;border:1px solid #f3c4c4}.notice.info{background:var(--green-soft);color:var(--green-dark);border:1px solid #cfe0d5}.hidden{display:none!important}.login-card{max-width:360px;margin:30px auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px 20px;box-shadow:var(--shadow)}.login-card h2{margin:0 0 16px;font-size:18px}.field{margin-bottom:12px}.field label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:5px}.field input{width:100%;padding:11px 12px;font-size:15px;border:1.5px solid var(--border-strong);border-radius:9px;outline:0}.field input:focus{border-color:var(--green)}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}.stat{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 12px;box-shadow:var(--shadow)}.stat .k{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}.stat .v{font-size:20px;font-weight:700;margin-top:3px}.stat .v.due{color:var(--due)}.stat .v.paid{color:var(--paid)}.toolbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}.toolbar input{flex:1;padding:11px 12px;font-size:15px;border:1.5px solid var(--border-strong);border-radius:9px;outline:0;min-width:0}.toolbar input:focus{border-color:var(--green)}.clist{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}.citizen-row{display:flex;align-items:center;gap:10px;padding:12px 15px;border-top:1px solid var(--border);width:100%;background:0;border-left:0;border-right:0;text-align:left;transition:background .15s}.citizen-row:first-child{border-top:0}.citizen-row:active{background:var(--paper)}.citizen-row .info{flex:1;min-width:0}.citizen-row .info b{font-size:15px;display:block;font-weight:600}.citizen-row .info small{font-size:12px;color:var(--muted);display:block;margin-top:2px}.citizen-row .bal{font-size:15px;font-weight:700;white-space:nowrap}.dot{width:8px;height:8px;border-radius:50%;flex:none}.dot.paid{background:var(--paid)}.dot.partial{background:var(--partial)}.dot.due{background:var(--due)}.overlay{position:fixed;inset:0;background:rgba(20,30,25,.45);z-index:40;display:flex;align-items:flex-end;justify-content:center}.sheet{background:var(--surface);width:100%;max-width:680px;max-height:92vh;overflow-y:auto;border-radius:18px 18px 0 0;animation:slideup .25s ease}@keyframes slideup{from{transform:translateY(100%)}to{transform:0}}.sheet-head{position:sticky;top:0;background:var(--surface);padding:16px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;z-index:2}.sheet-head h2{margin:0;font-size:17px}.x{background:var(--paper);border:1px solid var(--border);width:34px;height:34px;border-radius:50%;font-size:18px;line-height:1;color:var(--muted)}.sheet-body{padding:18px}.panel{background:var(--paper);border:1px solid var(--border);border-radius:12px;padding:15px;margin-bottom:14px}.panel h4{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}.inline{display:flex;gap:8px}.inline .field{flex:1;margin-bottom:0}.seg{display:flex;gap:8px;margin-bottom:12px}.seg button{flex:1;padding:10px;border:1.5px solid var(--border-strong);background:var(--surface);border-radius:9px;font-weight:600;font-size:14px;color:var(--muted)}.seg button.active{border-color:var(--green);background:var(--green-soft);color:var(--green-dark)}.period-sel{width:100%;padding:11px 12px;border:1.5px solid var(--border-strong);border-radius:9px;background:var(--surface);font-size:14px;color:var(--ink);-webkit-appearance:none;appearance:none}.action-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}.action-grid .btn{width:100%}.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 18px;border-radius:99px;font-size:14px;z-index:60;box-shadow:var(--shadow);animation:rise .2s ease}.hist-toggle{width:100%;text-align:left;background:0;border:0;border-top:1px solid var(--border);padding:14px 18px;font-size:13px;font-weight:650;color:var(--green);text-transform:uppercase;letter-spacing:.5px;cursor:pointer}.dash-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.dash-title{font-size:13px;font-weight:650;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}footer{text-align:center;color:var(--muted);font-size:11.5px;padding:24px 16px}.config-warn{background:#fff7e6;border:1px solid #f0d99a;color:#7a5a12;padding:14px 16px;border-radius:10px;font-size:13px;margin:16px;line-height:1.5}.row.payment-indent .desc{margin-left:24px}.row .actions{display:flex;gap:4px;flex-shrink:0}.row .actions button{background:0;border:0;font-size:14px;padding:2px 4px;color:var(--muted)}.row .actions button:hover{color:var(--ink)}.row.deferred{opacity:.6;background:#f9f9f6}.row.deferred .desc b::after{content:" (deferred)";font-weight:400;color:var(--muted);font-size:11px;margin-left:6px}.row.no-top-border{border-top:0}.inline-buttons{display:flex;gap:8px;flex-wrap:wrap}.inline-buttons .btn{flex:1;min-width:80px}.pending-badge{background:#fef3c7;color:#92400e;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:600}.pending-list .pending-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}.pending-list .pending-row:last-child{border-bottom:0}.pending-list .confirm-btn{background:var(--paid);color:#fff;border:0;padding:4px 12px;border-radius:99px;font-size:12px}.confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:24px}.confirm-box{background:var(--surface);border-radius:16px;padding:20px;max-width:340px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.25)}.confirm-msg{font-size:15px;color:var(--ink);margin-bottom:18px;line-height:1.5}.confirm-btns{display:flex;gap:10px}.confirm-btns .btn{flex:1}.pending-list .pending-row .info{flex:1;min-width:0}.pending-list .pending-row .info b{display:block;font-weight:600}.pending-list .pending-row .info small{font-size:12px;color:var(--muted);display:block}.switch{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted)}.switch input{position:absolute;opacity:0;width:0;height:0}.switch-track{position:relative;width:34px;height:20px;background:var(--border-strong);border-radius:99px;flex:none;transition:background .15s}.switch-thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}.switch input:checked+.switch-track{background:var(--green)}.switch input:checked+.switch-track .switch-thumb{transform:translateX(14px)}.switch-label{font-weight:600}.period-row-renamed{background:var(--green-soft);border-radius:8px;padding:10px 12px!important}.period-rename-input{border:1px solid var(--border-strong);border-radius:6px;padding:4px 8px;font-size:14px;font-weight:600;width:100%;max-width:200px}.period-rename-input:focus{outline:0;border-color:var(--green);box-shadow:0 0 0 2px var(--green-soft)}.period-rename-cancel{background:0;border:0;cursor:pointer;font-size:16px;padding:2px 6px;color:var(--muted)}.period-rename-cancel:hover{color:var(--due)}</style>
 </head>
 <body>
 <header>
@@ -317,14 +91,42 @@ const firebaseConfig = {
   appId: "1:686034384332:web:06e629117b63ba615c5969"
 };
 
+/* ---------- constants ---------- */
+const CURRENCY = "₹";
+const TOAST_DURATION_MS = 2200;
+const DASHBOARD_REFRESH_DEBOUNCE_MS = 250;
+const CACHE_REFRESH_DELAY_MS = 5000;
+const SHEET_CLOSE_DELAY_MS = 900;
+const PAGE_RELOAD_DELAY_MS = 1500;
+const LOGOUT_DELAY_MS = 1000;
+const FIRESTORE_BATCH_SIZE = 400;
+const BACKUP_MAX_SIZE_BYTES = 5*1024*1024;
+const BACKUP_MAX_HOUSEHOLDS = 10000;
+const MAX_FILE_SCAN_ROWS = 10000;
+
 /* ---------- helpers ---------- */
-const CURRENCY = "₹";  // force rupees
 const fmt = n => CURRENCY + (Number(n)||0).toLocaleString("en-IN");
 const $ = id => document.getElementById(id);
 const esc = s => String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function toast(msg){
   const t=document.createElement("div"); t.className="toast"; t.textContent=msg;
-  document.body.appendChild(t); setTimeout(()=>t.remove(),2200);
+  document.body.appendChild(t); setTimeout(()=>t.remove(),TOAST_DURATION_MS);
+}
+
+function downloadBlob(content, filename, mimeType="application/octet-stream"){
+  let url;
+  try{
+    const blob = new Blob([content], {type:mimeType});
+    url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }finally{
+    if(url) URL.revokeObjectURL(url);
+  }
 }
 let excludedPeriods=[];
 // Single source of truth for "does this charge count toward period-based
@@ -375,6 +177,7 @@ function prettyPeriod(note){
   return String(note||"").trim();
 }
 function entryLabel(e){
+  if(!e || !e.type) return "Unknown";
   if(e.type==="payment"){
     const note=e.note;
     const modes=["cash","bank","upi"];
@@ -585,15 +388,21 @@ function makeLocalStore(){
       persist(); notify(); invalidateLedgerCache(); if(onProgress) onProgress(items.length, items.length);
       return items.length;
     },
-    async signIn(){ loggedIn=true; authCbs.forEach(cb=>cb(true)); },
+    async signIn(email, pass){
+      if(pass !== "dev-mode-only") throw new Error("Invalid credentials for test mode. Use password: dev-mode-only");
+      loggedIn=true;
+      authCbs.forEach(cb=>cb(true));
+      console.warn("⚠️ Test mode login - for development only. This app should run against Firebase in production.");
+    },
     signOut(){ loggedIn=false; authCbs.forEach(cb=>cb(false)); },
     onAuth(cb){ authCbs.add(cb); cb(loggedIn); },
     async exportOwingCsv(){
       const owing = await this.listOwing();
+      const ledgers = await Promise.all(owing.map(c=>this.getLedger(c.id)));
       let csv = "Name,Job Card,Outstanding (₹),Payment History\n";
-      for(const c of owing){
-        const entries = await this.getLedger(c.id);
-        const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
+      for(let i=0;i<owing.length;i++){
+        const c=owing[i];
+        const payments = ledgers[i].filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
         csv += `"${esc(c.name)}","${esc(c.jobCard)}",${c.balance},"${esc(payments)}"\n`;
       }
       return csv;
@@ -650,13 +459,21 @@ function makeLocalStore(){
     },
     async importAll(backup, onProgress){
       if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
+      const validTypes = ["charge", "payment", "forgive"];
       let done=0;
       for(const r of backup.citizens){
+        const ledger = (r.ledger||[])
+          .filter(e => e && validTypes.includes(e.type) && e.amount)
+          .map(e=>{
+            const amt = Number(e.amount);
+            if(isNaN(amt) || amt <= 0) return null;
+            return { entryId:e.entryId||String(++clock), type:e.type, amount:amt, note:e.note||"",
+              date:e.date||"", deferred:e.deferred||false, createdAt:(e.createdAtMs||++clock) };
+          })
+          .filter(e => e !== null);
         data.citizens[r.id]={ jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, phone:r.phone||"",
           totalCharged:r.totalCharged||0, totalPaid:r.totalPaid||0, balance:r.balance||0, deferredTotal:r.deferredTotal||0,
-          createdAt:++clock, updatedAt:++clock, pendingPayments:[],
-          ledger:(r.ledger||[]).map(e=>({ entryId:e.entryId||String(++clock), type:e.type, amount:e.amount, note:e.note,
-            date:e.date||"", deferred:e.deferred||false, createdAt:(e.createdAtMs||++clock) })) };
+          createdAt:++clock, updatedAt:++clock, pendingPayments:[], ledger };
         recalcTotals(data.citizens[r.id]);
         if((++done % 50)===0 && onProgress) onProgress(done, backup.citizens.length);
       }
@@ -764,53 +581,73 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     subscribe(cb){
       const q=fs.query(fs.collection(db,"citizens"), fs.orderBy("name"));
-      return fs.onSnapshot(q, snap=> cb(snap.docs.map(d=>({ id:d.id, ...d.data() }))));
+      return fs.onSnapshot(q,
+        snap=>{
+          try{
+            cb(snap.docs.map(d=>({ id:d.id, ...d.data() })));
+          } catch(e){
+            console.error("Error in subscribe callback:", e);
+          }
+        },
+        error=>{
+          console.error("Firestore subscribe error:", error);
+        }
+      );
     },
     async listOwing(){
       const snap=await fs.getDocs(fs.collection(db,"citizens"));
-      const out=[];
-      for(const d of snap.docs){
-        const c=d.data();
-        if(!excludedPeriods.length){
-          const effBal = Number(c.balance || 0);
-          if(effBal>0) out.push({ id:d.id, ...c, balance:effBal });
-          continue;
-        }
-        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
-        let includedCharged=0;
-        ledSnap.docs.forEach(doc=>{
-          const e=doc.data();
-          if(e.type==="charge" && !e.deferred && !isChargeExcluded(e)){
-            includedCharged += Number(e.amount || 0);
-          }
-        });
-        const effBal = includedCharged - Number(c.totalPaid || 0);
-        if(effBal>0) out.push({ id:d.id, ...c, balance:effBal });
+      if(!excludedPeriods.length){
+        return snap.docs
+          .map(d=>({ id:d.id, ...d.data(), balance:Number(d.data().balance || 0) }))
+          .filter(c=>c.balance>0);
       }
-      return out;
+      const ledgerPromises = snap.docs.map(d=>
+        fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"))
+          .then(ledSnap=>{
+            const c=d.data();
+            let includedCharged=0;
+            ledSnap.docs.forEach(doc=>{
+              const e=doc.data();
+              if(e.type==="charge" && !e.deferred && !isChargeExcluded(e)){
+                includedCharged += Number(e.amount || 0);
+              }
+            });
+            const effBal = includedCharged - Number(c.totalPaid || 0);
+            return effBal>0 ? { id:d.id, ...c, balance:effBal } : null;
+          })
+      );
+      const results = await Promise.all(ledgerPromises);
+      return results.filter(r=>r!==null);
     },
     async exists(id){ return (await fs.getDoc(fs.doc(db,"citizens",id))).exists(); },
     async addCitizen(id, d){
+      if(typeof id !== 'string' || !id) throw new Error("Invalid citizen ID");
+      if(!d.name || typeof d.name !== 'string') throw new Error("Citizen name is required");
+      if(!d.jobCard || typeof d.jobCard !== 'string') throw new Error("Job card is required");
       await fs.setDoc(fs.doc(db,"citizens",id), {...d, createdAt:fs.serverTimestamp(), updatedAt:fs.serverTimestamp()});
     },
     async addEntry(id, type, amount, note, date, deferred=false){
+      const validTypes = ["charge", "payment", "forgive"];
+      if(!validTypes.includes(type)) throw new Error("Invalid entry type");
+      const amt = Number(amount);
+      if(!Number.isFinite(amt) || amt <= 0) throw new Error("Amount must be a positive number");
       const eRef=fs.doc(fs.collection(db,"citizens",id,"ledger"));
-      await fs.setDoc(eRef, { entryId:eRef.id, type, amount, note, date, deferred, createdAt:fs.serverTimestamp() });
-      const entry={ entryId:eRef.id, type, amount, note, date, deferred, createdAt:Date.now() };
+      await fs.setDoc(eRef, { entryId:eRef.id, type, amount:amt, note:String(note||""), date:String(date||""), deferred, createdAt:fs.serverTimestamp() });
+      const entry={ entryId:eRef.id, type, amount:amt, note, date, deferred, createdAt:Date.now() };
       const entries=ledgerCache.get(id)||[];
       entries.push(entry);
       ledgerCache.set(id,entries); periodStatsCache=null;
       const updates={ updatedAt:fs.serverTimestamp() };
       if(type==="charge"){
-        updates.totalCharged=fs.increment(amount);
-        if(deferred) updates.deferredTotal=fs.increment(amount);
-        else updates.balance=fs.increment(amount);
+        updates.totalCharged=fs.increment(amt);
+        if(deferred) updates.deferredTotal=fs.increment(amt);
+        else updates.balance=fs.increment(amt);
       } else if(type==="payment"){
-        updates.totalPaid=fs.increment(amount);
-        updates.balance=fs.increment(-amount);
+        updates.totalPaid=fs.increment(amt);
+        updates.balance=fs.increment(-amt);
       } else if(type==="forgive"){
-        updates.totalCharged=fs.increment(-amount);
-        updates.balance=fs.increment(-amount);
+        updates.totalCharged=fs.increment(-amt);
+        updates.balance=fs.increment(-amt);
       }
       await fs.updateDoc(fs.doc(db,"citizens",id),updates);
     },
@@ -831,10 +668,12 @@ function makeFirebaseStore({ auth, db, fs, au }){
       await this.addEntry(id, "forgive", amount, note, todayISO());
     },
     async addPendingPayment(id, amount){
+      const amt = Number(amount);
+      if(!Number.isFinite(amt) || amt <= 0) throw new Error("Amount must be a positive number");
       const ppRef=fs.collection(db,"citizens",id,"pendingPayments");
       const newRef=fs.doc(ppRef);
-      await fs.setDoc(newRef, { id:newRef.id, amount, date:todayISO(), status:"pending", createdAt:fs.serverTimestamp() });
-      return { id:newRef.id, amount, status:"pending" };
+      await fs.setDoc(newRef, { id:newRef.id, amount:amt, date:todayISO(), status:"pending", createdAt:fs.serverTimestamp() });
+      return { id:newRef.id, amount:amt, status:"pending" };
     },
     async confirmPendingPayment(id, pendingId){
       const ppRef=fs.doc(db,"citizens",id,"pendingPayments",pendingId);
@@ -847,17 +686,18 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     async getPendingPayments(){
       const snap=await fs.getDocs(fs.collection(db,"citizens"));
-      const all=[];
-      for(const d of snap.docs){
+      const ppPromises = snap.docs.map(d=>{
         const id=d.id;
         const c=d.data();
-        const ppSnap=await fs.getDocs(fs.collection(db,"citizens",id,"pendingPayments"));
-        ppSnap.docs.forEach(doc=>{
-          const p=doc.data();
-          if(p.status==="pending") all.push({ citizenId:id, id:doc.id, ...p, name:c.name, jobCard:c.jobCard });
-        });
-      }
-      return all;
+        return fs.getDocs(fs.collection(db,"citizens",id,"pendingPayments"))
+          .then(ppSnap=>
+            ppSnap.docs
+              .filter(doc=>doc.data().status==="pending")
+              .map(doc=>({ citizenId:id, id:doc.id, ...doc.data(), name:c.name, jobCard:c.jobCard }))
+          );
+      });
+      const allResults = await Promise.all(ppPromises);
+      return allResults.flat();
     },
     async deleteEntry(id, entryId){
       await fs.deleteDoc(fs.doc(db,"citizens",id,"ledger",entryId));
@@ -869,6 +709,13 @@ function makeFirebaseStore({ auth, db, fs, au }){
       await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
     },
     async editEntry(id, entryId, updates){
+      if(updates.amount !== undefined){
+        const amt = Number(updates.amount);
+        if(!Number.isFinite(amt) || amt <= 0) throw new Error("Amount must be a positive number");
+        updates.amount = amt;
+      }
+      if(updates.note !== undefined) updates.note = String(updates.note || "");
+      if(updates.date !== undefined) updates.date = String(updates.date || "");
       const ref=fs.doc(db,"citizens",id,"ledger",entryId);
       await fs.updateDoc(ref, updates);
       const entries=ledgerCache.get(id)||[];
@@ -898,9 +745,9 @@ function makeFirebaseStore({ auth, db, fs, au }){
           const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));
           batch.set(eRef,{ entryId:eRef.id, type:e.type, amount:e.amount, note:e.note, date:e.date||"",
             deferred:e.deferred||false, createdAt: e.when? fs.Timestamp.fromDate(e.when) : fs.serverTimestamp() }); ops++;
-          if(ops>=400) await flush();
+          if(ops>=FIRESTORE_BATCH_SIZE) await flush();
         }
-        if(ops>=400) await flush();
+        if(ops>=FIRESTORE_BATCH_SIZE) await flush();
         if((++done % 50)===0 && onProgress) onProgress(done, rows.length);
       }
       await flush(); if(onProgress) onProgress(rows.length, rows.length);
@@ -946,10 +793,11 @@ function makeFirebaseStore({ auth, db, fs, au }){
     onAuth(cb){ au.onAuthStateChanged(auth, u=>cb(!!u)); },
     async exportOwingCsv(){
       const owing = await this.listOwing();
+      const ledgers = await Promise.all(owing.map(c=>this.getLedger(c.id)));
       let csv = "Name,Job Card,Outstanding (₹),Payment History\n";
-      for(const c of owing){
-        const entries = await this.getLedger(c.id);
-        const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
+      for(let i=0;i<owing.length;i++){
+        const c=owing[i];
+        const payments = ledgers[i].filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
         csv += `"${esc(c.name)}","${esc(c.jobCard)}",${c.balance},"${esc(payments)}"\n`;
       }
       return csv;
@@ -981,7 +829,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
       for(const d of cSnap.docs){
         const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
         ledSnap.docs.forEach(ld => { batch.delete(ld.ref); if(++ops>=400) { } });
-        if(ops>=400) await flush();
+        if(ops>=FIRESTORE_BATCH_SIZE) await flush();
         batch.delete(d.ref); if(++ops>=400) await flush();
         if(onProgress) onProgress(0, 2);
       }
@@ -1032,32 +880,53 @@ function makeFirebaseStore({ auth, db, fs, au }){
       if(onProgress) onProgress(0, 3);
       const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
       let batch=fs.writeBatch(db), ops=0;
-      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
-      for(const d of cSnap.docs){
-        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
-        ledSnap.docs.forEach(ld => { batch.delete(ld.ref); if(++ops>=400) { } });
-        if(ops>=400) await flush();
-        batch.delete(d.ref); if(ops>=400) await flush();
-      }
-      await flush();
-      if(onProgress) onProgress(1, 3);
-      batch=fs.writeBatch(db); ops=0; let done=0;
-      for(const r of backup.citizens){
-        const cRef=fs.doc(db,"citizens",r.id);
-        batch.set(cRef,{ jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, phone:r.phone||"",
-          totalCharged:r.totalCharged||0, totalPaid:r.totalPaid||0, balance:r.balance||0, deferredTotal:r.deferredTotal||0,
-          updatedAt:fs.serverTimestamp() }); if(++ops>=400) await flush();
-        for(const e of (r.ledger||[])){
-          const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));
-          batch.set(eRef,{ entryId:e.entryId||eRef.id, type:e.type, amount:e.amount, note:e.note, date:e.date||"", deferred:e.deferred||false,
-            createdAt: e.createdAtMs? fs.Timestamp.fromMillis(e.createdAtMs) : fs.serverTimestamp() }); if(++ops>=400) await flush();
+      const flush=async()=>{
+        if(ops>0){
+          try{
+            await batch.commit();
+            batch=fs.writeBatch(db);
+            ops=0;
+          } catch(e){
+            console.error("Batch commit failed during importAll:", e);
+            throw new Error(`Database write failed: ${e.message}`);
+          }
         }
-        if((++done % 50)===0 && onProgress) onProgress(2, 3);
+      };
+      try{
+        for(const d of cSnap.docs){
+          const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
+          ledSnap.docs.forEach(ld => { batch.delete(ld.ref); if(++ops>=400) { } });
+          if(ops>=FIRESTORE_BATCH_SIZE) await flush();
+          batch.delete(d.ref); if(++ops>=400) await flush();
+        }
+        await flush();
+        if(onProgress) onProgress(1, 3);
+        batch=fs.writeBatch(db); ops=0; let done=0;
+        const validTypes = ["charge", "payment", "forgive"];
+        for(const r of backup.citizens){
+          const cRef=fs.doc(db,"citizens",r.id);
+          batch.set(cRef,{ jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, phone:r.phone||"",
+            totalCharged:r.totalCharged||0, totalPaid:r.totalPaid||0, balance:r.balance||0, deferredTotal:r.deferredTotal||0,
+            updatedAt:fs.serverTimestamp() }); if(++ops>=400) await flush();
+          for(const e of (r.ledger||[])){
+            if(!e || !validTypes.includes(e.type) || !e.amount) continue;
+            const amt = Number(e.amount);
+            if(isNaN(amt) || amt <= 0) continue;
+            const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));
+            batch.set(eRef,{ entryId:e.entryId||eRef.id, type:e.type, amount:amt, note:e.note||"", date:e.date||"", deferred:e.deferred||false,
+              createdAt: e.createdAtMs? fs.Timestamp.fromMillis(e.createdAtMs) : fs.serverTimestamp() });
+            if(++ops>=400) await flush();
+          }
+          if((++done % 50)===0 && onProgress) onProgress(2, 3);
+        }
+        await flush();
+        invalidateLedgerCache();
+        if(onProgress) onProgress(3, 3);
+        return backup.citizens.length;
+      } catch(e){
+        console.error("importAll failed:", e);
+        throw e;
       }
-      await flush();
-      invalidateLedgerCache();
-      if(onProgress) onProgress(3, 3);
-      return backup.citizens.length;
     },
     async getImportedPeriods(){ const s=await fs.getDoc(fs.doc(db,"meta","imports")); return s.exists()? (s.data().periods||[]) : []; },
     async recordImportedPeriod(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { periods:fs.arrayUnion(p) }, {merge:true}); },
@@ -1069,7 +938,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
       for(const id of citizenIds){
         const {totalCharged, totalPaid, balance, deferredTotal} = recalcFromLedger(ledgerCache.get(id));
         batch.update(fs.doc(db,"citizens",id),{ totalCharged, totalPaid, balance, deferredTotal, updatedAt:fs.serverTimestamp() }); ops++;
-        if(ops>=400) await flush();
+        if(ops>=FIRESTORE_BATCH_SIZE) await flush();
         if((++done%50)===0&&onProgress) onProgress(done, citizenIds.length);
       }
       await flush();
@@ -1091,10 +960,18 @@ function makeFirebaseStore({ auth, db, fs, au }){
   };
 }
 
-/* ---------- choose backend ---------- */
-let citizensUnsub=null, allCitizens=[], rawCitizens=[], loggedIn=false, store=null, isLocalMode=false;
-let dashboardRefreshSeq=0, dashboardRefreshTimer=null;
-let ledgerCache=new Map(), periodStatsCache=null, cacheRefreshTimer=null;
+/* ---------- Global State ---------- */
+// Auth & Data Store
+let store=null, loggedIn=false, isLocalMode=false;
+// Firebase Realtime Subscription
+let citizensUnsub=null;
+// Citizen Data
+let allCitizens=[], rawCitizens=[];
+// Caching & Performance
+let ledgerCache=new Map(), periodStatsCache=null;
+let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null;
+// Configuration
+let excludedPeriods=[];
 
 const notConfigured = Object.values(firebaseConfig).some(v => v === "PASTE_HERE");
 if(notConfigured){
@@ -1110,7 +987,30 @@ if(notConfigured){
   }
 }
 if(isLocalMode) addTestLoginHint();
+
+if(!isLocalMode){
+  console.warn("⚠️ SECURITY CHECK: Ensure Firestore security rules are deployed. See FIRESTORE_SECURITY_RULES.md for configuration.");
+}
 store.onAuth(onAuth);
+
+let consecutiveErrors = 0;
+let connectionWarningShown = false;
+function handleOperationError(operation, error){
+  consecutiveErrors++;
+  if(consecutiveErrors > 2 && !connectionWarningShown){
+    connectionWarningShown = true;
+    showModeBanner("⚠️ Connection issues detected. Some changes may not be saved. Check your internet connection.");
+  }
+  console.error(`Operation "${operation}" failed:`, error);
+}
+function clearOperationErrors(){
+  consecutiveErrors = 0;
+  if(connectionWarningShown){
+    connectionWarningShown = false;
+    const banner = document.querySelector(".config-warn");
+    if(banner && banner.textContent.includes("Connection issues")) banner.remove();
+  }
+}
 
 function showModeBanner(msg){
   document.querySelector("main").insertAdjacentHTML("afterbegin", `<div class="config-warn">${msg}</div>`);
@@ -1144,14 +1044,13 @@ async function onAuth(isIn){
   if(isIn){
     $("loginCard").classList.add("hidden");
     $("dashboard").classList.remove("hidden");
-    // Excluded periods live in Firestore behind admin-only read rules now that
-    // there's no public view. Load them *before* subscribing to the citizen
-    // list so the first dashboard render already has the right exclusions,
-    // instead of a stale/default value that self-corrects a moment later.
-    try{ excludedPeriods = await store.getExcludedPeriods(); }
-    catch(err){ console.error("Failed to load excluded periods:", err); }
-    subscribeCitizens();
-    refreshPending();
+    try{
+      await Promise.all([
+        store.getExcludedPeriods().then(p=>{ excludedPeriods = p; }),
+        Promise.resolve(subscribeCitizens())
+      ]);
+    } catch(err){ console.error("Failed to load excluded periods:", err); }
+    setTimeout(refreshPending, 0);
   } else {
     $("loginCard").classList.remove("hidden");
     $("dashboard").classList.add("hidden");
@@ -1186,9 +1085,12 @@ function invalidateLedgerCache(id){
 function recalcFromLedger(entries){
   let tc=0, tp=0, dt=0;
   for(const e of entries){
-    if(e.type==="charge"){ if(e.deferred) dt+=e.amount; else tc+=e.amount; }
-    else if(e.type==="payment") tp+=e.amount;
-    else if(e.type==="forgive") tc-=e.amount;
+    if(!e || typeof e.amount === 'undefined') continue;
+    const amt = Number(e.amount) || 0;
+    if(isNaN(amt)) { console.warn("Invalid amount in ledger entry:", e); continue; }
+    if(e.type==="charge"){ if(e.deferred) dt+=amt; else tc+=amt; }
+    else if(e.type==="payment") tp+=amt;
+    else if(e.type==="forgive") tc-=amt;
   }
   return { totalCharged:tc+dt, totalPaid:tp, balance:tc-tp, deferredTotal:dt };
 }
@@ -1213,18 +1115,24 @@ function scheduleDashboardRefresh(){
   // triggering many rapid writes) into a single ledger refetch instead of
   // one full refetch per event.
   clearTimeout(dashboardRefreshTimer);
-  dashboardRefreshTimer = setTimeout(refreshDashboard, 250);
+  dashboardRefreshTimer = setTimeout(refreshDashboard, DASHBOARD_REFRESH_DEBOUNCE_MS);
   clearTimeout(cacheRefreshTimer);
-  cacheRefreshTimer = setTimeout(()=>{ if(excludedPeriods.length) store.getAllLedgers().catch(()=>{}); }, 5000);
+  cacheRefreshTimer = setTimeout(()=>{
+    if(excludedPeriods.length) store.getAllLedgers().catch(e=>{
+      console.warn("Background ledger cache refresh failed:", e);
+    });
+  }, CACHE_REFRESH_DELAY_MS);
 }
 async function refreshDashboard(){
   const seq = ++dashboardRefreshSeq;
-  let list = rawCitizens;
+  let list = rawCitizens || [];
   if(excludedPeriods.length){
     if(ledgerCache.size===0){
       try{ await store.getAllLedgers(); }catch(e){ console.error("Failed to load ledgers:", e); }
     }
-    list = list.map(c => ({...c, ledger: ledgerCache.get(c.id) || []}));
+    if(list.length > 0) {
+      list = list.map(c => ({...c, ledger: ledgerCache.get(c.id) || []}));
+    }
   }
   if(seq !== dashboardRefreshSeq) return; // superseded by a newer refresh; drop this stale result
   allCitizens = list;
@@ -1303,59 +1211,80 @@ $("adminFilter").addEventListener("change", ()=>{
 $("periodSel").addEventListener("change", ()=>{ periodFilter=$("periodSel").value; adminShown=20; renderList(); });
 $("periodSel").addEventListener("focus", ()=>{ if(!periodsReady && !loadingPeriods) loadPendingPeriods(); });
 
-function renderList(){
-  const term = $("adminSearch").value.trim().toLowerCase();
-  const showPeriod = (adminFilter==="pending" && !term);
-  $("periodWrap").classList.toggle("hidden", !showPeriod);
-
-  let list = allCitizens.slice();
-  if(term){
-    list = list.filter(c => (c.jobCard||c.id).toLowerCase().includes(term) || (c.name||"").toLowerCase().includes(term));
-  } else if(adminFilter==="pending"){
+function filterCitizenList(citizens, searchTerm, filter, periodFilter){
+  let list = citizens.slice();
+  if(searchTerm){
+    list = list.filter(c => (c.jobCard||c.id).toLowerCase().includes(searchTerm) || (c.name||"").toLowerCase().includes(searchTerm));
+  } else if(filter==="pending"){
     list = list.filter(c => getEffectiveBalance(c)>0);
     if(periodFilter){
       if(!periodsReady && !loadingPeriods) loadPendingPeriods();
       list = list.filter(c => (unpaidCache.get(c.id)||[]).includes(periodFilter));
     }
-  } else if(adminFilter==="deferred"){
+  } else if(filter==="deferred"){
     list = list.filter(c => getDeferredAmount(c)>0);
-  } else if(adminFilter==="overpaid"){
+  } else if(filter==="overpaid"){
     list = list.filter(c => getEffectiveBalance(c)<0);
   }
   list.sort(byCardNo);
-  const total=list.length;
-  if(!total){ $("adminList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet."}</div>`; return; }
-  const shown=Math.min(adminShown, total);
-  const cards = list.slice(0, shown).map(c=>{
-    const bal=getEffectiveBalance(c); const deferred=getDeferredAmount(c); const st=statusOf(c);
-    let small, balText, balColor;
-    if(adminFilter==="deferred"){
-      small = `${esc(c.jobCard||c.id)} · Deferred ${fmt(deferred)}`;
-      balText = fmt(deferred);
-      balColor = 'var(--partial)';
-    } else if(adminFilter==="overpaid"){
-      small = `${esc(c.jobCard||c.id)} · Overpaid`;
-      balText = fmt(Math.abs(bal));
-      balColor = 'var(--paid)';
-    } else {
-      small = esc(c.jobCard||c.id);
-      balColor = bal>0 ? 'var(--due)' : 'var(--paid)';
-      balText = bal<0 ? `₹0 (+${fmt(Math.abs(bal))})` : fmt(Math.max(0,bal));
-    }
-    return `<div class="citizen-row" data-id="${esc(c.id)}" style="display:flex;align-items:center;gap:10px;padding:12px 15px;border-top:1px solid var(--border);width:100%;cursor:pointer">
-      <span class="dot ${st}"></span>
-      <span class="info" style="flex:1;min-width:0">
-        <b style="display:block;font-weight:600;font-size:15px">${esc(c.name||"—")}</b>
-        <small style="font-size:12px;color:var(--muted);display:block;margin-top:2px">${small}</small>
-      </span>
-      <span class="bal money" style="white-space:nowrap;color:${balColor}">${balText}</span>
-    </div>`;
-  }).join("");
-  $("adminList").innerHTML = cards +
-    (shown<total ? `<button class="btn block ghost small" id="adminMore" style="margin-top:12px">Show next ${Math.min(ADMIN_STEP, total-shown)}</button>` : ``);
+  return list;
+}
+
+function buildCitizenCardHTML(citizen, filter){
+  const bal = getEffectiveBalance(citizen);
+  const deferred = getDeferredAmount(citizen);
+  const st = statusOf(citizen);
+  let small, balText, balColor;
+
+  if(filter==="deferred"){
+    small = `${esc(citizen.jobCard||citizen.id)} · Deferred ${fmt(deferred)}`;
+    balText = fmt(deferred);
+    balColor = 'var(--partial)';
+  } else if(filter==="overpaid"){
+    small = `${esc(citizen.jobCard||citizen.id)} · Overpaid`;
+    balText = fmt(Math.abs(bal));
+    balColor = 'var(--paid)';
+  } else {
+    small = esc(citizen.jobCard||citizen.id);
+    balColor = bal>0 ? 'var(--due)' : 'var(--paid)';
+    balText = bal<0 ? `₹0 (+${fmt(Math.abs(bal))})` : fmt(Math.max(0,bal));
+  }
+
+  return `<div class="citizen-row" data-id="${esc(citizen.id)}" style="display:flex;align-items:center;gap:10px;padding:12px 15px;border-top:1px solid var(--border);width:100%;cursor:pointer">
+    <span class="dot ${st}"></span>
+    <span class="info" style="flex:1;min-width:0">
+      <b style="display:block;font-weight:600;font-size:15px">${esc(citizen.name||"—")}</b>
+      <small style="font-size:12px;color:var(--muted);display:block;margin-top:2px">${small}</small>
+    </span>
+    <span class="bal money" style="white-space:nowrap;color:${balColor}">${balText}</span>
+  </div>`;
+}
+
+function attachCitizenListListeners(){
   document.querySelectorAll("#adminList .citizen-row").forEach(b=>
     b.addEventListener("click",()=>openCitizen(b.dataset.id)));
-  if($("adminMore")) $("adminMore").addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
+  const moreBtn = $("adminMore");
+  if(moreBtn) moreBtn.addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
+}
+
+function renderList(){
+  const term = $("adminSearch").value.trim().toLowerCase();
+  const showPeriod = (adminFilter==="pending" && !term);
+  $("periodWrap").classList.toggle("hidden", !showPeriod);
+
+  const list = filterCitizenList(allCitizens, term, adminFilter, periodFilter);
+  const total = list.length;
+  if(!total){
+    $("adminList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet."}</div>`;
+    return;
+  }
+
+  const shown = Math.min(adminShown, total);
+  const cards = list.slice(0, shown).map(c => buildCitizenCardHTML(c, adminFilter)).join("");
+  $("adminList").innerHTML = cards +
+    (shown<total ? `<button class="btn block ghost small" id="adminMore" style="margin-top:12px">Show next ${Math.min(ADMIN_STEP, total-shown)}</button>` : ``);
+
+  attachCitizenListListeners();
 }
 $("settingsBtn").addEventListener("click", openSettings);
 
@@ -1388,20 +1317,118 @@ async function openSettings(){
   $("settingsLogout").addEventListener("click", doLogout);
 }
 
+function buildPeriodRowHTML(period, stats, isExcluded){
+  return `<div class="period-row" data-original="${esc(period)}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+    <label class="switch" style="flex:none"><input type="checkbox" class="period-toggle" value="${esc(period)}" ${!isExcluded?"checked":""}><span class="switch-track"><span class="switch-thumb"></span></span></label>
+    <div style="flex:1;min-width:0"><span class="period-name"><b style="font-size:14px">${esc(prettyPeriod(period))}</b></span><br><small style="font-size:12px;color:var(--muted)">${stats.count} charge${stats.count===1?"":"s"} · ${fmt(stats.amount)}</small></div>
+    <button class="period-rename-btn" data-period="${esc(period)}" style="background:transparent;border:none;cursor:pointer;font-size:14px;padding:4px;color:var(--muted)" title="Rename">✏️</button>
+  </div>`;
+}
+
+function renderPeriodsList(periods, stats, excluded){
+  if(!periods.length) return '<div style="color:var(--muted)">No periods found yet.</div>';
+  return periods.map(p => {
+    const s = stats.get(p) || {count:0, amount:0};
+    const isExcl = excluded.includes(p);
+    return buildPeriodRowHTML(p, s, isExcl);
+  }).join("");
+}
+
+function updatePeriodsSaveBtn(pendingRenames){
+  const renCount = pendingRenames.size;
+  const btn = $("savePeriodsBtn");
+  if(renCount===0){ btn.disabled=true; btn.textContent="Save"; return; }
+  btn.disabled=false;
+  btn.textContent=`Save (${renCount} rename${renCount===1?"":"s"})`;
+}
+
+function handlePeriodRename(btn, row, pendingRenames, updateSaveBtn){
+  const oldName = btn.dataset.period;
+  if(pendingRenames.has(oldName)){
+    pendingRenames.delete(oldName);
+    row.classList.remove("period-row-renamed");
+    row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
+    btn.textContent="✏️";
+    updateSaveBtn(pendingRenames);
+    return;
+  }
+
+  row.classList.add("period-row-renamed");
+  row.querySelector(".period-name").innerHTML=`<input class="period-rename-input" value="${esc(oldName)}">`;
+  btn.textContent="✕";
+  const input = row.querySelector(".period-rename-input");
+  input.focus(); input.select();
+
+  function applyRename(){
+    const newVal = input.value.trim();
+    if(newVal && newVal !== oldName){
+      pendingRenames.set(oldName, newVal);
+      row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b> → <b style="font-size:14px;color:var(--green)">${esc(prettyPeriod(newVal))}</b>`;
+      btn.textContent="✕";
+    } else {
+      pendingRenames.delete(oldName);
+      row.classList.remove("period-row-renamed");
+      row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
+      btn.textContent="✏️";
+    }
+    updateSaveBtn(pendingRenames);
+  }
+
+  input.addEventListener("keydown", e=>{
+    if(e.key==="Enter") applyRename();
+    if(e.key==="Escape"){
+      pendingRenames.delete(oldName);
+      row.classList.remove("period-row-renamed");
+      row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
+      btn.textContent="✏️";
+      updateSaveBtn(pendingRenames);
+    }
+  });
+  input.addEventListener("blur", applyRename);
+}
+
+async function handlePeriodsSave(pendingRenames){
+  const msg=$("periodsMsg");
+  const btn=$("savePeriodsBtn");
+  btn.disabled=true;
+  msg.innerHTML='<div class="notice info">Saving…</div>';
+  try{
+    const excl=[];
+    document.querySelectorAll(".period-toggle").forEach(t=>{ if(!t.checked) excl.push(t.value); });
+    await store.setExcludedPeriods(excl);
+    excludedPeriods=excl; periodsReady=false; unpaidCache=new Map();
+    if(periodFilter && excludedPeriods.includes(periodFilter)) periodFilter="";
+    const renameResults = await Promise.all(
+      Array.from(pendingRenames).map(([oldName,newName])=>store.renamePeriod(oldName,newName))
+    );
+    const renamed = renameResults.reduce((sum,n)=>sum+n,0);
+    pendingRenames.clear();
+    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excl.length} exclusions, ${renamed} rename${renamed===1?"":"s"}.</div>`;
+    toast("Periods updated");
+    await refreshDashboard(); loadPendingPeriods();
+  }catch(err){
+    console.error(err);
+    msg.innerHTML='<div class="notice err">Failed to save.</div>';
+    btn.disabled=false;
+  }
+}
+
+function attachPeriodListeners(pendingRenames){
+  document.querySelectorAll(".period-rename-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const row = btn.closest(".period-row");
+      handlePeriodRename(btn, row, pendingRenames, updatePeriodsSaveBtn);
+    });
+  });
+  $("savePeriodsBtn").addEventListener("click", ()=>handlePeriodsSave(pendingRenames));
+}
+
 async function openManagePeriods(){
   if(ledgerCache.size===0) await store.getAllLedgers();
   const { periods, stats } = getPeriodStats();
   const excluded = await store.getExcludedPeriods();
   const pendingRenames = new Map();
-  const rows = periods.length ? periods.map(p => {
-    const s = stats.get(p) || {count:0, amount:0};
-    const isExcl = excluded.includes(p);
-    return `<div class="period-row" data-original="${esc(p)}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-      <label class="switch" style="flex:none"><input type="checkbox" class="period-toggle" value="${esc(p)}" ${!isExcl?"checked":""}><span class="switch-track"><span class="switch-thumb"></span></span></label>
-      <div style="flex:1;min-width:0"><span class="period-name"><b style="font-size:14px">${esc(prettyPeriod(p))}</b></span><br><small style="font-size:12px;color:var(--muted)">${s.count} charge${s.count===1?"":"s"} · ${fmt(s.amount)}</small></div>
-      <button class="period-rename-btn" data-period="${esc(p)}" style="background:transparent;border:none;cursor:pointer;font-size:14px;padding:4px;color:var(--muted)" title="Rename">✏️</button>
-    </div>`;
-  }).join("") : '<div style="color:var(--muted)">No periods found yet.</div>';
+  const rows = renderPeriodsList(periods, stats, excluded);
 
   openSheet("Manage Periods", `
     <p style="font-size:13px;color:var(--muted);margin:0 0 14px">Toggle exclusion and rename periods. Unchecked periods are excluded from balance calculations.</p>
@@ -1410,68 +1437,7 @@ async function openManagePeriods(){
     <div id="periodsMsg" style="margin-top:12px"></div>
   `);
 
-  function updateSaveBtn(){
-    const renCount = pendingRenames.size;
-    const btn = $("savePeriodsBtn");
-    if(renCount===0){ btn.disabled=true; btn.textContent="Save"; return; }
-    btn.disabled=false;
-    btn.textContent=`Save (${renCount} rename${renCount===1?"":"s"})`;
-  }
-  document.querySelectorAll(".period-rename-btn").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const oldName = btn.dataset.period;
-      const row = btn.closest(".period-row");
-      if(pendingRenames.has(oldName)){
-        pendingRenames.delete(oldName);
-        row.classList.remove("period-row-renamed");
-        row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
-        btn.textContent="✏️";
-        updateSaveBtn();
-        return;
-      }
-      row.classList.add("period-row-renamed");
-      row.querySelector(".period-name").innerHTML=`<input class="period-rename-input" value="${esc(oldName)}">`;
-      btn.textContent="✕";
-      const input = row.querySelector(".period-rename-input");
-      input.focus(); input.select();
-      function apply(){
-        const newVal = input.value.trim();
-        if(newVal && newVal !== oldName){
-          pendingRenames.set(oldName, newVal);
-          row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b> → <b style="font-size:14px;color:var(--green)">${esc(prettyPeriod(newVal))}</b>`;
-          btn.textContent="✕";
-        } else {
-          pendingRenames.delete(oldName);
-          row.classList.remove("period-row-renamed");
-          row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`;
-          btn.textContent="✏️";
-        }
-        updateSaveBtn();
-      }
-      input.addEventListener("keydown", e=>{ if(e.key==="Enter") apply(); if(e.key==="Escape"){ pendingRenames.delete(oldName); row.classList.remove("period-row-renamed"); row.querySelector(".period-name").innerHTML=`<b style="font-size:14px">${esc(prettyPeriod(oldName))}</b>`; btn.textContent="✏️"; updateSaveBtn(); }});
-      input.addEventListener("blur", apply);
-    });
-  });
-  $("savePeriodsBtn").addEventListener("click", async ()=>{
-    const msg=$("periodsMsg"); const btn=$("savePeriodsBtn"); btn.disabled=true;
-    msg.innerHTML='<div class="notice info">Saving…</div>';
-    try{
-      const excl=[];
-      document.querySelectorAll(".period-toggle").forEach(t=>{ if(!t.checked) excl.push(t.value); });
-      await store.setExcludedPeriods(excl);
-      excludedPeriods=excl; periodsReady=false; unpaidCache=new Map();
-      if(periodFilter && excludedPeriods.includes(periodFilter)) periodFilter="";
-      let renamed=0;
-      for(const [oldName,newName] of pendingRenames){
-        await store.renamePeriod(oldName, newName);
-        renamed++;
-      }
-      pendingRenames.clear();
-      msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excl.length} exclusions, ${renamed} rename${renamed===1?"":"s"}.</div>`;
-      toast("Periods updated");
-      await refreshDashboard(); loadPendingPeriods();
-    }catch(err){ console.error(err); msg.innerHTML='<div class="notice err">Failed to save.</div>'; btn.disabled=false; }
-  });
+  attachPeriodListeners(pendingRenames);
 }
 
 function closeSettings(){
@@ -1516,7 +1482,7 @@ async function doDeleteAllFromSettings(){
 function doLogout(){
   store.signOut();
   toast("Signed out");
-  setTimeout(()=>location.reload(),1000);
+  setTimeout(()=>location.reload(),LOGOUT_DELAY_MS);
 }
 
 /* ============================================================
@@ -1555,7 +1521,7 @@ async function refreshPending(){
 /* ============================================================
    ADMIN — import (unchanged, but included for completeness)
    ============================================================ */
-let pendingImport = null, pendingMonthly = null, pendingBank = null, pendingUpload = null;
+let pendingBank = null, pendingUpload = null;
 
 function openImportExport(){
   openSheet("Import / Export", `
@@ -1606,7 +1572,7 @@ async function loadPeriods(){
       </label>
     `).join('');
     $("periodsList").innerHTML = list || '<div style="color:var(--muted)">No periods found yet.</div>';
-  }catch(err){ console.error("Load periods error:", err); $("periodsList").innerHTML=`<div class="notice err">Failed to load periods: ${err.message||err}</div>`; }
+  }catch(err){ console.error("Load periods error:", err); $("periodsList").innerHTML=`<div class="notice err">Failed to load periods. Try again.</div>`; }
 }
 async function savePeriods(){
   const toggles = document.querySelectorAll('input[name="period-toggle"]');
@@ -1629,35 +1595,164 @@ async function savePeriods(){
   }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Failed to save. Try again.</div>`; }
   finally{ btn.disabled=false; }
 }
+async function encryptBackupData(data, password){
+  if(!password) return JSON.stringify(data);
+  try{
+    const encoder = new TextEncoder();
+    const dataStr = JSON.stringify(data);
+    const dataBytes = encoder.encode(dataStr);
+    const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+    const pwBytes = encoder.encode(password);
+    const keyMaterial = await crypto.subtle.importKey("raw", pwBytes, {name:"PBKDF2"}, false, ["deriveBits"]);
+    const keyBits = await crypto.subtle.deriveBits({name:"PBKDF2", salt:saltBytes, iterations:100000, hash:"SHA-256"}, keyMaterial, 256);
+    const key = await crypto.subtle.importKey("raw", keyBits, {name:"AES-GCM"}, false, ["encrypt"]);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await crypto.subtle.encrypt({name:"AES-GCM", iv}, key, dataBytes);
+    const container = {v:1, salt:Array.from(saltBytes), iv:Array.from(iv), data:Array.from(new Uint8Array(encrypted))};
+    return JSON.stringify(container);
+  }catch(e){
+    console.error("Encryption failed:", e);
+    throw new Error("Backup encryption failed");
+  }
+}
+
 let backupBusy=false;
 async function doBackup(){
-  if(backupBusy) return; backupBusy=true;
-  const btn=$("backupBtn"); if(btn){ btn.disabled=true; }
-  const msg=$("backupMsg"); msg.innerHTML=`<div class="notice info">Preparing backup…</div>`;
-  try{
-    const data = await store.exportAll((d,t)=>{ msg.innerHTML=`<div class="notice info">Reading… ${d} / ${t}</div>`; });
-    const blob = new Blob([JSON.stringify(data)], {type:"application/json"});
-    const url = URL.createObjectURL(blob);
-    const a=document.createElement("a"); a.href=url; a.download=`nsnvc-backup-${todayISO()}.json`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Backup downloaded — ${data.count} households. Keep it somewhere safe.</div>`;
-  }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Backup failed. Check connection and try again.</div>`; }
-  finally{ backupBusy=false; if(btn) btn.disabled=false; }
+  if(backupBusy) return;
+  backupBusy=true;
+  const btn=$("backupBtn");
+  if(btn) btn.disabled=true;
+
+  openSheet("Download backup", `
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Backup contains all household data including names, phone numbers, and payment history. Consider encrypting it with a password.</p>
+    <div class="field"><label>Encryption password (optional)</label>
+      <input id="backupPw" type="password" placeholder="Leave empty for unencrypted backup"></div>
+    <button class="btn block" id="backupConfirm">Download backup</button>
+  `);
+
+  $("backupConfirm").addEventListener("click", async ()=>{
+    const pw = $("backupPw").value;
+    $("backupConfirm").disabled = true;
+    try{
+      const data = await store.exportAll();
+      const content = await encryptBackupData(data, pw);
+      const fileExt = pw ? ".nsnvc-enc" : ".json";
+      downloadBlob(content, `nsnvc-backup-${todayISO()}${fileExt}`, "application/json");
+      closeSheet();
+      toast(pw ? "Encrypted backup downloaded" : "Backup downloaded - data is NOT encrypted");
+    }catch(err){
+      handleOperationError("backup", err);
+      toast("Backup failed");
+    }finally{
+      $("backupConfirm").disabled = false;
+      backupBusy=false;
+      if(btn) btn.disabled=false;
+    }
+  });
 }
+function validateBackupSchema(backup) {
+  if (!backup || typeof backup !== 'object') throw new Error("Backup must be an object");
+  if (!Array.isArray(backup.citizens)) throw new Error("Backup must contain citizens array");
+  if (backup.citizens.length > BACKUP_MAX_HOUSEHOLDS) throw new Error(`Backup too large (max ${BACKUP_MAX_HOUSEHOLDS} households)`);
+
+  const validTypes = ["charge", "payment", "forgive"];
+  for (let i = 0; i < backup.citizens.length; i++) {
+    const c = backup.citizens[i];
+    if (typeof c.id !== 'string' || !c.id) throw new Error(`Citizen ${i}: missing or invalid id`);
+    if (typeof c.name !== 'string') throw new Error(`Citizen ${i}: missing or invalid name`);
+    if (!Number.isFinite(c.totalCharged) || !Number.isFinite(c.totalPaid) || !Number.isFinite(c.balance)) {
+      throw new Error(`Citizen ${i}: invalid numeric fields`);
+    }
+
+    if (Array.isArray(c.ledger)) {
+      for (let j = 0; j < c.ledger.length; j++) {
+        const e = c.ledger[j];
+        if (!validTypes.includes(e.type)) throw new Error(`Citizen ${i}, entry ${j}: invalid type`);
+        if (!Number.isFinite(e.amount) || e.amount < 0) throw new Error(`Citizen ${i}, entry ${j}: invalid amount`);
+        if (typeof e.note !== 'string') e.note = '';
+        if (typeof e.date !== 'string') e.date = '';
+      }
+    }
+  }
+}
+
+async function decryptBackupData(dataStr, password){
+  try{
+    const container = JSON.parse(dataStr);
+    if(!container.v || !container.salt || !container.iv || !container.data) throw new Error("Invalid encrypted backup format");
+    const encoder = new TextEncoder();
+    const saltBytes = new Uint8Array(container.salt);
+    const ivBytes = new Uint8Array(container.iv);
+    const encryptedBytes = new Uint8Array(container.data);
+    const pwBytes = encoder.encode(password);
+    const keyMaterial = await crypto.subtle.importKey("raw", pwBytes, {name:"PBKDF2"}, false, ["deriveBits"]);
+    const keyBits = await crypto.subtle.deriveBits({name:"PBKDF2", salt:saltBytes, iterations:100000, hash:"SHA-256"}, keyMaterial, 256);
+    const key = await crypto.subtle.importKey("raw", keyBits, {name:"AES-GCM"}, false, ["decrypt"]);
+    const decrypted = await crypto.subtle.decrypt({name:"AES-GCM", iv:ivBytes}, key, encryptedBytes);
+    const decryptedStr = new TextDecoder().decode(decrypted);
+    return JSON.parse(decryptedStr);
+  }catch(e){
+    console.error("Decryption failed:", e);
+    throw new Error("Decryption failed - wrong password or corrupted file");
+  }
+}
+
+async function performRestore(backup, msgElement){
+  try{
+    validateBackupSchema(backup);
+    const ok = await confirmAction(`Restore ${backup.citizens.length} households? It overwrites current records.`, true);
+    if(!ok) return false;
+    msgElement.innerHTML=`<div class="notice info">Restoring…</div>`;
+    await store.importAll(backup, (d,t)=>{ msgElement.innerHTML=`<div class="notice info">Restoring… ${d} / ${t}</div>`; });
+    msgElement.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Restored ${backup.citizens.length} households.</div>`;
+    toast("Restore complete");
+    return true;
+  }catch(err){
+    handleOperationError("restoreBackup", err);
+    msgElement.innerHTML=`<div class="notice err">${esc(err.message)}</div>`;
+    return false;
+  }
+}
+
 async function doRestore(e){
   const file=e.target.files[0]; if(!file) return;
-  const msg=$("backupMsg"); let backup;
-  try{ backup = JSON.parse(await file.text()); }catch(err){ msg.innerHTML=`<div class="notice err">That file isn't a valid backup.</div>`; e.target.value=""; return; }
-  if(!backup || !Array.isArray(backup.citizens)){ msg.innerHTML=`<div class="notice err">That file isn't a valid backup.</div>`; e.target.value=""; return; }
-  const ok = await confirmAction(`Restore ${backup.citizens.length} households from this backup? It overwrites their current records and history.`, true);
-  if(!ok){ e.target.value=""; return; }
-  msg.innerHTML=`<div class="notice info">Restoring…</div>`;
-  try{
-    await store.importAll(backup, (d,t)=>{ msg.innerHTML=`<div class="notice info">Restoring… ${d} / ${t}</div>`; });
-    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Restored ${backup.citizens.length} households.</div>`;
-    toast("Restore complete");
-  }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Restore failed partway. Check connection and try again.</div>`; }
-  e.target.value="";
+  if (file.size > BACKUP_MAX_SIZE_BYTES) {
+    $("backupMsg").innerHTML=`<div class="notice err">Backup file too large (max 5 MB).</div>`;
+    e.target.value="";
+    return;
+  }
+  const fileContent = await file.text();
+  const isEncrypted = file.name.endsWith(".nsnvc-enc");
+
+  if(isEncrypted){
+    openSheet("Restore encrypted backup", `
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px">This backup is encrypted. Enter the password to decrypt it.</p>
+      <div class="field"><label>Password</label>
+        <input id="restorePw" type="password" placeholder="Enter backup password"></div>
+      <button class="btn block" id="restoreConfirm">Decrypt and restore</button>
+      <div id="restoreMsg" style="margin-top:10px"></div>
+    `);
+    $("restoreConfirm").addEventListener("click", async ()=>{
+      const pw = $("restorePw").value;
+      if(!pw){ $("restoreMsg").innerHTML=`<div class="notice err">Password required</div>`; return; }
+      try{
+        const backup = await decryptBackupData(fileContent, pw);
+        const success = await performRestore(backup, $("restoreMsg"));
+        if(success) closeSheet();
+      }finally{
+        e.target.value="";
+      }
+    });
+  } else {
+    const msg = $("backupMsg");
+    try{
+      let backup;
+      try{ backup = JSON.parse(fileContent); }catch(err){ msg.innerHTML=`<div class="notice err">Invalid JSON in backup file.</div>`; e.target.value=""; return; }
+      await performRestore(backup, msg);
+    }finally{
+      e.target.value="";
+    }
+  }
 }
 
 async function ensureXLSX(){
@@ -1665,7 +1760,10 @@ async function ensureXLSX(){
   await new Promise((res,rej)=>{
     const s=document.createElement("script");
     s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-    s.onload=res; s.onerror=()=>rej(new Error("xlsx load failed"));
+    s.integrity="sha512-7k7fBkdEJzlv2DLuGu0eV3g+oFXy6fwS++q8dQRBKtxGGUMqv0Dya5wXFHhjqQ1RkVHNK/3j9LCXPU7A1WjVA==";
+    s.crossOrigin="anonymous";
+    s.onload=res;
+    s.onerror=()=>rej(new Error("xlsx load failed - integrity check or network error"));
     document.head.appendChild(s);
   });
   return window.XLSX;
@@ -1735,7 +1833,7 @@ function loadSheet(ws){
   const guessCharge=_findCol(h,/charge|contribution|amount/i);
   const guessPayment=_findCol(h,/payment|paid|pay/i);
   const guessMode=_findCol(h,/mode|method|cash|bank/i);
-  const sample = rows.find((r,i)=> i>0 && r && r.some(v=>v!=null)) || rows[1];
+  const sample = rows.find((r,i)=> i>0 && r && r.some(v=>v!=null)) || (rows.length > 1 ? rows[1] : []);
   uploadRaw={ rows };
   $("impMsg").innerHTML=`<div class="notice info">Confirm which column is which, then Continue.</div>`;
   $("impPreview").innerHTML=`
@@ -1840,9 +1938,14 @@ async function runUpload(){
       const payItems=pendingUpload.payments.map(it=>({...it, date:dateStr, when}));
       await store.bulkAppendPayments(payItems,(d,t)=>{ done=pendingUpload.charges.length+d; prog.innerHTML=`<div class="notice info">Processing payments… ${d} / ${t}</div>`; });
     }
+    clearOperationErrors();
     prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${pendingUpload.charges.length} charges and ${pendingUpload.payments.length} payments processed.</div>`;
-    pendingUpload=null; setTimeout(()=>{ closeSheet(); toast("Upload complete"); },900);
-  }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Update failed partway. Check connection and try again.</div>`; btn.disabled=false; }
+    pendingUpload=null; setTimeout(()=>{ closeSheet(); toast("Upload complete"); },SHEET_CLOSE_DELAY_MS);
+  }catch(err){
+    handleOperationError("bulkUpload", err);
+    prog.innerHTML=`<div class="notice err">Update failed partway. Check connection and try again.</div>`;
+    btn.disabled=false;
+  }
 }
 
 function openBank(){
@@ -1959,7 +2062,7 @@ async function runBank(){
   try{
     await store.bulkAppendPayments(items,(d,t)=>{ prog.innerHTML=`<div class="notice info">Recording… ${d} / ${t}</div>`; });
     prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${items.length} bank payments recorded.</div>`;
-    pendingBank=null; setTimeout(()=>{ closeSheet(); toast("Bank payments recorded"); },900);
+    pendingBank=null; setTimeout(()=>{ closeSheet(); toast("Bank payments recorded"); },SHEET_CLOSE_DELAY_MS);
   }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Recording failed partway. Check connection and try again.</div>`; btn.disabled=false; }
 }
 
@@ -2045,74 +2148,58 @@ function closeCitizenDetail(){
   renderList();
 }
 
-async function renderCitizenDetail(id){
-  const c = allCitizens.find(x=>x.id===id);
-  const entries = ledgerCache.get(id) || await store.getLedger(id);
-  const bal = getEffectiveBalance(c);
-  const allSorted = [...entries].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-  const INITIAL_HISTORY = 3;
-  let historyExpanded = false;
-  let historyEditing = false;
+function renderEntryRow(entry, editing){
+  const isPayment = entry.type==="payment";
+  const isForgive = entry.type==="forgive";
+  const isDeferred = entry.deferred && entry.type==="charge";
+  const label = entryLabel(entry);
+  const amtClass = isPayment || isForgive ? "payment" : "charge";
+  const amtSign = isPayment || isForgive ? "− " : "+ ";
+  const rowClass = "row" + (isDeferred ? " deferred" : "");
 
-  const renderRows = (list, editing)=>{
-    if(!list.length) return `<div class="empty">No entries yet.</div>`;
-    return list.map(e=>{
-      const isPayment = e.type==="payment";
-      const isForgive = e.type==="forgive";
-      const isDeferred = e.deferred && e.type==="charge";
-      let label = entryLabel(e);
-      let amtClass = isPayment ? "payment" : (isForgive ? "payment" : "charge");
-      let amtSign = isPayment ? "− " : (isForgive ? "− " : "+ ");
-      let rowClass = "row" + (isDeferred ? " deferred" : "");
-      const actions = editing ? `<span class="actions">
-        <button class="edit-entry" data-id="${e.entryId}" data-type="${e.type}">✏️</button>
-        <button class="del-entry" data-id="${e.entryId}">🗑️</button>
-      </span>` : '';
-      let deferToggle = '';
-      if(editing && e.type==="charge"){
-        const checked = e.deferred ? 'checked' : '';
-        deferToggle = `<label class="switch" data-id="${e.entryId}" style="margin-left:8px">
-          <input type="checkbox" class="defer-chk" data-id="${e.entryId}" ${checked}>
-          <span class="switch-track"><span class="switch-thumb"></span></span>
-          <span class="switch-label">Defer</span>
-        </label>`;
-      }
-      return `<div class="${rowClass}">
-        <div class="desc"><div class="desc-head"><b>${esc(label)}</b> ${deferToggle}</div><small>${esc(displayDate(e.date))}</small></div>
-        <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
-        ${actions}
-      </div>`;
-    }).join("");
-  };
+  const actions = editing ? `<span class="actions">
+    <button class="edit-entry" data-id="${entry.entryId}" data-type="${entry.type}">✏️</button>
+    <button class="del-entry" data-id="${entry.entryId}">🗑️</button>
+  </span>` : '';
 
-  const st = statusOf(c);
-  const hasOwing = bal > 0;
-  const headerBadge = hasOwing
-    ? `<span class="badge action action-paid" id="hdrMarkPaid">Mark Paid</span>`
-    : `<span class="badge paid">Cleared</span>`;
-  const actionBadges = hasOwing ? `<div class="badge-row" style="padding:0 18px 14px">
-    <span class="badge action action-pay" id="btnPayment">Payment</span>
-    <span class="badge action action-waive" id="btnWaive">Waive</span>
-  </div>` : '';
-  const totalEntries = allSorted.length;
-  const visibleEntries = historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
-  const hiddenCount = totalEntries - Math.min(INITIAL_HISTORY, totalEntries);
+  let deferToggle = '';
+  if(editing && entry.type==="charge"){
+    const checked = entry.deferred ? 'checked' : '';
+    deferToggle = `<label class="switch" data-id="${entry.entryId}" style="margin-left:8px">
+      <input type="checkbox" class="defer-chk" data-id="${entry.entryId}" ${checked}>
+      <span class="switch-track"><span class="switch-thumb"></span></span>
+      <span class="switch-label">Defer</span>
+    </label>`;
+  }
 
-  $("adminDetail").innerHTML = `
+  return `<div class="${rowClass}">
+    <div class="desc"><div class="desc-head"><b>${esc(label)}</b> ${deferToggle}</div><small>${esc(displayDate(entry.date))}</small></div>
+    <div class="amt ${amtClass}">${amtSign}${fmt(entry.amount)}</div>
+    ${actions}
+  </div>`;
+}
+
+function renderHistoryRows(entries, editing){
+  if(!entries.length) return `<div class="empty">No entries yet.</div>`;
+  return entries.map(e => renderEntryRow(e, editing)).join("");
+}
+
+function buildCitizenDetailHTML(citizen, balance, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount){
+  return `
   <button class="back" id="adminBackBtn">‹ Back</button>
   <div class="statement">
     <div class="top">
       <div>
-        <p class="name">${esc(c.name||"—")}</p>
-        <div class="meta">${esc(c.jobCard||id)}${c.phone?" · "+esc(c.phone):""}</div>
+        <p class="name">${esc(citizen.name||"—")}</p>
+        <div class="meta">${esc(citizen.jobCard||citizen.id)}${citizen.phone?" · "+esc(citizen.phone):""}</div>
       </div>
       ${headerBadge}
     </div>
     <div class="balance-block">
       <div class="label">Remaining balance</div>
-      ${bal<0
-        ? `<div class="amount money zero">${fmt(Math.abs(bal))} <span style="font-size:14px;font-weight:400;color:var(--paid)">overpaid</span></div>`
-        : `<div class="amount money ${bal<=0?'zero':'owing'}">${fmt(Math.max(0,bal))}</div>`}
+      ${balance<0
+        ? `<div class="amount money zero">${fmt(Math.abs(balance))} <span style="font-size:14px;font-weight:400;color:var(--paid)">overpaid</span></div>`
+        : `<div class="amount money ${balance<=0?'zero':'owing'}">${fmt(Math.max(0,balance))}</div>`}
     </div>
     ${actionBadges}
     <div class="ledger">
@@ -2120,51 +2207,85 @@ async function renderCitizenDetail(id){
         <b style="font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">History (${totalEntries})</b>
         <button class="btn small ghost" id="histEditBtn" style="font-size:12px;padding:4px 10px">Edit</button>
       </div>
-      <div id="historyBody">${renderRows(visibleEntries, false)}</div>
+      <div id="historyBody">${historyHTML}</div>
       ${hiddenCount > 0 ? `<button class="btn ghost small" id="histMore" style="width:calc(100% - 36px);margin:4px 18px 10px">See more (${hiddenCount} more)</button>` : ''}
     </div>
     <div style="padding:16px 18px 18px">
       <button class="btn ghost block small" id="delCitizen" style="color:var(--due);border-color:var(--due)">Delete this citizen</button>
     </div>
   </div>`;
+}
 
+async function renderCitizenDetail(id){
+  const c = allCitizens.find(x=>x.id===id);
+  if(!c){
+    $("adminDetail").innerHTML = `<div class="notice err">Citizen not found. Please refresh and try again.</div>`;
+    return;
+  }
+  try{
+    const entries = ledgerCache.get(id) || await store.getLedger(id) || [];
+    const bal = getEffectiveBalance(c);
+    const allSorted = [...entries].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    const INITIAL_HISTORY = 3;
+
+    const state = { historyExpanded: false, historyEditing: false };
+
+    const hasOwing = bal > 0;
+    const headerBadge = hasOwing
+      ? `<span class="badge action action-paid" id="hdrMarkPaid">Mark Paid</span>`
+      : `<span class="badge paid">Cleared</span>`;
+    const actionBadges = hasOwing ? `<div class="badge-row" style="padding:0 18px 14px">
+      <span class="badge action action-pay" id="btnPayment">Payment</span>
+      <span class="badge action action-waive" id="btnWaive">Waive</span>
+    </div>` : '';
+    const totalEntries = allSorted.length;
+    const visibleEntries = state.historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
+    const hiddenCount = totalEntries - Math.min(INITIAL_HISTORY, totalEntries);
+    const historyHTML = renderHistoryRows(visibleEntries, false);
+
+    $("adminDetail").innerHTML = buildCitizenDetailHTML(c, bal, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount);
+    attachCitizenDetailListeners(id, c, bal, allSorted, INITIAL_HISTORY, state);
+  }
+}
+
+function attachCitizenDetailListeners(id, citizen, balance, allSorted, initialHistoryCount, stateRef){
   // Mark Paid
   if($("hdrMarkPaid")) $("hdrMarkPaid").addEventListener("click", async ()=>{
-    const name = c.name || id;
-    const ok = await confirmAction(`Mark ${name} fully paid (${fmt(bal)})?`);
-    if(ok) await markFullyPaid(id, bal);
+    const name = citizen.name || id;
+    const ok = await confirmAction(`Mark ${name} fully paid (${fmt(balance)})?`);
+    if(ok) await markFullyPaid(id, balance);
   });
 
   // Payment badge → open sheet
-  if($("btnPayment")) $("btnPayment").addEventListener("click", ()=> openPaymentSheet(id, bal));
+  if($("btnPayment")) $("btnPayment").addEventListener("click", ()=> openPaymentSheet(id, balance));
 
   // Waive badge → open sheet
-  if($("btnWaive")) $("btnWaive").addEventListener("click", ()=> openWaiveSheet(id, bal));
+  if($("btnWaive")) $("btnWaive").addEventListener("click", ()=> openWaiveSheet(id, balance));
 
   $("delCitizen").addEventListener("click", ()=>deleteCitizen(id));
   $("adminBackBtn").addEventListener("click", closeCitizenDetail);
 
   // Edit button — toggles edit mode
   $("histEditBtn").addEventListener("click", ()=>{
-    historyEditing = !historyEditing;
-    $("histEditBtn").textContent = historyEditing ? "Done" : "Edit";
-    const vis = historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
-    $("historyBody").innerHTML = renderRows(vis, historyEditing);
-    attachHistoryListeners(id, historyEditing);
+    stateRef.historyEditing = !stateRef.historyEditing;
+    $("histEditBtn").textContent = stateRef.historyEditing ? "Done" : "Edit";
+    const vis = stateRef.historyExpanded ? allSorted : allSorted.slice(0, initialHistoryCount);
+    $("historyBody").innerHTML = renderHistoryRows(vis, stateRef.historyEditing);
+    attachHistoryListeners(id, stateRef.historyEditing);
   });
 
   // See more / Show less
   if($("histMore")) $("histMore").addEventListener("click", ()=>{
-    historyExpanded = !historyExpanded;
-    const vis = historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
-    const hid = totalEntries - vis.length;
-    $("historyBody").innerHTML = renderRows(vis, historyEditing);
+    stateRef.historyExpanded = !stateRef.historyExpanded;
+    const vis = stateRef.historyExpanded ? allSorted : allSorted.slice(0, initialHistoryCount);
+    const hid = allSorted.length - vis.length;
+    $("historyBody").innerHTML = renderHistoryRows(vis, stateRef.historyEditing);
     if(hid > 0){
-      $("histMore").textContent = historyExpanded ? "Show less" : `See more (${hid} more)`;
+      $("histMore").textContent = stateRef.historyExpanded ? "Show less" : `See more (${hid} more)`;
     } else {
       $("histMore").remove();
     }
-    attachHistoryListeners(id, historyEditing);
+    attachHistoryListeners(id, stateRef.historyEditing);
   });
 
   attachHistoryListeners(id, false);
@@ -2175,9 +2296,17 @@ function attachHistoryListeners(id, editing){
   document.querySelectorAll(".defer-chk").forEach(chk=>{
     chk.addEventListener("change", async ()=>{
       const entryId = chk.dataset.id;
-      await store.toggleDefer(id, entryId, chk.checked);
-      toast("Deferral updated");
-      await renderCitizenDetail(id);
+      const prevState = !chk.checked;
+      try{
+        await store.toggleDefer(id, entryId, chk.checked);
+        clearOperationErrors();
+        toast("Deferral updated");
+        await renderCitizenDetail(id);
+      } catch(e){
+        handleOperationError("toggleDefer", e);
+        chk.checked = prevState;
+        toast("Failed to update deferral. Please try again.");
+      }
     });
   });
 
@@ -2210,9 +2339,33 @@ async function markFullyPaid(id, bal){
   if(!(bal>0)) return;
   try{
     await store.addEntry(id, "payment", bal, "Cash", todayISO());
+    clearOperationErrors();
     toast("Marked fully paid");
     await renderCitizenDetail(id);
-  }catch(err){ toast("Couldn't save. Try again."); console.error(err); }
+  }catch(err){
+    handleOperationError("markFullyPaid", err);
+    toast("Couldn't save. Try again.");
+  }
+}
+
+async function handlePaymentSubmit(id){
+  const amount = parseFloat($("payAmt").value);
+  if(!(amount>0)){ toast("Enter a valid amount"); return; }
+  if(isNaN(amount)){ toast("Enter a valid amount"); return; }
+  const mode = $("payMode").value;
+  const date = $("payDate").value || todayISO();
+  $("paySubmit").disabled=true;
+  try{
+    await store.addEntry(id, "payment", amount, mode, date);
+    clearOperationErrors();
+    toast("Payment recorded");
+    closeSheet();
+    await renderCitizenDetail(id);
+  }catch(err){
+    handleOperationError("recordPayment", err);
+    toast("Couldn't save. Try again.");
+    $("paySubmit").disabled=false;
+  }
 }
 
 function openPaymentSheet(id, bal){
@@ -2230,19 +2383,27 @@ function openPaymentSheet(id, bal){
     <button class="btn block" id="paySubmit">Record payment</button>
     <div id="payMsg" style="margin-top:10px"></div>
   `);
-  $("paySubmit").addEventListener("click", async ()=>{
-    const amount = parseFloat($("payAmt").value);
-    if(!(amount>0)){ toast("Enter a valid amount"); return; }
-    const mode = $("payMode").value;
-    const date = $("payDate").value || todayISO();
-    $("paySubmit").disabled=true;
-    try{
-      await store.addEntry(id, "payment", amount, mode, date);
-      toast("Payment recorded");
-      closeSheet();
-      await renderCitizenDetail(id);
-    }catch(err){ toast("Couldn't save. Try again."); console.error(err); $("paySubmit").disabled=false; }
-  });
+  $("paySubmit").addEventListener("click", ()=> handlePaymentSubmit(id));
+}
+
+async function handleWaiveSubmit(id){
+  const amount = parseFloat($("waiveAmt").value);
+  if(!(amount>0)){ toast("Enter a valid amount"); return; }
+  if(isNaN(amount)){ toast("Enter a valid amount"); return; }
+  const note = $("waiveNote").value.trim() || "Waived";
+  if(!(await confirmAction(`Waive ${fmt(amount)} for this citizen?`))) return;
+  $("waiveSubmit").disabled=true;
+  try{
+    await store.forgiveDebt(id, amount, note);
+    clearOperationErrors();
+    toast("Debt waived");
+    closeSheet();
+    await renderCitizenDetail(id);
+  }catch(err){
+    handleOperationError("waiveDebt", err);
+    toast("Couldn't save. Try again.");
+    $("waiveSubmit").disabled=false;
+  }
 }
 
 function openWaiveSheet(id, bal){
@@ -2254,19 +2415,7 @@ function openWaiveSheet(id, bal){
     <button class="btn block" id="waiveSubmit">Waive debt</button>
     <div id="waiveMsg" style="margin-top:10px"></div>
   `);
-  $("waiveSubmit").addEventListener("click", async ()=>{
-    const amount = parseFloat($("waiveAmt").value);
-    if(!(amount>0)){ toast("Enter a valid amount"); return; }
-    const note = $("waiveNote").value.trim() || "Waived";
-    if(!(await confirmAction(`Waive ${fmt(amount)} for this citizen?`))) return;
-    $("waiveSubmit").disabled=true;
-    try{
-      await store.forgiveDebt(id, amount, note);
-      toast("Debt waived");
-      closeSheet();
-      await renderCitizenDetail(id);
-    }catch(err){ toast("Couldn't save. Try again."); console.error(err); $("waiveSubmit").disabled=false; }
-  });
+  $("waiveSubmit").addEventListener("click", ()=> handleWaiveSubmit(id));
 }
 
 
@@ -2274,17 +2423,44 @@ async function forgiveDebt(id, amount, note){
   if(!(amount>0)) return;
   try{
     await store.forgiveDebt(id, amount, note);
+    clearOperationErrors();
     toast("Debt waived");
     await renderCitizenDetail(id);
-  }catch(err){ toast("Couldn't save. Try again."); console.error(err); }
+  }catch(err){
+    handleOperationError("forgiveDebt", err);
+    toast("Couldn't save. Try again.");
+  }
 }
 
 async function deleteCitizen(id){
   if(!(await confirmAction("Delete this citizen and all their records? This cannot be undone.", true))) return;
   try{
     await store.deleteCitizen(id);
-    closeCitizenDetail(); toast("Citizen deleted");
-  }catch(err){ toast("Couldn't delete."); console.error(err); }
+    clearOperationErrors();
+    closeCitizenDetail();
+    toast("Citizen deleted");
+  }catch(err){
+    handleOperationError("deleteCitizen", err);
+    toast("Couldn't delete.");
+  }
+}
+
+async function handleEditEntrySubmit(citizenId, entryId){
+  const amt = parseFloat($("editAmt").value);
+  if(!(amt>0)){ toast("Enter valid amount"); return; }
+  if(isNaN(amt)){ toast("Enter valid amount"); return; }
+  const note = $("editNote").value.trim();
+  const date = $("editDate").value;
+  try{
+    await store.editEntry(citizenId, entryId, { amount:amt, note, date });
+    clearOperationErrors();
+    toast("Entry updated");
+    closeSheet();
+    await renderCitizenDetail(citizenId);
+  }catch(err){
+    handleOperationError("editEntry", err);
+    toast("Failed to update");
+  }
 }
 
 function openEditEntry(citizenId, entryId, entry){
@@ -2294,43 +2470,41 @@ function openEditEntry(citizenId, entryId, entry){
     <div class="field"><label>Date</label><input id="editDate" type="date" value="${entry.date||todayISO()}"></div>
     <button class="btn block" id="saveEdit">Save</button>
   `);
-  $("saveEdit").addEventListener("click", async ()=>{
-    const amt = parseFloat($("editAmt").value);
-    if(!(amt>0)){ toast("Enter valid amount"); return; }
-    const note = $("editNote").value.trim();
-    const date = $("editDate").value;
-    try{
-      await store.editEntry(citizenId, entryId, { amount:amt, note, date });
-      toast("Entry updated");
-      closeSheet();
-      await renderCitizenDetail(citizenId);
-    }catch(err){ toast("Failed to update"); console.error(err); }
-  });
+  $("saveEdit").addEventListener("click", ()=> handleEditEntrySubmit(citizenId, entryId));
 }
 
 /* ============================================================
    ADMIN — CSV Export
    ============================================================ */
 let exportBusy=false;
-async function doExportCsv(){
-  if(exportBusy) return; exportBusy=true;
-  const btn=$("exportCsvBtn2"); if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
+
+async function withExportUI(buttonId, originalText, exportFn){
+  if(exportBusy) return;
+  exportBusy=true;
+  const btn = $(buttonId);
+  if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
   try{
+    await exportFn();
+    clearOperationErrors();
+  }catch(err){
+    handleOperationError("export", err);
+    toast("Export failed");
+  }finally{
+    exportBusy=false;
+    if(btn){ btn.disabled=false; btn.textContent=originalText; }
+  }
+}
+
+async function doExportCsv(){
+  await withExportUI("exportCsvBtn2", "Export owing list (CSV)", async ()=>{
     const csv = await store.exportOwingCsv();
-    const blob = new Blob([csv], {type:"text/csv"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `owing_${todayISO()}.csv`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(csv, `owing_${todayISO()}.csv`, "text/csv");
     toast("CSV exported");
-  }catch(err){ toast("Export failed"); console.error(err); }
-  finally{ exportBusy=false; if(btn){ btn.disabled=false; btn.textContent="Export owing list (CSV)"; } }
+  });
 }
 
 async function doExportAll(){
-  if(exportBusy) return; exportBusy=true;
-  const btn=$("exportAllBtn"); if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
-  try{
+  await withExportUI("exportAllBtn", "Export all households (CSV)", async ()=>{
     const citizens = allCitizens;
     const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
     let csv = "Name,Job Card,Total Charged (₹),Total Paid (₹),Balance (₹),Status,Payment History\n";
@@ -2340,14 +2514,9 @@ async function doExportAll(){
       const status = statusOf(c);
       csv += `"${esc(c.name)}","${esc(c.jobCard)}",${c.totalCharged||0},${c.totalPaid||0},${c.balance||0},"${statusLabel[status]}","${esc(payments)}"\n`;
     }
-    const blob = new Blob([csv], {type:"text/csv"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `all_households_${todayISO()}.csv`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(csv, `all_households_${todayISO()}.csv`, "text/csv");
     toast("CSV exported");
-  }catch(err){ toast("Export failed"); console.error(err); }
-  finally{ exportBusy=false; if(btn){ btn.disabled=false; btn.textContent="Export all households (CSV)"; } }
+  });
 }
 
 async function openExportPeriod(){
@@ -2385,14 +2554,14 @@ async function doExportPeriod(period){
         csv += `"${esc(c.name)}","${esc(c.jobCard)}",${charge.amount},"${status}","${esc(payments)}"\n`;
       }
     }
-    const blob = new Blob([csv], {type:"text/csv"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `period_${esc(period).replace(/\s+/g,'_')}_${todayISO()}.csv`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(csv, `period_${esc(period).replace(/\s+/g,'_')}_${todayISO()}.csv`, "text/csv");
     toast("CSV exported");
-  }catch(err){ toast("Export failed"); console.error(err); }
-  finally{ exportBusy=false; }
+  }catch(err){
+    handleOperationError("exportPeriod", err);
+    toast("Export failed");
+  }finally{
+    exportBusy=false;
+  }
 }
 
 // Register service worker for PWA
