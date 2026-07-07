@@ -1177,6 +1177,10 @@ if(notConfigured){
   }
 }
 if(isLocalMode) addTestLoginHint();
+
+if(!isLocalMode){
+  console.warn("⚠️ SECURITY CHECK: Ensure Firestore security rules are deployed. See FIRESTORE_SECURITY_RULES.md for configuration.");
+}
 store.onAuth(onAuth);
 
 let consecutiveErrors = 0;
@@ -1722,20 +1726,64 @@ async function savePeriods(){
   }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Failed to save. Try again.</div>`; }
   finally{ btn.disabled=false; }
 }
+async function encryptBackupData(data, password){
+  if(!password) return JSON.stringify(data);
+  try{
+    const encoder = new TextEncoder();
+    const dataStr = JSON.stringify(data);
+    const dataBytes = encoder.encode(dataStr);
+    const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+    const pwBytes = encoder.encode(password);
+    const keyMaterial = await crypto.subtle.importKey("raw", pwBytes, {name:"PBKDF2"}, false, ["deriveBits"]);
+    const keyBits = await crypto.subtle.deriveBits({name:"PBKDF2", salt:saltBytes, iterations:100000, hash:"SHA-256"}, keyMaterial, 256);
+    const key = await crypto.subtle.importKey("raw", keyBits, {name:"AES-GCM"}, false, ["encrypt"]);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await crypto.subtle.encrypt({name:"AES-GCM", iv}, key, dataBytes);
+    const container = {v:1, salt:Array.from(saltBytes), iv:Array.from(iv), data:Array.from(new Uint8Array(encrypted))};
+    return JSON.stringify(container);
+  }catch(e){
+    console.error("Encryption failed:", e);
+    throw new Error("Backup encryption failed");
+  }
+}
+
 let backupBusy=false;
 async function doBackup(){
   if(backupBusy) return; backupBusy=true;
   const btn=$("backupBtn"); if(btn){ btn.disabled=true; }
-  const msg=$("backupMsg"); msg.innerHTML=`<div class="notice info">Preparing backup…</div>`;
-  try{
-    const data = await store.exportAll((d,t)=>{ msg.innerHTML=`<div class="notice info">Reading… ${d} / ${t}</div>`; });
-    const blob = new Blob([JSON.stringify(data)], {type:"application/json"});
-    const url = URL.createObjectURL(blob);
-    const a=document.createElement("a"); a.href=url; a.download=`nsnvc-backup-${todayISO()}.json`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Backup downloaded — ${data.count} households. Keep it somewhere safe.</div>`;
-  }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Backup failed. Check connection and try again.</div>`; }
-  finally{ backupBusy=false; if(btn) btn.disabled=false; }
+  const msg=$("backupMsg");
+
+  openSheet("Download backup", `
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Backup contains all household data including names, phone numbers, and payment history. Consider encrypting it with a password.</p>
+    <div class="field"><label>Encryption password (optional)</label>
+      <input id="backupPw" type="password" placeholder="Leave empty for unencrypted backup"></div>
+    <button class="btn block" id="backupConfirm">Download backup</button>
+  `);
+  $("backupConfirm").addEventListener("click", async ()=>{
+    const pw = $("backupPw").value;
+    $("backupConfirm").disabled = true;
+    try{
+      const data = await store.exportAll();
+      const content = await encryptBackupData(data, pw);
+      const fileExt = pw ? ".nsnvc-enc" : ".json";
+      const blob = new Blob([content], {type:"application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `nsnvc-backup-${todayISO()}${fileExt}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      closeSheet();
+      toast(pw ? "Encrypted backup downloaded" : "Backup downloaded - data is NOT encrypted");
+    }catch(err){
+      handleOperationError("backup", err);
+      toast("Backup failed");
+    }finally{
+      $("backupConfirm").disabled = false;
+    }
+  });
 }
 function validateBackupSchema(backup) {
   if (!backup || typeof backup !== 'object') throw new Error("Backup must be an object");
@@ -1763,6 +1811,27 @@ function validateBackupSchema(backup) {
   }
 }
 
+async function decryptBackupData(dataStr, password){
+  try{
+    const container = JSON.parse(dataStr);
+    if(!container.v || !container.salt || !container.iv || !container.data) throw new Error("Invalid encrypted backup format");
+    const encoder = new TextEncoder();
+    const saltBytes = new Uint8Array(container.salt);
+    const ivBytes = new Uint8Array(container.iv);
+    const encryptedBytes = new Uint8Array(container.data);
+    const pwBytes = encoder.encode(password);
+    const keyMaterial = await crypto.subtle.importKey("raw", pwBytes, {name:"PBKDF2"}, false, ["deriveBits"]);
+    const keyBits = await crypto.subtle.deriveBits({name:"PBKDF2", salt:saltBytes, iterations:100000, hash:"SHA-256"}, keyMaterial, 256);
+    const key = await crypto.subtle.importKey("raw", keyBits, {name:"AES-GCM"}, false, ["decrypt"]);
+    const decrypted = await crypto.subtle.decrypt({name:"AES-GCM", iv:ivBytes}, key, encryptedBytes);
+    const decryptedStr = new TextDecoder().decode(decrypted);
+    return JSON.parse(decryptedStr);
+  }catch(e){
+    console.error("Decryption failed:", e);
+    throw new Error("Decryption failed - wrong password or corrupted file");
+  }
+}
+
 async function doRestore(e){
   const file=e.target.files[0]; if(!file) return;
   if (file.size > 5*1024*1024) {
@@ -1771,17 +1840,51 @@ async function doRestore(e){
     return;
   }
   const msg=$("backupMsg"); let backup;
-  try{ backup = JSON.parse(await file.text()); }catch(err){ msg.innerHTML=`<div class="notice err">Invalid JSON in backup file.</div>`; e.target.value=""; return; }
-  try{ validateBackupSchema(backup); }catch(err){ msg.innerHTML=`<div class="notice err">Backup format invalid: ${esc(err.message)}</div>`; e.target.value=""; return; }
-  const ok = await confirmAction(`Restore ${backup.citizens.length} households from this backup? It overwrites their current records and history.`, true);
-  if(!ok){ e.target.value=""; return; }
-  msg.innerHTML=`<div class="notice info">Restoring…</div>`;
-  try{
-    await store.importAll(backup, (d,t)=>{ msg.innerHTML=`<div class="notice info">Restoring… ${d} / ${t}</div>`; });
-    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Restored ${backup.citizens.length} households.</div>`;
-    toast("Restore complete");
-  }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Restore failed partway. Check connection and try again.</div>`; }
-  e.target.value="";
+  const fileContent = await file.text();
+  const isEncrypted = file.name.endsWith(".nsnvc-enc");
+
+  if(isEncrypted){
+    openSheet("Restore encrypted backup", `
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px">This backup is encrypted. Enter the password to decrypt it.</p>
+      <div class="field"><label>Password</label>
+        <input id="restorePw" type="password" placeholder="Enter backup password"></div>
+      <button class="btn block" id="restoreConfirm">Decrypt and restore</button>
+      <div id="restoreMsg" style="margin-top:10px"></div>
+    `);
+    $("restoreConfirm").addEventListener("click", async ()=>{
+      const pw = $("restorePw").value;
+      if(!pw){ $("restoreMsg").innerHTML=`<div class="notice err">Password required</div>`; return; }
+      try{
+        backup = await decryptBackupData(fileContent, pw);
+        try{ validateBackupSchema(backup); }catch(err){ $("restoreMsg").innerHTML=`<div class="notice err">Backup format invalid: ${esc(err.message)}</div>`; return; }
+        const ok = await confirmAction(`Restore ${backup.citizens.length} households? It overwrites current records.`, true);
+        if(!ok) return;
+        const msg2 = $("restoreMsg");
+        msg2.innerHTML=`<div class="notice info">Restoring…</div>`;
+        await store.importAll(backup, (d,t)=>{ msg2.innerHTML=`<div class="notice info">Restoring… ${d} / ${t}</div>`; });
+        msg2.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Restored ${backup.citizens.length} households.</div>`;
+        closeSheet();
+        toast("Restore complete");
+      }catch(err){
+        handleOperationError("restoreBackup", err);
+        $("restoreMsg").innerHTML=`<div class="notice err">${esc(err.message)}</div>`;
+      }finally{
+        e.target.value="";
+      }
+    });
+  } else {
+    try{ backup = JSON.parse(fileContent); }catch(err){ msg.innerHTML=`<div class="notice err">Invalid JSON in backup file.</div>`; e.target.value=""; return; }
+    try{ validateBackupSchema(backup); }catch(err){ msg.innerHTML=`<div class="notice err">Backup format invalid: ${esc(err.message)}</div>`; e.target.value=""; return; }
+    const ok = await confirmAction(`Restore ${backup.citizens.length} households from this backup? It overwrites their current records and history.`, true);
+    if(!ok){ e.target.value=""; return; }
+    msg.innerHTML=`<div class="notice info">Restoring…</div>`;
+    try{
+      await store.importAll(backup, (d,t)=>{ msg.innerHTML=`<div class="notice info">Restoring… ${d} / ${t}</div>`; });
+      msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Restored ${backup.citizens.length} households.</div>`;
+      toast("Restore complete");
+    }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Restore failed partway. Check connection and try again.</div>`; }
+    e.target.value="";
+  }
 }
 
 async function ensureXLSX(){
@@ -1789,7 +1892,10 @@ async function ensureXLSX(){
   await new Promise((res,rej)=>{
     const s=document.createElement("script");
     s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-    s.onload=res; s.onerror=()=>rej(new Error("xlsx load failed"));
+    s.integrity="sha512-7k7fBkdEJzlv2DLuGu0eV3g+oFXy6fwS++q8dQRBKtxGGUMqv0Dya5wXFHhjqQ1RkVHNK/3j9LCXPU7A1WjVA==";
+    s.crossOrigin="anonymous";
+    s.onload=res;
+    s.onerror=()=>rej(new Error("xlsx load failed - integrity check or network error"));
     document.head.appendChild(s);
   });
   return window.XLSX;
