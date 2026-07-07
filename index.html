@@ -286,11 +286,12 @@
           <div id="pendingList" class="pending-list"></div>
         </div>
       </div>
-      <div class="seg" id="adminFilter" style="margin-bottom:12px">
-        <button data-f="pending" class="active">Pending</button>
-        <button data-f="deferred">Deferred</button>
-        <button data-f="all">All</button>
-      </div>
+      <select id="adminFilter" class="period-sel" style="margin-bottom:12px">
+        <option value="pending" selected>Pending</option>
+        <option value="deferred">Deferred</option>
+        <option value="overpaid">Overpaid</option>
+        <option value="all">All</option>
+      </select>
       <div id="periodWrap" style="margin-bottom:12px">
         <select id="periodSel" class="period-sel"><option value="">All pending (any period)</option></select>
       </div>
@@ -1294,13 +1295,11 @@ $("clearSearchBtn").addEventListener("click", ()=>{
   $("clearSearchBtn").style.display = "none";
   adminShown=20; renderList();
 });
-document.querySelectorAll("#adminFilter button").forEach(b=>
-  b.addEventListener("click", ()=>{
-    adminFilter=b.dataset.f; adminShown=20;
-    if(adminFilter!=="pending") periodFilter="";
-    document.querySelectorAll("#adminFilter button").forEach(x=>x.classList.toggle("active", x===b));
-    renderList();
-  }));
+$("adminFilter").addEventListener("change", ()=>{
+  adminFilter=$("adminFilter").value; adminShown=20;
+  if(adminFilter!=="pending") periodFilter="";
+  renderList();
+});
 $("periodSel").addEventListener("change", ()=>{ periodFilter=$("periodSel").value; adminShown=20; renderList(); });
 $("periodSel").addEventListener("focus", ()=>{ if(!periodsReady && !loadingPeriods) loadPendingPeriods(); });
 
@@ -1320,6 +1319,8 @@ function renderList(){
     }
   } else if(adminFilter==="deferred"){
     list = list.filter(c => getDeferredAmount(c)>0);
+  } else if(adminFilter==="overpaid"){
+    list = list.filter(c => getEffectiveBalance(c)<0);
   }
   list.sort(byCardNo);
   const total=list.length;
@@ -1327,16 +1328,27 @@ function renderList(){
   const shown=Math.min(adminShown, total);
   const cards = list.slice(0, shown).map(c=>{
     const bal=getEffectiveBalance(c); const deferred=getDeferredAmount(c); const st=statusOf(c);
-    const small = adminFilter==="deferred"
-      ? `${esc(c.jobCard||c.id)} · Deferred ${fmt(deferred)}`
-      : esc(c.jobCard||c.id);
+    let small, balText, balColor;
+    if(adminFilter==="deferred"){
+      small = `${esc(c.jobCard||c.id)} · Deferred ${fmt(deferred)}`;
+      balText = fmt(deferred);
+      balColor = 'var(--partial)';
+    } else if(adminFilter==="overpaid"){
+      small = `${esc(c.jobCard||c.id)} · Overpaid`;
+      balText = fmt(Math.abs(bal));
+      balColor = 'var(--paid)';
+    } else {
+      small = esc(c.jobCard||c.id);
+      balColor = bal>0 ? 'var(--due)' : 'var(--paid)';
+      balText = bal<0 ? `₹0 (+${fmt(Math.abs(bal))})` : fmt(Math.max(0,bal));
+    }
     return `<div class="citizen-row" data-id="${esc(c.id)}" style="display:flex;align-items:center;gap:10px;padding:12px 15px;border-top:1px solid var(--border);width:100%;cursor:pointer">
       <span class="dot ${st}"></span>
       <span class="info" style="flex:1;min-width:0">
         <b style="display:block;font-weight:600;font-size:15px">${esc(c.name||"—")}</b>
         <small style="font-size:12px;color:var(--muted);display:block;margin-top:2px">${small}</small>
       </span>
-      <span class="bal money" style="white-space:nowrap;color:${adminFilter==="deferred"?'var(--partial)':(bal>0?'var(--due)':'var(--paid)')}">${adminFilter==="deferred" ? fmt(deferred) : (bal<0 ? `₹0 (+${fmt(Math.abs(bal))})` : fmt(Math.max(0,bal)))}</span>
+      <span class="bal money" style="white-space:nowrap;color:${balColor}">${balText}</span>
     </div>`;
   }).join("");
   $("adminList").innerHTML = cards +
