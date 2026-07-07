@@ -2695,30 +2695,36 @@ function openEditEntry(citizenId, entryId, entry){
    ADMIN — CSV Export
    ============================================================ */
 let exportBusy=false;
-async function doExportCsv(){
-  if(exportBusy) return; exportBusy=true;
-  const btn=$("exportCsvBtn2"); if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
+
+async function withExportUI(buttonId, originalText, exportFn){
+  if(exportBusy) return;
+  exportBusy=true;
+  const btn = $(buttonId);
+  if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
   try{
-    const csv = await store.exportOwingCsv();
+    await exportFn();
     clearOperationErrors();
-    downloadBlob(csv, `owing_${todayISO()}.csv`, "text/csv");
-    toast("CSV exported");
   }catch(err){
-    handleOperationError("exportOwingCsv", err);
+    handleOperationError("export", err);
     toast("Export failed");
   }finally{
     exportBusy=false;
-    if(btn){ btn.disabled=false; btn.textContent="Export owing list (CSV)"; }
+    if(btn){ btn.disabled=false; btn.textContent=originalText; }
   }
 }
 
+async function doExportCsv(){
+  await withExportUI("exportCsvBtn2", "Export owing list (CSV)", async ()=>{
+    const csv = await store.exportOwingCsv();
+    downloadBlob(csv, `owing_${todayISO()}.csv`, "text/csv");
+    toast("CSV exported");
+  });
+}
+
 async function doExportAll(){
-  if(exportBusy) return; exportBusy=true;
-  const btn=$("exportAllBtn"); if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
-  try{
+  await withExportUI("exportAllBtn", "Export all households (CSV)", async ()=>{
     const citizens = allCitizens;
     const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
-    clearOperationErrors();
     let csv = "Name,Job Card,Total Charged (₹),Total Paid (₹),Balance (₹),Status,Payment History\n";
     for(const c of citizens){
       const entries = ledgers[c.id] || [];
@@ -2728,13 +2734,7 @@ async function doExportAll(){
     }
     downloadBlob(csv, `all_households_${todayISO()}.csv`, "text/csv");
     toast("CSV exported");
-  }catch(err){
-    handleOperationError("exportAllHouseholds", err);
-    toast("Export failed");
-  }finally{
-    exportBusy=false;
-    if(btn){ btn.disabled=false; btn.textContent="Export all households (CSV)"; }
-  }
+  });
 }
 
 async function openExportPeriod(){
