@@ -2307,6 +2307,74 @@ function closeCitizenDetail(){
   renderList();
 }
 
+function renderEntryRow(entry, editing){
+  const isPayment = entry.type==="payment";
+  const isForgive = entry.type==="forgive";
+  const isDeferred = entry.deferred && entry.type==="charge";
+  const label = entryLabel(entry);
+  const amtClass = isPayment || isForgive ? "payment" : "charge";
+  const amtSign = isPayment || isForgive ? "− " : "+ ";
+  const rowClass = "row" + (isDeferred ? " deferred" : "");
+
+  const actions = editing ? `<span class="actions">
+    <button class="edit-entry" data-id="${entry.entryId}" data-type="${entry.type}">✏️</button>
+    <button class="del-entry" data-id="${entry.entryId}">🗑️</button>
+  </span>` : '';
+
+  let deferToggle = '';
+  if(editing && entry.type==="charge"){
+    const checked = entry.deferred ? 'checked' : '';
+    deferToggle = `<label class="switch" data-id="${entry.entryId}" style="margin-left:8px">
+      <input type="checkbox" class="defer-chk" data-id="${entry.entryId}" ${checked}>
+      <span class="switch-track"><span class="switch-thumb"></span></span>
+      <span class="switch-label">Defer</span>
+    </label>`;
+  }
+
+  return `<div class="${rowClass}">
+    <div class="desc"><div class="desc-head"><b>${esc(label)}</b> ${deferToggle}</div><small>${esc(displayDate(entry.date))}</small></div>
+    <div class="amt ${amtClass}">${amtSign}${fmt(entry.amount)}</div>
+    ${actions}
+  </div>`;
+}
+
+function renderHistoryRows(entries, editing){
+  if(!entries.length) return `<div class="empty">No entries yet.</div>`;
+  return entries.map(e => renderEntryRow(e, editing)).join("");
+}
+
+function buildCitizenDetailHTML(citizen, balance, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount){
+  return `
+  <button class="back" id="adminBackBtn">‹ Back</button>
+  <div class="statement">
+    <div class="top">
+      <div>
+        <p class="name">${esc(citizen.name||"—")}</p>
+        <div class="meta">${esc(citizen.jobCard||citizen.id)}${citizen.phone?" · "+esc(citizen.phone):""}</div>
+      </div>
+      ${headerBadge}
+    </div>
+    <div class="balance-block">
+      <div class="label">Remaining balance</div>
+      ${balance<0
+        ? `<div class="amount money zero">${fmt(Math.abs(balance))} <span style="font-size:14px;font-weight:400;color:var(--paid)">overpaid</span></div>`
+        : `<div class="amount money ${balance<=0?'zero':'owing'}">${fmt(Math.max(0,balance))}</div>`}
+    </div>
+    ${actionBadges}
+    <div class="ledger">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px 6px">
+        <b style="font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">History (${totalEntries})</b>
+        <button class="btn small ghost" id="histEditBtn" style="font-size:12px;padding:4px 10px">Edit</button>
+      </div>
+      <div id="historyBody">${historyHTML}</div>
+      ${hiddenCount > 0 ? `<button class="btn ghost small" id="histMore" style="width:calc(100% - 36px);margin:4px 18px 10px">See more (${hiddenCount} more)</button>` : ''}
+    </div>
+    <div style="padding:16px 18px 18px">
+      <button class="btn ghost block small" id="delCitizen" style="color:var(--due);border-color:var(--due)">Delete this citizen</button>
+    </div>
+  </div>`;
+}
+
 async function renderCitizenDetail(id){
   const c = allCitizens.find(x=>x.id===id);
   if(!c){
@@ -2318,120 +2386,65 @@ async function renderCitizenDetail(id){
     const bal = getEffectiveBalance(c);
     const allSorted = [...entries].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
     const INITIAL_HISTORY = 3;
-    let historyExpanded = false;
-    let historyEditing = false;
 
-  const renderRows = (list, editing)=>{
-    if(!list.length) return `<div class="empty">No entries yet.</div>`;
-    return list.map(e=>{
-      const isPayment = e.type==="payment";
-      const isForgive = e.type==="forgive";
-      const isDeferred = e.deferred && e.type==="charge";
-      let label = entryLabel(e);
-      let amtClass = isPayment ? "payment" : (isForgive ? "payment" : "charge");
-      let amtSign = isPayment ? "− " : (isForgive ? "− " : "+ ");
-      let rowClass = "row" + (isDeferred ? " deferred" : "");
-      const actions = editing ? `<span class="actions">
-        <button class="edit-entry" data-id="${e.entryId}" data-type="${e.type}">✏️</button>
-        <button class="del-entry" data-id="${e.entryId}">🗑️</button>
-      </span>` : '';
-      let deferToggle = '';
-      if(editing && e.type==="charge"){
-        const checked = e.deferred ? 'checked' : '';
-        deferToggle = `<label class="switch" data-id="${e.entryId}" style="margin-left:8px">
-          <input type="checkbox" class="defer-chk" data-id="${e.entryId}" ${checked}>
-          <span class="switch-track"><span class="switch-thumb"></span></span>
-          <span class="switch-label">Defer</span>
-        </label>`;
-      }
-      return `<div class="${rowClass}">
-        <div class="desc"><div class="desc-head"><b>${esc(label)}</b> ${deferToggle}</div><small>${esc(displayDate(e.date))}</small></div>
-        <div class="amt ${amtClass}">${amtSign}${fmt(e.amount)}</div>
-        ${actions}
-      </div>`;
-    }).join("");
-  };
+    const state = { historyExpanded: false, historyEditing: false };
 
-  const st = statusOf(c);
-  const hasOwing = bal > 0;
-  const headerBadge = hasOwing
-    ? `<span class="badge action action-paid" id="hdrMarkPaid">Mark Paid</span>`
-    : `<span class="badge paid">Cleared</span>`;
-  const actionBadges = hasOwing ? `<div class="badge-row" style="padding:0 18px 14px">
-    <span class="badge action action-pay" id="btnPayment">Payment</span>
-    <span class="badge action action-waive" id="btnWaive">Waive</span>
-  </div>` : '';
-  const totalEntries = allSorted.length;
-  const visibleEntries = historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
-  const hiddenCount = totalEntries - Math.min(INITIAL_HISTORY, totalEntries);
+    const hasOwing = bal > 0;
+    const headerBadge = hasOwing
+      ? `<span class="badge action action-paid" id="hdrMarkPaid">Mark Paid</span>`
+      : `<span class="badge paid">Cleared</span>`;
+    const actionBadges = hasOwing ? `<div class="badge-row" style="padding:0 18px 14px">
+      <span class="badge action action-pay" id="btnPayment">Payment</span>
+      <span class="badge action action-waive" id="btnWaive">Waive</span>
+    </div>` : '';
+    const totalEntries = allSorted.length;
+    const visibleEntries = state.historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
+    const hiddenCount = totalEntries - Math.min(INITIAL_HISTORY, totalEntries);
+    const historyHTML = renderHistoryRows(visibleEntries, false);
 
-  $("adminDetail").innerHTML = `
-  <button class="back" id="adminBackBtn">‹ Back</button>
-  <div class="statement">
-    <div class="top">
-      <div>
-        <p class="name">${esc(c.name||"—")}</p>
-        <div class="meta">${esc(c.jobCard||id)}${c.phone?" · "+esc(c.phone):""}</div>
-      </div>
-      ${headerBadge}
-    </div>
-    <div class="balance-block">
-      <div class="label">Remaining balance</div>
-      ${bal<0
-        ? `<div class="amount money zero">${fmt(Math.abs(bal))} <span style="font-size:14px;font-weight:400;color:var(--paid)">overpaid</span></div>`
-        : `<div class="amount money ${bal<=0?'zero':'owing'}">${fmt(Math.max(0,bal))}</div>`}
-    </div>
-    ${actionBadges}
-    <div class="ledger">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px 6px">
-        <b style="font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">History (${totalEntries})</b>
-        <button class="btn small ghost" id="histEditBtn" style="font-size:12px;padding:4px 10px">Edit</button>
-      </div>
-      <div id="historyBody">${renderRows(visibleEntries, false)}</div>
-      ${hiddenCount > 0 ? `<button class="btn ghost small" id="histMore" style="width:calc(100% - 36px);margin:4px 18px 10px">See more (${hiddenCount} more)</button>` : ''}
-    </div>
-    <div style="padding:16px 18px 18px">
-      <button class="btn ghost block small" id="delCitizen" style="color:var(--due);border-color:var(--due)">Delete this citizen</button>
-    </div>
-  </div>`;
+    $("adminDetail").innerHTML = buildCitizenDetailHTML(c, bal, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount);
+    attachCitizenDetailListeners(id, c, bal, allSorted, INITIAL_HISTORY, state);
+  }
+}
 
+function attachCitizenDetailListeners(id, citizen, balance, allSorted, initialHistoryCount, stateRef){
   // Mark Paid
   if($("hdrMarkPaid")) $("hdrMarkPaid").addEventListener("click", async ()=>{
-    const name = c.name || id;
-    const ok = await confirmAction(`Mark ${name} fully paid (${fmt(bal)})?`);
-    if(ok) await markFullyPaid(id, bal);
+    const name = citizen.name || id;
+    const ok = await confirmAction(`Mark ${name} fully paid (${fmt(balance)})?`);
+    if(ok) await markFullyPaid(id, balance);
   });
 
   // Payment badge → open sheet
-  if($("btnPayment")) $("btnPayment").addEventListener("click", ()=> openPaymentSheet(id, bal));
+  if($("btnPayment")) $("btnPayment").addEventListener("click", ()=> openPaymentSheet(id, balance));
 
   // Waive badge → open sheet
-  if($("btnWaive")) $("btnWaive").addEventListener("click", ()=> openWaiveSheet(id, bal));
+  if($("btnWaive")) $("btnWaive").addEventListener("click", ()=> openWaiveSheet(id, balance));
 
   $("delCitizen").addEventListener("click", ()=>deleteCitizen(id));
   $("adminBackBtn").addEventListener("click", closeCitizenDetail);
 
   // Edit button — toggles edit mode
   $("histEditBtn").addEventListener("click", ()=>{
-    historyEditing = !historyEditing;
-    $("histEditBtn").textContent = historyEditing ? "Done" : "Edit";
-    const vis = historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
-    $("historyBody").innerHTML = renderRows(vis, historyEditing);
-    attachHistoryListeners(id, historyEditing);
+    stateRef.historyEditing = !stateRef.historyEditing;
+    $("histEditBtn").textContent = stateRef.historyEditing ? "Done" : "Edit";
+    const vis = stateRef.historyExpanded ? allSorted : allSorted.slice(0, initialHistoryCount);
+    $("historyBody").innerHTML = renderHistoryRows(vis, stateRef.historyEditing);
+    attachHistoryListeners(id, stateRef.historyEditing);
   });
 
   // See more / Show less
   if($("histMore")) $("histMore").addEventListener("click", ()=>{
-    historyExpanded = !historyExpanded;
-    const vis = historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
-    const hid = totalEntries - vis.length;
-    $("historyBody").innerHTML = renderRows(vis, historyEditing);
+    stateRef.historyExpanded = !stateRef.historyExpanded;
+    const vis = stateRef.historyExpanded ? allSorted : allSorted.slice(0, initialHistoryCount);
+    const hid = allSorted.length - vis.length;
+    $("historyBody").innerHTML = renderHistoryRows(vis, stateRef.historyEditing);
     if(hid > 0){
-      $("histMore").textContent = historyExpanded ? "Show less" : `See more (${hid} more)`;
+      $("histMore").textContent = stateRef.historyExpanded ? "Show less" : `See more (${hid} more)`;
     } else {
       $("histMore").remove();
     }
-    attachHistoryListeners(id, historyEditing);
+    attachHistoryListeners(id, stateRef.historyEditing);
   });
 
   attachHistoryListeners(id, false);
