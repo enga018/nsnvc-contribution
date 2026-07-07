@@ -337,6 +337,22 @@ function toast(msg){
   const t=document.createElement("div"); t.className="toast"; t.textContent=msg;
   document.body.appendChild(t); setTimeout(()=>t.remove(),TOAST_DURATION_MS);
 }
+
+function downloadBlob(content, filename, mimeType="application/octet-stream"){
+  let url;
+  try{
+    const blob = new Blob([content], {type:mimeType});
+    url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }finally{
+    if(url) URL.revokeObjectURL(url);
+  }
+}
 let excludedPeriods=[];
 // Single source of truth for "does this charge count toward period-based
 // calculations" — used by getEffectiveBalance, unpaidPeriods, and the
@@ -1169,10 +1185,18 @@ function makeFirebaseStore({ auth, db, fs, au }){
   };
 }
 
-/* ---------- choose backend ---------- */
-let citizensUnsub=null, allCitizens=[], rawCitizens=[], loggedIn=false, store=null, isLocalMode=false;
-let dashboardRefreshSeq=0, dashboardRefreshTimer=null;
-let ledgerCache=new Map(), periodStatsCache=null, cacheRefreshTimer=null;
+/* ---------- Global State ---------- */
+// Auth & Data Store
+let store=null, loggedIn=false, isLocalMode=false;
+// Firebase Realtime Subscription
+let citizensUnsub=null;
+// Citizen Data
+let allCitizens=[], rawCitizens=[];
+// Caching & Performance
+let ledgerCache=new Map(), periodStatsCache=null;
+let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null;
+// Configuration
+let excludedPeriods=[];
 
 const notConfigured = Object.values(firebaseConfig).some(v => v === "PASTE_HERE");
 if(notConfigured){
@@ -1777,15 +1801,7 @@ async function doBackup(){
       const data = await store.exportAll();
       const content = await encryptBackupData(data, pw);
       const fileExt = pw ? ".nsnvc-enc" : ".json";
-      const blob = new Blob([content], {type:"application/json"});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `nsnvc-backup-${todayISO()}${fileExt}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      downloadBlob(content, `nsnvc-backup-${todayISO()}${fileExt}`, "application/json");
       closeSheet();
       toast(pw ? "Encrypted backup downloaded" : "Backup downloaded - data is NOT encrypted");
     }catch(err){
@@ -2614,35 +2630,15 @@ let exportBusy=false;
 async function doExportCsv(){
   if(exportBusy) return; exportBusy=true;
   const btn=$("exportCsvBtn2"); if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
-  let url;
   try{
     const csv = await store.exportOwingCsv();
     clearOperationErrors();
-    const blob = new Blob([csv], {type:"text/csv"});
-    try{
-      url = URL.createObjectURL(blob);
-    } catch(e){
-      console.error("Failed to create object URL:", e);
-      toast("Export failed: could not create download link");
-      return;
-    }
-    const a = document.createElement("a");
-    try{
-      a.href = url; a.download = `owing_${todayISO()}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      toast("CSV exported");
-    } catch(e){
-      console.error("Failed to trigger download:", e);
-      toast("Export failed: could not trigger download");
-    }
+    downloadBlob(csv, `owing_${todayISO()}.csv`, "text/csv");
+    toast("CSV exported");
   }catch(err){
     handleOperationError("exportOwingCsv", err);
     toast("Export failed");
-  }
-  finally{
-    if(url) URL.revokeObjectURL(url);
+  }finally{
     exportBusy=false;
     if(btn){ btn.disabled=false; btn.textContent="Export owing list (CSV)"; }
   }
@@ -2651,7 +2647,6 @@ async function doExportCsv(){
 async function doExportAll(){
   if(exportBusy) return; exportBusy=true;
   const btn=$("exportAllBtn"); if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
-  let url;
   try{
     const citizens = allCitizens;
     const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
@@ -2663,31 +2658,12 @@ async function doExportAll(){
       const status = statusOf(c);
       csv += `"${esc(c.name)}","${esc(c.jobCard)}",${c.totalCharged||0},${c.totalPaid||0},${c.balance||0},"${statusLabel[status]}","${esc(payments)}"\n`;
     }
-    const blob = new Blob([csv], {type:"text/csv"});
-    try{
-      url = URL.createObjectURL(blob);
-    } catch(e){
-      console.error("Failed to create object URL:", e);
-      toast("Export failed: could not create download link");
-      return;
-    }
-    const a = document.createElement("a");
-    try{
-      a.href = url; a.download = `all_households_${todayISO()}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      toast("CSV exported");
-    } catch(e){
-      console.error("Failed to trigger download:", e);
-      toast("Export failed: could not trigger download");
-    }
+    downloadBlob(csv, `all_households_${todayISO()}.csv`, "text/csv");
+    toast("CSV exported");
   }catch(err){
     handleOperationError("exportAllHouseholds", err);
     toast("Export failed");
-  }
-  finally{
-    if(url) URL.revokeObjectURL(url);
+  }finally{
     exportBusy=false;
     if(btn){ btn.disabled=false; btn.textContent="Export all households (CSV)"; }
   }
@@ -2728,14 +2704,14 @@ async function doExportPeriod(period){
         csv += `"${esc(c.name)}","${esc(c.jobCard)}",${charge.amount},"${status}","${esc(payments)}"\n`;
       }
     }
-    const blob = new Blob([csv], {type:"text/csv"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `period_${esc(period).replace(/\s+/g,'_')}_${todayISO()}.csv`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(csv, `period_${esc(period).replace(/\s+/g,'_')}_${todayISO()}.csv`, "text/csv");
     toast("CSV exported");
-  }catch(err){ toast("Export failed"); console.error(err); }
-  finally{ exportBusy=false; }
+  }catch(err){
+    handleOperationError("exportPeriod", err);
+    toast("Export failed");
+  }finally{
+    exportBusy=false;
+  }
 }
 
 // Register service worker for PWA
