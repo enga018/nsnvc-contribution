@@ -317,14 +317,25 @@ const firebaseConfig = {
   appId: "1:686034384332:web:06e629117b63ba615c5969"
 };
 
+/* ---------- constants ---------- */
+const CURRENCY = "₹";
+const TOAST_DURATION_MS = 2200;
+const DASHBOARD_REFRESH_DEBOUNCE_MS = 250;
+const CACHE_REFRESH_DELAY_MS = 5000;
+const SHEET_CLOSE_DELAY_MS = 900;
+const PAGE_RELOAD_DELAY_MS = 1500;
+const FIRESTORE_BATCH_SIZE = 400;
+const BACKUP_MAX_SIZE_BYTES = 5*1024*1024;
+const BACKUP_MAX_HOUSEHOLDS = 10000;
+const MAX_FILE_SCAN_ROWS = 10000;
+
 /* ---------- helpers ---------- */
-const CURRENCY = "₹";  // force rupees
 const fmt = n => CURRENCY + (Number(n)||0).toLocaleString("en-IN");
 const $ = id => document.getElementById(id);
 const esc = s => String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function toast(msg){
   const t=document.createElement("div"); t.className="toast"; t.textContent=msg;
-  document.body.appendChild(t); setTimeout(()=>t.remove(),2200);
+  document.body.appendChild(t); setTimeout(()=>t.remove(),TOAST_DURATION_MS);
 }
 let excludedPeriods=[];
 // Single source of truth for "does this charge count toward period-based
@@ -943,9 +954,9 @@ function makeFirebaseStore({ auth, db, fs, au }){
           const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));
           batch.set(eRef,{ entryId:eRef.id, type:e.type, amount:e.amount, note:e.note, date:e.date||"",
             deferred:e.deferred||false, createdAt: e.when? fs.Timestamp.fromDate(e.when) : fs.serverTimestamp() }); ops++;
-          if(ops>=400) await flush();
+          if(ops>=FIRESTORE_BATCH_SIZE) await flush();
         }
-        if(ops>=400) await flush();
+        if(ops>=FIRESTORE_BATCH_SIZE) await flush();
         if((++done % 50)===0 && onProgress) onProgress(done, rows.length);
       }
       await flush(); if(onProgress) onProgress(rows.length, rows.length);
@@ -1027,7 +1038,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
       for(const d of cSnap.docs){
         const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
         ledSnap.docs.forEach(ld => { batch.delete(ld.ref); if(++ops>=400) { } });
-        if(ops>=400) await flush();
+        if(ops>=FIRESTORE_BATCH_SIZE) await flush();
         batch.delete(d.ref); if(++ops>=400) await flush();
         if(onProgress) onProgress(0, 2);
       }
@@ -1094,7 +1105,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         for(const d of cSnap.docs){
           const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
           ledSnap.docs.forEach(ld => { batch.delete(ld.ref); if(++ops>=400) { } });
-          if(ops>=400) await flush();
+          if(ops>=FIRESTORE_BATCH_SIZE) await flush();
           batch.delete(d.ref); if(++ops>=400) await flush();
         }
         await flush();
@@ -1136,7 +1147,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
       for(const id of citizenIds){
         const {totalCharged, totalPaid, balance, deferredTotal} = recalcFromLedger(ledgerCache.get(id));
         batch.update(fs.doc(db,"citizens",id),{ totalCharged, totalPaid, balance, deferredTotal, updatedAt:fs.serverTimestamp() }); ops++;
-        if(ops>=400) await flush();
+        if(ops>=FIRESTORE_BATCH_SIZE) await flush();
         if((++done%50)===0&&onProgress) onProgress(done, citizenIds.length);
       }
       await flush();
@@ -1305,13 +1316,13 @@ function scheduleDashboardRefresh(){
   // triggering many rapid writes) into a single ledger refetch instead of
   // one full refetch per event.
   clearTimeout(dashboardRefreshTimer);
-  dashboardRefreshTimer = setTimeout(refreshDashboard, 250);
+  dashboardRefreshTimer = setTimeout(refreshDashboard, DASHBOARD_REFRESH_DEBOUNCE_MS);
   clearTimeout(cacheRefreshTimer);
   cacheRefreshTimer = setTimeout(()=>{
     if(excludedPeriods.length) store.getAllLedgers().catch(e=>{
       console.warn("Background ledger cache refresh failed:", e);
     });
-  }, 5000);
+  }, CACHE_REFRESH_DELAY_MS);
 }
 async function refreshDashboard(){
   const seq = ++dashboardRefreshSeq;
@@ -1788,7 +1799,7 @@ async function doBackup(){
 function validateBackupSchema(backup) {
   if (!backup || typeof backup !== 'object') throw new Error("Backup must be an object");
   if (!Array.isArray(backup.citizens)) throw new Error("Backup must contain citizens array");
-  if (backup.citizens.length > 10000) throw new Error("Backup too large (max 10000 households)");
+  if (backup.citizens.length > BACKUP_MAX_HOUSEHOLDS) throw new Error(`Backup too large (max ${BACKUP_MAX_HOUSEHOLDS} households)`);
 
   const validTypes = ["charge", "payment", "forgive"];
   for (let i = 0; i < backup.citizens.length; i++) {
@@ -1834,7 +1845,7 @@ async function decryptBackupData(dataStr, password){
 
 async function doRestore(e){
   const file=e.target.files[0]; if(!file) return;
-  if (file.size > 5*1024*1024) {
+  if (file.size > BACKUP_MAX_SIZE_BYTES) {
     $("backupMsg").innerHTML=`<div class="notice err">Backup file too large (max 5 MB).</div>`;
     e.target.value="";
     return;
@@ -2072,7 +2083,7 @@ async function runUpload(){
     }
     clearOperationErrors();
     prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${pendingUpload.charges.length} charges and ${pendingUpload.payments.length} payments processed.</div>`;
-    pendingUpload=null; setTimeout(()=>{ closeSheet(); toast("Upload complete"); },900);
+    pendingUpload=null; setTimeout(()=>{ closeSheet(); toast("Upload complete"); },SHEET_CLOSE_DELAY_MS);
   }catch(err){
     handleOperationError("bulkUpload", err);
     prog.innerHTML=`<div class="notice err">Update failed partway. Check connection and try again.</div>`;
@@ -2471,6 +2482,26 @@ async function markFullyPaid(id, bal){
   }
 }
 
+async function handlePaymentSubmit(id){
+  const amount = parseFloat($("payAmt").value);
+  if(!(amount>0)){ toast("Enter a valid amount"); return; }
+  if(isNaN(amount)){ toast("Enter a valid amount"); return; }
+  const mode = $("payMode").value;
+  const date = $("payDate").value || todayISO();
+  $("paySubmit").disabled=true;
+  try{
+    await store.addEntry(id, "payment", amount, mode, date);
+    clearOperationErrors();
+    toast("Payment recorded");
+    closeSheet();
+    await renderCitizenDetail(id);
+  }catch(err){
+    handleOperationError("recordPayment", err);
+    toast("Couldn't save. Try again.");
+    $("paySubmit").disabled=false;
+  }
+}
+
 function openPaymentSheet(id, bal){
   openSheet("Record payment", `
     <div class="field"><label>Amount paid (${CURRENCY})</label>
@@ -2486,25 +2517,27 @@ function openPaymentSheet(id, bal){
     <button class="btn block" id="paySubmit">Record payment</button>
     <div id="payMsg" style="margin-top:10px"></div>
   `);
-  $("paySubmit").addEventListener("click", async ()=>{
-    const amount = parseFloat($("payAmt").value);
-    if(!(amount>0)){ toast("Enter a valid amount"); return; }
-    if(isNaN(amount)){ toast("Enter a valid amount"); return; }
-    const mode = $("payMode").value;
-    const date = $("payDate").value || todayISO();
-    $("paySubmit").disabled=true;
-    try{
-      await store.addEntry(id, "payment", amount, mode, date);
-      clearOperationErrors();
-      toast("Payment recorded");
-      closeSheet();
-      await renderCitizenDetail(id);
-    }catch(err){
-      handleOperationError("recordPayment", err);
-      toast("Couldn't save. Try again.");
-      $("paySubmit").disabled=false;
-    }
-  });
+  $("paySubmit").addEventListener("click", ()=> handlePaymentSubmit(id));
+}
+
+async function handleWaiveSubmit(id){
+  const amount = parseFloat($("waiveAmt").value);
+  if(!(amount>0)){ toast("Enter a valid amount"); return; }
+  if(isNaN(amount)){ toast("Enter a valid amount"); return; }
+  const note = $("waiveNote").value.trim() || "Waived";
+  if(!(await confirmAction(`Waive ${fmt(amount)} for this citizen?`))) return;
+  $("waiveSubmit").disabled=true;
+  try{
+    await store.forgiveDebt(id, amount, note);
+    clearOperationErrors();
+    toast("Debt waived");
+    closeSheet();
+    await renderCitizenDetail(id);
+  }catch(err){
+    handleOperationError("waiveDebt", err);
+    toast("Couldn't save. Try again.");
+    $("waiveSubmit").disabled=false;
+  }
 }
 
 function openWaiveSheet(id, bal){
@@ -2516,25 +2549,7 @@ function openWaiveSheet(id, bal){
     <button class="btn block" id="waiveSubmit">Waive debt</button>
     <div id="waiveMsg" style="margin-top:10px"></div>
   `);
-  $("waiveSubmit").addEventListener("click", async ()=>{
-    const amount = parseFloat($("waiveAmt").value);
-    if(!(amount>0)){ toast("Enter a valid amount"); return; }
-    if(isNaN(amount)){ toast("Enter a valid amount"); return; }
-    const note = $("waiveNote").value.trim() || "Waived";
-    if(!(await confirmAction(`Waive ${fmt(amount)} for this citizen?`))) return;
-    $("waiveSubmit").disabled=true;
-    try{
-      await store.forgiveDebt(id, amount, note);
-      clearOperationErrors();
-      toast("Debt waived");
-      closeSheet();
-      await renderCitizenDetail(id);
-    }catch(err){
-      handleOperationError("waiveDebt", err);
-      toast("Couldn't save. Try again.");
-      $("waiveSubmit").disabled=false;
-    }
-  });
+  $("waiveSubmit").addEventListener("click", ()=> handleWaiveSubmit(id));
 }
 
 
@@ -2564,6 +2579,24 @@ async function deleteCitizen(id){
   }
 }
 
+async function handleEditEntrySubmit(citizenId, entryId){
+  const amt = parseFloat($("editAmt").value);
+  if(!(amt>0)){ toast("Enter valid amount"); return; }
+  if(isNaN(amt)){ toast("Enter valid amount"); return; }
+  const note = $("editNote").value.trim();
+  const date = $("editDate").value;
+  try{
+    await store.editEntry(citizenId, entryId, { amount:amt, note, date });
+    clearOperationErrors();
+    toast("Entry updated");
+    closeSheet();
+    await renderCitizenDetail(citizenId);
+  }catch(err){
+    handleOperationError("editEntry", err);
+    toast("Failed to update");
+  }
+}
+
 function openEditEntry(citizenId, entryId, entry){
   openSheet("Edit entry", `
     <div class="field"><label>Amount</label><input id="editAmt" type="number" step="0.01" value="${entry.amount}"></div>
@@ -2571,23 +2604,7 @@ function openEditEntry(citizenId, entryId, entry){
     <div class="field"><label>Date</label><input id="editDate" type="date" value="${entry.date||todayISO()}"></div>
     <button class="btn block" id="saveEdit">Save</button>
   `);
-  $("saveEdit").addEventListener("click", async ()=>{
-    const amt = parseFloat($("editAmt").value);
-    if(!(amt>0)){ toast("Enter valid amount"); return; }
-    if(isNaN(amt)){ toast("Enter valid amount"); return; }
-    const note = $("editNote").value.trim();
-    const date = $("editDate").value;
-    try{
-      await store.editEntry(citizenId, entryId, { amount:amt, note, date });
-      clearOperationErrors();
-      toast("Entry updated");
-      closeSheet();
-      await renderCitizenDetail(citizenId);
-    }catch(err){
-      handleOperationError("editEntry", err);
-      toast("Failed to update");
-    }
-  });
+  $("saveEdit").addEventListener("click", ()=> handleEditEntrySubmit(citizenId, entryId));
 }
 
 /* ============================================================
