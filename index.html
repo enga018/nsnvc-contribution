@@ -1696,6 +1696,23 @@ async function decryptBackupData(dataStr, password){
   }
 }
 
+async function performRestore(backup, msgElement){
+  try{
+    validateBackupSchema(backup);
+    const ok = await confirmAction(`Restore ${backup.citizens.length} households? It overwrites current records.`, true);
+    if(!ok) return false;
+    msgElement.innerHTML=`<div class="notice info">Restoring…</div>`;
+    await store.importAll(backup, (d,t)=>{ msgElement.innerHTML=`<div class="notice info">Restoring… ${d} / ${t}</div>`; });
+    msgElement.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Restored ${backup.citizens.length} households.</div>`;
+    toast("Restore complete");
+    return true;
+  }catch(err){
+    handleOperationError("restoreBackup", err);
+    msgElement.innerHTML=`<div class="notice err">${esc(err.message)}</div>`;
+    return false;
+  }
+}
+
 async function doRestore(e){
   const file=e.target.files[0]; if(!file) return;
   if (file.size > BACKUP_MAX_SIZE_BYTES) {
@@ -1703,7 +1720,6 @@ async function doRestore(e){
     e.target.value="";
     return;
   }
-  const msg=$("backupMsg"); let backup;
   const fileContent = await file.text();
   const isEncrypted = file.name.endsWith(".nsnvc-enc");
 
@@ -1719,35 +1735,22 @@ async function doRestore(e){
       const pw = $("restorePw").value;
       if(!pw){ $("restoreMsg").innerHTML=`<div class="notice err">Password required</div>`; return; }
       try{
-        backup = await decryptBackupData(fileContent, pw);
-        try{ validateBackupSchema(backup); }catch(err){ $("restoreMsg").innerHTML=`<div class="notice err">Backup format invalid: ${esc(err.message)}</div>`; return; }
-        const ok = await confirmAction(`Restore ${backup.citizens.length} households? It overwrites current records.`, true);
-        if(!ok) return;
-        const msg2 = $("restoreMsg");
-        msg2.innerHTML=`<div class="notice info">Restoring…</div>`;
-        await store.importAll(backup, (d,t)=>{ msg2.innerHTML=`<div class="notice info">Restoring… ${d} / ${t}</div>`; });
-        msg2.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Restored ${backup.citizens.length} households.</div>`;
-        closeSheet();
-        toast("Restore complete");
-      }catch(err){
-        handleOperationError("restoreBackup", err);
-        $("restoreMsg").innerHTML=`<div class="notice err">${esc(err.message)}</div>`;
+        const backup = await decryptBackupData(fileContent, pw);
+        const success = await performRestore(backup, $("restoreMsg"));
+        if(success) closeSheet();
       }finally{
         e.target.value="";
       }
     });
   } else {
-    try{ backup = JSON.parse(fileContent); }catch(err){ msg.innerHTML=`<div class="notice err">Invalid JSON in backup file.</div>`; e.target.value=""; return; }
-    try{ validateBackupSchema(backup); }catch(err){ msg.innerHTML=`<div class="notice err">Backup format invalid: ${esc(err.message)}</div>`; e.target.value=""; return; }
-    const ok = await confirmAction(`Restore ${backup.citizens.length} households from this backup? It overwrites their current records and history.`, true);
-    if(!ok){ e.target.value=""; return; }
-    msg.innerHTML=`<div class="notice info">Restoring…</div>`;
+    const msg = $("backupMsg");
     try{
-      await store.importAll(backup, (d,t)=>{ msg.innerHTML=`<div class="notice info">Restoring… ${d} / ${t}</div>`; });
-      msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Restored ${backup.citizens.length} households.</div>`;
-      toast("Restore complete");
-    }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Restore failed partway. Check connection and try again.</div>`; }
-    e.target.value="";
+      let backup;
+      try{ backup = JSON.parse(fileContent); }catch(err){ msg.innerHTML=`<div class="notice err">Invalid JSON in backup file.</div>`; e.target.value=""; return; }
+      await performRestore(backup, msg);
+    }finally{
+      e.target.value="";
+    }
   }
 }
 
