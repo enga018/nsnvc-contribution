@@ -1436,59 +1436,80 @@ $("adminFilter").addEventListener("change", ()=>{
 $("periodSel").addEventListener("change", ()=>{ periodFilter=$("periodSel").value; adminShown=20; renderList(); });
 $("periodSel").addEventListener("focus", ()=>{ if(!periodsReady && !loadingPeriods) loadPendingPeriods(); });
 
-function renderList(){
-  const term = $("adminSearch").value.trim().toLowerCase();
-  const showPeriod = (adminFilter==="pending" && !term);
-  $("periodWrap").classList.toggle("hidden", !showPeriod);
-
-  let list = allCitizens.slice();
-  if(term){
-    list = list.filter(c => (c.jobCard||c.id).toLowerCase().includes(term) || (c.name||"").toLowerCase().includes(term));
-  } else if(adminFilter==="pending"){
+function filterCitizenList(citizens, searchTerm, filter, periodFilter){
+  let list = citizens.slice();
+  if(searchTerm){
+    list = list.filter(c => (c.jobCard||c.id).toLowerCase().includes(searchTerm) || (c.name||"").toLowerCase().includes(searchTerm));
+  } else if(filter==="pending"){
     list = list.filter(c => getEffectiveBalance(c)>0);
     if(periodFilter){
       if(!periodsReady && !loadingPeriods) loadPendingPeriods();
       list = list.filter(c => (unpaidCache.get(c.id)||[]).includes(periodFilter));
     }
-  } else if(adminFilter==="deferred"){
+  } else if(filter==="deferred"){
     list = list.filter(c => getDeferredAmount(c)>0);
-  } else if(adminFilter==="overpaid"){
+  } else if(filter==="overpaid"){
     list = list.filter(c => getEffectiveBalance(c)<0);
   }
   list.sort(byCardNo);
-  const total=list.length;
-  if(!total){ $("adminList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet."}</div>`; return; }
-  const shown=Math.min(adminShown, total);
-  const cards = list.slice(0, shown).map(c=>{
-    const bal=getEffectiveBalance(c); const deferred=getDeferredAmount(c); const st=statusOf(c);
-    let small, balText, balColor;
-    if(adminFilter==="deferred"){
-      small = `${esc(c.jobCard||c.id)} · Deferred ${fmt(deferred)}`;
-      balText = fmt(deferred);
-      balColor = 'var(--partial)';
-    } else if(adminFilter==="overpaid"){
-      small = `${esc(c.jobCard||c.id)} · Overpaid`;
-      balText = fmt(Math.abs(bal));
-      balColor = 'var(--paid)';
-    } else {
-      small = esc(c.jobCard||c.id);
-      balColor = bal>0 ? 'var(--due)' : 'var(--paid)';
-      balText = bal<0 ? `₹0 (+${fmt(Math.abs(bal))})` : fmt(Math.max(0,bal));
-    }
-    return `<div class="citizen-row" data-id="${esc(c.id)}" style="display:flex;align-items:center;gap:10px;padding:12px 15px;border-top:1px solid var(--border);width:100%;cursor:pointer">
-      <span class="dot ${st}"></span>
-      <span class="info" style="flex:1;min-width:0">
-        <b style="display:block;font-weight:600;font-size:15px">${esc(c.name||"—")}</b>
-        <small style="font-size:12px;color:var(--muted);display:block;margin-top:2px">${small}</small>
-      </span>
-      <span class="bal money" style="white-space:nowrap;color:${balColor}">${balText}</span>
-    </div>`;
-  }).join("");
-  $("adminList").innerHTML = cards +
-    (shown<total ? `<button class="btn block ghost small" id="adminMore" style="margin-top:12px">Show next ${Math.min(ADMIN_STEP, total-shown)}</button>` : ``);
+  return list;
+}
+
+function buildCitizenCardHTML(citizen, filter){
+  const bal = getEffectiveBalance(citizen);
+  const deferred = getDeferredAmount(citizen);
+  const st = statusOf(citizen);
+  let small, balText, balColor;
+
+  if(filter==="deferred"){
+    small = `${esc(citizen.jobCard||citizen.id)} · Deferred ${fmt(deferred)}`;
+    balText = fmt(deferred);
+    balColor = 'var(--partial)';
+  } else if(filter==="overpaid"){
+    small = `${esc(citizen.jobCard||citizen.id)} · Overpaid`;
+    balText = fmt(Math.abs(bal));
+    balColor = 'var(--paid)';
+  } else {
+    small = esc(citizen.jobCard||citizen.id);
+    balColor = bal>0 ? 'var(--due)' : 'var(--paid)';
+    balText = bal<0 ? `₹0 (+${fmt(Math.abs(bal))})` : fmt(Math.max(0,bal));
+  }
+
+  return `<div class="citizen-row" data-id="${esc(citizen.id)}" style="display:flex;align-items:center;gap:10px;padding:12px 15px;border-top:1px solid var(--border);width:100%;cursor:pointer">
+    <span class="dot ${st}"></span>
+    <span class="info" style="flex:1;min-width:0">
+      <b style="display:block;font-weight:600;font-size:15px">${esc(citizen.name||"—")}</b>
+      <small style="font-size:12px;color:var(--muted);display:block;margin-top:2px">${small}</small>
+    </span>
+    <span class="bal money" style="white-space:nowrap;color:${balColor}">${balText}</span>
+  </div>`;
+}
+
+function attachCitizenListListeners(){
   document.querySelectorAll("#adminList .citizen-row").forEach(b=>
     b.addEventListener("click",()=>openCitizen(b.dataset.id)));
-  if($("adminMore")) $("adminMore").addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
+  const moreBtn = $("adminMore");
+  if(moreBtn) moreBtn.addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
+}
+
+function renderList(){
+  const term = $("adminSearch").value.trim().toLowerCase();
+  const showPeriod = (adminFilter==="pending" && !term);
+  $("periodWrap").classList.toggle("hidden", !showPeriod);
+
+  const list = filterCitizenList(allCitizens, term, adminFilter, periodFilter);
+  const total = list.length;
+  if(!total){
+    $("adminList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet."}</div>`;
+    return;
+  }
+
+  const shown = Math.min(adminShown, total);
+  const cards = list.slice(0, shown).map(c => buildCitizenCardHTML(c, adminFilter)).join("");
+  $("adminList").innerHTML = cards +
+    (shown<total ? `<button class="btn block ghost small" id="adminMore" style="margin-top:12px">Show next ${Math.min(ADMIN_STEP, total-shown)}</button>` : ``);
+
+  attachCitizenListListeners();
 }
 $("settingsBtn").addEventListener("click", openSettings);
 
