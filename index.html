@@ -2551,10 +2551,6 @@ function attachHistoryListeners(id, editing){
       await renderCitizenDetail(id);
     });
   });
-  } catch(e){
-    console.error("Failed to render citizen detail:", e);
-    $("adminDetail").innerHTML = `<div class="notice err">Error loading citizen details. Please try again.</div>`;
-  }
 }
 
 async function markFullyPaid(id, bal){
