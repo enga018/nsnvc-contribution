@@ -2599,12 +2599,16 @@ async function doExportPeriod(period){
   }
 }
 
-// Register service worker for PWA
+// Register service worker
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('./sw.js').then(reg=>{
-    console.log('Service Worker registered', reg);
+    console.log('Service Worker registered', reg.scope);
   }).catch(err=>{
     console.log('Service Worker registration failed', err);
+  });
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    console.log('New service worker activated, reloading');
+    window.location.reload();
   });
 }
 </script>
