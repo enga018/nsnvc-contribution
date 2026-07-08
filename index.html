@@ -32,7 +32,8 @@
         <input id="adminPass" type="password" autocomplete="current-password" placeholder="••••••••" />
       </div>
       <div id="loginErr"></div>
-      <button class="btn block" id="loginBtn" onclick="window._loginClick()">Log in</button>
+      <button class="btn block" id="loginBtn">Log in</button>
+      <p id="scriptStatus" style="font-size:11px;color:#999;text-align:center;margin-top:8px">Loading...</p>
     </div>
 
     <div id="dashboard" class="hidden">
@@ -78,6 +79,18 @@
 <div id="modalRoot"></div>
 <footer>New Serchhip North Village Council · v1.26.2</footer>
 
+<script>
+// Boot loader - attaches login handler immediately, independent of module loading
+window._loginReady = false;
+document.getElementById("loginBtn").addEventListener("click", function _bootLogin(){
+  if(window._loginReady) return window._doLogin();
+  document.getElementById("loginErr").innerHTML='<div class="notice err">App is still loading... please wait</div>';
+});
+document.getElementById("adminPass").addEventListener("keydown", function(e){
+  if(e.key==="Enter") document.getElementById("loginBtn").click();
+});
+document.getElementById("scriptStatus").textContent = "";
+</script>
 <script type="module">
 /* ============================================================
    FIREBASE CONFIG (paste your own)
@@ -972,6 +985,8 @@ let ledgerCache=new Map(), periodStatsCache=null;
 let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null;
 // Configuration
 
+window._doLogin = login;
+window._loginReady = true;
 try {
   const adminPass = $("adminPass");
   if(adminPass) adminPass.addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
@@ -1034,10 +1049,6 @@ function clearOperationErrors(){
   }
 }
 
-window._loginClick = function _loginFallback() {
-  if(typeof login === 'function') return login();
-  document.getElementById("loginErr").innerHTML='<div class="notice err">App is still loading... please wait</div>';
-};
 function showModeBanner(msg){
   document.querySelector("main").insertAdjacentHTML("afterbegin", `<div class="config-warn">${msg}</div>`);
 }
