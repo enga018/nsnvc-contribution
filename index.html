@@ -32,7 +32,7 @@
         <input id="adminPass" type="password" autocomplete="current-password" placeholder="••••••••" />
       </div>
       <div id="loginErr"></div>
-      <button class="btn block" id="loginBtn">Log in</button>
+      <button class="btn block" id="loginBtn" onclick="window._loginClick()">Log in</button>
     </div>
 
     <div id="dashboard" class="hidden">
@@ -972,11 +972,6 @@ let ledgerCache=new Map(), periodStatsCache=null;
 let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null;
 // Configuration
 
-// Attach login listeners early (before Firebase init await, so button always works)
-try {
-  const loginBtn = $("loginBtn");
-  if(loginBtn) loginBtn.addEventListener("click", login);
-} catch(e) { console.error("Failed to attach login button listener:", e); }
 try {
   const adminPass = $("adminPass");
   if(adminPass) adminPass.addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
@@ -1039,6 +1034,10 @@ function clearOperationErrors(){
   }
 }
 
+window._loginClick = function _loginFallback() {
+  if(typeof login === 'function') return login();
+  document.getElementById("loginErr").innerHTML='<div class="notice err">App is still loading... please wait</div>';
+};
 function showModeBanner(msg){
   document.querySelector("main").insertAdjacentHTML("afterbegin", `<div class="config-warn">${msg}</div>`);
 }
