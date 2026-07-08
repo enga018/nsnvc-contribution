@@ -972,6 +972,20 @@ let ledgerCache=new Map(), periodStatsCache=null;
 let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null;
 // Configuration
 
+// Attach login listeners early (before Firebase init await, so button always works)
+try {
+  const loginBtn = $("loginBtn");
+  if(loginBtn) loginBtn.addEventListener("click", login);
+} catch(e) { console.error("Failed to attach login button listener:", e); }
+try {
+  const adminPass = $("adminPass");
+  if(adminPass) adminPass.addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
+} catch(e) { console.error("Failed to attach password enter listener:", e); }
+try {
+  const logoutBtn = $("logoutBtn");
+  if(logoutBtn) logoutBtn.addEventListener("click", ()=>{ if(store) store.signOut(); });
+} catch(e) { console.error("Failed to attach logout button listener:", e); }
+
 const notConfigured = Object.values(firebaseConfig).some(v => v === "PASTE_HERE");
 if(notConfigured){
   isLocalMode=true; store=makeLocalStore();
@@ -979,7 +993,10 @@ if(notConfigured){
 } else {
   try{
     console.log("Initializing Firebase...");
-    const fbModule = await loadFirebase(firebaseConfig);
+    const fbModule = await Promise.race([
+      loadFirebase(firebaseConfig),
+      new Promise((_,reject) => setTimeout(()=>reject(new Error("timeout")), 15000))
+    ]);
     console.log("Firebase loaded successfully");
     store=makeFirebaseStore(fbModule);
     console.log("Firebase store created");
@@ -1035,21 +1052,6 @@ function addTestLoginHint(){
 /* ============================================================
    ADMIN AUTH
    ============================================================ */
-// Attach listeners immediately at module load (before async Firebase initialization)
-try {
-  const loginBtn = $("loginBtn");
-  if(loginBtn) loginBtn.addEventListener("click", login);
-} catch(e) { console.error("Failed to attach login button listener:", e); }
-
-try {
-  const adminPass = $("adminPass");
-  if(adminPass) adminPass.addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
-} catch(e) { console.error("Failed to attach password enter listener:", e); }
-
-try {
-  const logoutBtn = $("logoutBtn");
-  if(logoutBtn) logoutBtn.addEventListener("click", ()=>{ if(store) store.signOut(); });
-} catch(e) { console.error("Failed to attach logout button listener:", e); }
 
 async function login(){
   if(!store){
