@@ -971,7 +971,6 @@ let allCitizens=[], rawCitizens=[];
 let ledgerCache=new Map(), periodStatsCache=null;
 let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null;
 // Configuration
-let excludedPeriods=[];
 
 const notConfigured = Object.values(firebaseConfig).some(v => v === "PASTE_HERE");
 if(notConfigured){
