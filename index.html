@@ -977,6 +977,10 @@ try {
   if(adminPass) adminPass.addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
 } catch(e) { console.error("Failed to attach password enter listener:", e); }
 try {
+  const loginBtn = $("loginBtn");
+  if(loginBtn) loginBtn.addEventListener("click", ()=> login());
+} catch(e) { console.error("Failed to attach login button listener:", e); }
+try {
   const logoutBtn = $("logoutBtn");
   if(logoutBtn) logoutBtn.addEventListener("click", ()=>{ if(store) store.signOut(); });
 } catch(e) { console.error("Failed to attach logout button listener:", e); }
