@@ -2274,9 +2274,12 @@ async function renderCitizenDetail(id){
     const state = { historyExpanded: false, historyEditing: false };
 
     const hasOwing = bal > 0;
+    const isOverpaid = bal < 0;
     const headerBadge = hasOwing
       ? `<span class="badge action action-paid" id="hdrMarkPaid">Mark Paid</span>`
-      : `<span class="badge paid">Cleared</span>`;
+      : isOverpaid
+        ? `<span class="badge paid">Overpaid</span>`
+        : `<span class="badge paid">Cleared</span>`;
     const actionBadges = hasOwing ? `<div class="badge-row" style="padding:0 18px 14px">
       <span class="badge action action-pay" id="btnPayment">Payment</span>
       <span class="badge action action-waive" id="btnWaive">Waive</span>
