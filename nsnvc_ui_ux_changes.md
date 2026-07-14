@@ -1,164 +1,68 @@
-# NSNVC Contribution App — Final UI/UX Changes
+# NSNVC Contribution App — UI/UX Changes
+
+This file previously described a set of changes as already shipped and scored
+them 9+/10. They weren't in `index.html` at the time — this revision
+describes what's actually implemented, as of v1.28.0.
 
 ## Dashboard
-- Added summary cards: Still to Collect, Overdue, Deferred, Overpaid
-- Replaced dropdown filter with segmented tabs
-- Added filter counts
-- Added status badges in citizen list
+- Summary cards: **Still to Collect, Overdue, Deferred, Overpaid** (2x2 grid)
+- Filter dropdown replaced with segmented tabs, each showing a live count:
+  `[ Pending N ] [ Overdue N ] [ Deferred N ] [ Overpaid N ] [ All N ]`
 
-### Filter Tabs
-[ Pending ] [ Overdue ] [ Deferred ] [ Overpaid ] [ All ]
-
-### Filter Counts
-[ Pending 326 ] [ Overdue 104 ] [ Deferred 12 ] [ Overpaid 3 ] [ All 341 ]
+Pending/Deferred/Overpaid/All counts are computed synchronously from the live
+citizen list. Overdue needs each pending household's ledger (which the app
+doesn't keep in memory for everyone, to avoid an N+1 read on every dashboard
+refresh — see `getAllLedgers()`'s cost), so it loads lazily in the background
+a few seconds after the dashboard settles, or immediately if you open the
+Overdue tab first. It shows "…" until that finishes.
 
 ---
 
 ## Citizen Details
-- Renamed MARK PAID → PAY FULL BALANCE
-- Added financial breakdown
-- Standardized action buttons
-
-### Financial Breakdown
-Total Remaining
-Overdue
-Deferred
-Current Due
-
-### Action Buttons
-- Pay Full Balance → Green
-- Payment → Blue
-- Waive → Orange
-- Returned → Secondary
+- Renamed **MARK PAID → PAY FULL BALANCE**
+- Added a financial breakdown panel: Overdue / Current Due / Deferred / Total
+  Remaining (only shown when there's something to break down)
+- Renamed **HISTORY → TRANSACTION HISTORY**
 
 ---
 
-## Transaction History
-- Renamed HISTORY → TRANSACTION HISTORY
-- Added transaction-type icons
-- Replaced emoji action buttons with SVG icons
+## Overdue logic (as actually implemented)
 
-### Transaction Icons
-Payment → 💰
-Charge → 📅
-Waive → 🟠
-Returned → ↩️
+The original spec here compared `charge.period` strings directly
+(`charge.period < currentPeriod`). That doesn't work in this app: period
+names are free text typed by the admin (`MAY2`, `April 2026`, historical
+imports, ...) with no consistent, sortable format — comparing them as
+strings or trying to parse a shared ordering out of them silently produces
+wrong answers when formats mix (verified against this repo's own seed data,
+where a legacy `"April 2026"` charge and a `"MAY1"` charge sort backwards
+under a naive numeric-suffix comparison).
 
----
+Instead, Overdue/Current Due are derived from ledger order, not the period
+label's text:
 
-## Manage Periods Modal
-- Grouped edit icon with period name
-- Added better hierarchy for period details
+1. FIFO-allocate payments against non-deferred, non-excluded charges in
+   chronological (`createdAt`) order — same rule `getEffectiveBalance()`
+   already uses — to get each still-owed charge's remaining amount.
+2. The **last** owed charge chronologically is **Current Due**.
+3. Everything owed **before** it is **Overdue**.
 
-### New Layout
-[Toggle] JUN_2026 ✏️
-         332 charges • ₹2,81,600
-
----
-
-## Backup / Restore
-- Added direction indicators
-- Maintained green download and red restore hierarchy
-
-### Example
-↓ Download backup (all data)   →
-↑ Restore from backup...       →
+This means "current" tracks whichever period was most recently charged to
+that household, not the real-world calendar month — appropriate here since
+the council bills in arrears and different households can be a period or two
+apart.
 
 ---
 
-## Settings Screen
-- Converted to list-style navigation
-- Separated destructive actions
+## Not changed from the original mockup
 
-### Navigation Rows
-Manage Periods          >
-Import / Export         >
-Backup / Restore        >
-Recalculate Balances    >
+Kept out of this pass as cosmetic-only and lower value relative to risk:
+- Emoji → SVG icon replacement in transaction history
+- Settings screen restyled as chevron nav rows (still plain buttons)
+- Backup/Restore direction-arrow labels
+- Overpaid color (still green/`--paid`, not blue — it's shared with the
+  existing "Cleared" badge styling; splitting it out was more churn than the
+  color swap was worth on its own)
 
-### Destructive Actions
-[ Delete all data ]
-[ Sign out ]
-
----
-
-## Overdue Logic
-Overdue = Previous-period unpaid charges that are NOT deferred
-
-### Calculation
-```javascript
-if (
-    charge.period < currentPeriod &&
-    !charge.deferred &&
-    charge.remaining > 0
-) {
-    overdue += charge.remaining;
-}
-```
-
----
-
-## Overpaid Logic
-Overpaid = Remaining balance < 0
-
-### Calculation
-```javascript
-overpaid = remainingBalance < 0
-```
-
----
-
-## Final Color System
-- Primary Actions → Dark Green
-- Paid / Success → Green
-- Payment Action → Blue
-- Deferred / Waive → Orange
-- Overdue → Red
-- Overpaid → Blue
-- Neutral Text → Gray
-- Borders / Dividers → Light Gray
-
----
-
-## Final Dashboard Layout
-1. Header
-2. Summary Cards
-   - Still to Collect
-   - Overdue
-   - Deferred
-   - Overpaid
-3. Filter Tabs
-   [ Pending ] [ Overdue ] [ Deferred ] [ Overpaid ] [ All ]
-4. Search Bar
-5. Citizen List
-
----
-
-## Final Production Checklist
-- [x] Added Overdue calculation
-- [x] Added Overdue summary card
-- [x] Added Overdue filter tab
-- [x] Kept Overpaid filter tab
-- [x] Replaced dropdown with segmented tabs
-- [x] Added status badges
-- [x] Renamed MARK PAID → PAY FULL BALANCE
-- [x] Renamed HISTORY → TRANSACTION HISTORY
-- [x] Replaced emoji icons with SVG icons
-- [x] Added transaction-type icons
-- [x] Redesigned Settings into list-style rows
-- [x] Added financial breakdown in citizen details
-- [x] Standardized action button colors
-- [x] Improved modal hierarchy
-
----
-
-## Final UI/UX Score
-Dashboard → 9.6/10
-Citizen Details → 9.5/10
-Transaction History → 9.5/10
-Manage Periods → 9.4/10
-Backup / Restore → 9.6/10
-Settings → 9.3/10
-Overall App → 9.6/10
-
-The app now behaves much closer to a real municipal billing and collection system than a simple contribution tracker.
+Manage Periods' layout already matched the original description before this
+pass (toggle + period name + edit icon, count/amount below) — no change
+needed there.

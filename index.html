@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="NSNVC Tracker">
-<style>:root{--green:#1b4d3e;--green-dark:#143a2f;--green-soft:#e8efe9;--paper:#f7f6f2;--surface:#fff;--ink:#1c2724;--muted:#6b7672;--border:#e3e1d8;--border-strong:#cfd0c7;--paid:#15803d;--partial:#b45309;--due:#b91c1c;--shadow:0 1px 2px rgba(20,40,30,.06),0 6px 20px rgba(20,40,30,.06);--radius:14px}*{box-sizing:border-box}html,body{margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--paper);color:var(--ink);line-height:1.45;-webkit-font-smoothing:antialiased}.money{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}button{font-family:inherit;cursor:pointer}input{font-family:inherit}header{background:var(--green);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;position:sticky;top:0;z-index:20}.brand{display:flex;flex-direction:column;line-height:1.2}.brand b{font-size:15px;font-weight:650;letter-spacing:.2px}.brand span{font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px}main{max-width:680px;margin:0 auto;padding:18px 16px 60px}.btn{background:var(--green);color:#fff;border:none;padding:13px 18px;border-radius:10px;font-size:15px;font-weight:600;white-space:nowrap}.btn:active{background:var(--green-dark)}.btn.block{width:100%}.btn.ghost{background:0;color:var(--green);border:1.5px solid var(--green)}.btn.small{padding:9px 13px;font-size:13.5px}.btn.danger{background:var(--due)}.btn[disabled]{opacity:.5;pointer-events:none}.statement{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);margin-top:18px;overflow:hidden;animation:rise .25s ease}@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}.statement .top{padding:18px;border-bottom:1px dashed var(--border-strong);display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.statement .name{font-size:18px;font-weight:650;margin:0}.statement .meta{font-size:12.5px;color:var(--muted);margin-top:3px}.badge{font-size:11px;font-weight:700;padding:5px 10px;border-radius:99px;white-space:nowrap;text-transform:uppercase;letter-spacing:.5px}.badge.paid{background:#e6f4ea;color:var(--paid)}.badge.partial{background:#fdf1e3;color:var(--partial)}.badge.due{background:#fdeaea;color:var(--due)}.badge.action{cursor:pointer;transition:opacity .15s}.badge.action:active{opacity:.7}.badge.action-paid{background:#e6f4ea;color:var(--paid)}.badge.action-pay{background:#e8f0fe;color:#1a73e8}.badge.action-waive{background:#fdf1e3;color:var(--partial)}.badge.action-return{background:#f3e8ff;color:#7c3aed}.badge-row{display:flex;gap:8px;flex-wrap:wrap}.balance-block{padding:20px 18px;text-align:center;background:linear-gradient(180deg,#fbfbf8,0)}.balance-block .label{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}.balance-block .amount{font-size:40px;font-weight:700;margin:4px 0 2px;letter-spacing:-1px}.balance-block .amount.zero{color:var(--paid)}.balance-block .amount.owing{color:var(--due)}.split{display:flex;border-top:1px solid var(--border)}.split div{flex:1;padding:13px;text-align:center}.split div+div{border-left:1px solid var(--border)}.split .k{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}.split .v{font-size:17px;font-weight:650;margin-top:2px}.ledger{border-top:1px solid var(--border)}.ledger h3{font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:0;padding:14px 18px 6px}.row{display:flex;align-items:center;gap:10px;padding:7px 18px;border-top:1px solid var(--border)}.row .desc{flex:1;min-width:0}.row .desc b{font-size:14px;font-weight:600;display:block}.row .desc .desc-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.row .desc small{font-size:12px;color:var(--muted)}.row .amt{font-size:14.5px;font-weight:650;white-space:nowrap}.amt.charge{color:var(--ink)}.amt.payment{color:var(--paid)}.empty{padding:18px;text-align:center;color:var(--muted);font-size:13.5px}.back{background:0;border:none;color:var(--green);font-size:13.5px;font-weight:600;padding:14px 4px 2px;display:inline-flex;align-items:center;gap:4px}.breakdown{padding:6px 18px 8px}.brow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;font-size:14.5px;border-bottom:1px solid var(--border)}.brow span{color:var(--muted)}.brow b{font-weight:650;white-space:nowrap}.brow.total{border-bottom:0;border-top:2px solid var(--border-strong);margin-top:2px;padding-top:13px;font-size:16.5px}.brow.total span{color:var(--ink);font-weight:700}.brow b.credit{color:var(--paid)}.carry-note{font-size:12.5px;color:var(--paid);padding:0 18px 16px;text-align:center}.notice{padding:16px;border-radius:10px;font-size:14px;margin-top:16px}.notice.err{background:#fdeaea;color:#7a1d1d;border:1px solid #f3c4c4}.notice.info{background:var(--green-soft);color:var(--green-dark);border:1px solid #cfe0d5}.hidden{display:none!important}.login-card{max-width:360px;margin:30px auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px 20px;box-shadow:var(--shadow)}.login-card h2{margin:0 0 16px;font-size:18px}.field{margin-bottom:12px}.field label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:5px}.field input{width:100%;padding:11px 12px;font-size:15px;border:1.5px solid var(--border-strong);border-radius:9px;outline:0}.field input:focus{border-color:var(--green)}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}.stat{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 12px;box-shadow:var(--shadow)}.stat .k{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}.stat .v{font-size:20px;font-weight:700;margin-top:3px}.stat .v.due{color:var(--due)}.stat .v.paid{color:var(--paid)}.toolbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}.toolbar input{flex:1;padding:11px 12px;font-size:15px;border:1.5px solid var(--border-strong);border-radius:9px;outline:0;min-width:0}.toolbar input:focus{border-color:var(--green)}.clist{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}.citizen-row{display:flex;align-items:center;gap:10px;padding:12px 15px;border-top:1px solid var(--border);width:100%;background:0;border-left:0;border-right:0;text-align:left;transition:background .15s}.citizen-row:first-child{border-top:0}.citizen-row:active{background:var(--paper)}.citizen-row .info{flex:1;min-width:0}.citizen-row .info b{font-size:15px;display:block;font-weight:600}.citizen-row .info small{font-size:12px;color:var(--muted);display:block;margin-top:2px}.citizen-row .bal{font-size:15px;font-weight:700;white-space:nowrap}.dot{width:8px;height:8px;border-radius:50%;flex:none}.dot.paid{background:var(--paid)}.dot.partial{background:var(--partial)}.dot.due{background:var(--due)}.overlay{position:fixed;inset:0;background:rgba(20,30,25,.45);z-index:40;display:flex;align-items:flex-end;justify-content:center}.sheet{background:var(--surface);width:100%;max-width:680px;max-height:92vh;overflow-y:auto;border-radius:18px 18px 0 0;animation:slideup .25s ease}@keyframes slideup{from{transform:translateY(100%)}to{transform:0}}.sheet-head{position:sticky;top:0;background:var(--surface);padding:16px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;z-index:2}.sheet-head h2{margin:0;font-size:17px}.x{background:var(--paper);border:1px solid var(--border);width:34px;height:34px;border-radius:50%;font-size:18px;line-height:1;color:var(--muted)}.sheet-body{padding:18px}.panel{background:var(--paper);border:1px solid var(--border);border-radius:12px;padding:15px;margin-bottom:14px}.panel h4{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}.inline{display:flex;gap:8px}.inline .field{flex:1;margin-bottom:0}.seg{display:flex;gap:8px;margin-bottom:12px}.seg button{flex:1;padding:10px;border:1.5px solid var(--border-strong);background:var(--surface);border-radius:9px;font-weight:600;font-size:14px;color:var(--muted)}.seg button.active{border-color:var(--green);background:var(--green-soft);color:var(--green-dark)}.period-sel{width:100%;padding:11px 12px;border:1.5px solid var(--border-strong);border-radius:9px;background:var(--surface);font-size:14px;color:var(--ink);-webkit-appearance:none;appearance:none}.action-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}.action-grid .btn{width:100%}.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 18px;border-radius:99px;font-size:14px;z-index:60;box-shadow:var(--shadow);animation:rise .2s ease}.hist-toggle{width:100%;text-align:left;background:0;border:0;border-top:1px solid var(--border);padding:14px 18px;font-size:13px;font-weight:650;color:var(--green);text-transform:uppercase;letter-spacing:.5px;cursor:pointer}.dash-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.dash-title{font-size:13px;font-weight:650;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}footer{text-align:center;color:var(--muted);font-size:11.5px;padding:24px 16px}.config-warn{background:#fff7e6;border:1px solid #f0d99a;color:#7a5a12;padding:14px 16px;border-radius:10px;font-size:13px;margin:16px;line-height:1.5}.row.payment-indent .desc{margin-left:24px}.row .actions{display:flex;gap:4px;flex-shrink:0}.row .actions button{background:0;border:0;font-size:14px;padding:2px 4px;color:var(--muted)}.row .actions button:hover{color:var(--ink)}.row.deferred{opacity:.6;background:#f9f9f6}.row.deferred .desc b::after{content:" (deferred)";font-weight:400;color:var(--muted);font-size:11px;margin-left:6px}.row.no-top-border{border-top:0}.inline-buttons{display:flex;gap:8px;flex-wrap:wrap}.inline-buttons .btn{flex:1;min-width:80px}.pending-badge{background:#fef3c7;color:#92400e;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:600}.pending-list .pending-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}.pending-list .pending-row:last-child{border-bottom:0}.pending-list .confirm-btn{background:var(--paid);color:#fff;border:0;padding:4px 12px;border-radius:99px;font-size:12px}.confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:24px}.confirm-box{background:var(--surface);border-radius:16px;padding:20px;max-width:340px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.25)}.confirm-msg{font-size:15px;color:var(--ink);margin-bottom:18px;line-height:1.5}.confirm-btns{display:flex;gap:10px}.confirm-btns .btn{flex:1}.pending-list .pending-row .info{flex:1;min-width:0}.pending-list .pending-row .info b{display:block;font-weight:600}.pending-list .pending-row .info small{font-size:12px;color:var(--muted);display:block}.switch{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted)}.switch input{position:absolute;opacity:0;width:0;height:0}.switch-track{position:relative;width:34px;height:20px;background:var(--border-strong);border-radius:99px;flex:none;transition:background .15s}.switch-thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}.switch input:checked+.switch-track{background:var(--green)}.switch input:checked+.switch-track .switch-thumb{transform:translateX(14px)}.switch-label{font-weight:600}.period-row-renamed{background:var(--green-soft);border-radius:8px;padding:10px 12px!important}.period-rename-input{border:1px solid var(--border-strong);border-radius:6px;padding:4px 8px;font-size:14px;font-weight:600;width:100%;max-width:200px}.period-rename-input:focus{outline:0;border-color:var(--green);box-shadow:0 0 0 2px var(--green-soft)}.period-rename-cancel{background:0;border:0;cursor:pointer;font-size:16px;padding:2px 6px;color:var(--muted)}.period-rename-cancel:hover{color:var(--due)}</style>
+<style>:root{--green:#1b4d3e;--green-dark:#143a2f;--green-soft:#e8efe9;--paper:#f7f6f2;--surface:#fff;--ink:#1c2724;--muted:#6b7672;--border:#e3e1d8;--border-strong:#cfd0c7;--paid:#15803d;--partial:#b45309;--due:#b91c1c;--shadow:0 1px 2px rgba(20,40,30,.06),0 6px 20px rgba(20,40,30,.06);--radius:14px}*{box-sizing:border-box}html,body{margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--paper);color:var(--ink);line-height:1.45;-webkit-font-smoothing:antialiased}.money{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}button{font-family:inherit;cursor:pointer}input{font-family:inherit}header{background:var(--green);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;position:sticky;top:0;z-index:20}.brand{display:flex;flex-direction:column;line-height:1.2}.brand b{font-size:15px;font-weight:650;letter-spacing:.2px}.brand span{font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px}main{max-width:680px;margin:0 auto;padding:18px 16px 60px}.btn{background:var(--green);color:#fff;border:none;padding:13px 18px;border-radius:10px;font-size:15px;font-weight:600;white-space:nowrap}.btn:active{background:var(--green-dark)}.btn.block{width:100%}.btn.ghost{background:0;color:var(--green);border:1.5px solid var(--green)}.btn.small{padding:9px 13px;font-size:13.5px}.btn.danger{background:var(--due)}.btn[disabled]{opacity:.5;pointer-events:none}.statement{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);margin-top:18px;overflow:hidden;animation:rise .25s ease}@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}.statement .top{padding:18px;border-bottom:1px dashed var(--border-strong);display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.statement .name{font-size:18px;font-weight:650;margin:0}.statement .meta{font-size:12.5px;color:var(--muted);margin-top:3px}.badge{font-size:11px;font-weight:700;padding:5px 10px;border-radius:99px;white-space:nowrap;text-transform:uppercase;letter-spacing:.5px}.badge.paid{background:#e6f4ea;color:var(--paid)}.badge.partial{background:#fdf1e3;color:var(--partial)}.badge.due{background:#fdeaea;color:var(--due)}.badge.action{cursor:pointer;transition:opacity .15s}.badge.action:active{opacity:.7}.badge.action-paid{background:#e6f4ea;color:var(--paid)}.badge.action-pay{background:#e8f0fe;color:#1a73e8}.badge.action-waive{background:#fdf1e3;color:var(--partial)}.badge.action-return{background:#f3e8ff;color:#7c3aed}.badge-row{display:flex;gap:8px;flex-wrap:wrap}.balance-block{padding:20px 18px;text-align:center;background:linear-gradient(180deg,#fbfbf8,0)}.balance-block .label{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}.balance-block .amount{font-size:40px;font-weight:700;margin:4px 0 2px;letter-spacing:-1px}.balance-block .amount.zero{color:var(--paid)}.balance-block .amount.owing{color:var(--due)}.split{display:flex;border-top:1px solid var(--border)}.split div{flex:1;padding:13px;text-align:center}.split div+div{border-left:1px solid var(--border)}.split .k{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}.split .v{font-size:17px;font-weight:650;margin-top:2px}.ledger{border-top:1px solid var(--border)}.ledger h3{font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:0;padding:14px 18px 6px}.row{display:flex;align-items:center;gap:10px;padding:7px 18px;border-top:1px solid var(--border)}.row .desc{flex:1;min-width:0}.row .desc b{font-size:14px;font-weight:600;display:block}.row .desc .desc-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.row .desc small{font-size:12px;color:var(--muted)}.row .amt{font-size:14.5px;font-weight:650;white-space:nowrap}.amt.charge{color:var(--ink)}.amt.payment{color:var(--paid)}.empty{padding:18px;text-align:center;color:var(--muted);font-size:13.5px}.back{background:0;border:none;color:var(--green);font-size:13.5px;font-weight:600;padding:14px 4px 2px;display:inline-flex;align-items:center;gap:4px}.breakdown{padding:6px 18px 8px}.brow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;font-size:14.5px;border-bottom:1px solid var(--border)}.brow span{color:var(--muted)}.brow b{font-weight:650;white-space:nowrap}.brow.total{border-bottom:0;border-top:2px solid var(--border-strong);margin-top:2px;padding-top:13px;font-size:16.5px}.brow.total span{color:var(--ink);font-weight:700}.brow b.credit{color:var(--paid)}.carry-note{font-size:12.5px;color:var(--paid);padding:0 18px 16px;text-align:center}.notice{padding:16px;border-radius:10px;font-size:14px;margin-top:16px}.notice.err{background:#fdeaea;color:#7a1d1d;border:1px solid #f3c4c4}.notice.info{background:var(--green-soft);color:var(--green-dark);border:1px solid #cfe0d5}.hidden{display:none!important}.login-card{max-width:360px;margin:30px auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px 20px;box-shadow:var(--shadow)}.login-card h2{margin:0 0 16px;font-size:18px}.field{margin-bottom:12px}.field label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:5px}.field input{width:100%;padding:11px 12px;font-size:15px;border:1.5px solid var(--border-strong);border-radius:9px;outline:0}.field input:focus{border-color:var(--green)}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}.stat{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 12px;box-shadow:var(--shadow)}.stat .k{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}.stat .v{font-size:20px;font-weight:700;margin-top:3px}.stat .v.due{color:var(--due)}.stat .v.paid{color:var(--paid)}.toolbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}.toolbar input{flex:1;padding:11px 12px;font-size:15px;border:1.5px solid var(--border-strong);border-radius:9px;outline:0;min-width:0}.toolbar input:focus{border-color:var(--green)}.clist{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}.citizen-row{display:flex;align-items:center;gap:10px;padding:12px 15px;border-top:1px solid var(--border);width:100%;background:0;border-left:0;border-right:0;text-align:left;transition:background .15s}.citizen-row:first-child{border-top:0}.citizen-row:active{background:var(--paper)}.citizen-row .info{flex:1;min-width:0}.citizen-row .info b{font-size:15px;display:block;font-weight:600}.citizen-row .info small{font-size:12px;color:var(--muted);display:block;margin-top:2px}.citizen-row .bal{font-size:15px;font-weight:700;white-space:nowrap}.dot{width:8px;height:8px;border-radius:50%;flex:none}.dot.paid{background:var(--paid)}.dot.partial{background:var(--partial)}.dot.due{background:var(--due)}.overlay{position:fixed;inset:0;background:rgba(20,30,25,.45);z-index:40;display:flex;align-items:flex-end;justify-content:center}.sheet{background:var(--surface);width:100%;max-width:680px;max-height:92vh;overflow-y:auto;border-radius:18px 18px 0 0;animation:slideup .25s ease}@keyframes slideup{from{transform:translateY(100%)}to{transform:0}}.sheet-head{position:sticky;top:0;background:var(--surface);padding:16px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;z-index:2}.sheet-head h2{margin:0;font-size:17px}.x{background:var(--paper);border:1px solid var(--border);width:34px;height:34px;border-radius:50%;font-size:18px;line-height:1;color:var(--muted)}.sheet-body{padding:18px}.panel{background:var(--paper);border:1px solid var(--border);border-radius:12px;padding:15px;margin-bottom:14px}.panel h4{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}.inline{display:flex;gap:8px}.inline .field{flex:1;margin-bottom:0}.seg{display:flex;gap:8px;margin-bottom:12px}.seg button{flex:1;padding:10px;border:1.5px solid var(--border-strong);background:var(--surface);border-radius:9px;font-weight:600;font-size:14px;color:var(--muted)}.seg button.active{border-color:var(--green);background:var(--green-soft);color:var(--green-dark)}.period-sel{width:100%;padding:11px 12px;border:1.5px solid var(--border-strong);border-radius:9px;background:var(--surface);font-size:14px;color:var(--ink);-webkit-appearance:none;appearance:none}.action-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}.action-grid .btn{width:100%}.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 18px;border-radius:99px;font-size:14px;z-index:60;box-shadow:var(--shadow);animation:rise .2s ease}.hist-toggle{width:100%;text-align:left;background:0;border:0;border-top:1px solid var(--border);padding:14px 18px;font-size:13px;font-weight:650;color:var(--green);text-transform:uppercase;letter-spacing:.5px;cursor:pointer}.dash-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.dash-title{font-size:13px;font-weight:650;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}footer{text-align:center;color:var(--muted);font-size:11.5px;padding:24px 16px}.config-warn{background:#fff7e6;border:1px solid #f0d99a;color:#7a5a12;padding:14px 16px;border-radius:10px;font-size:13px;margin:16px;line-height:1.5}.row.payment-indent .desc{margin-left:24px}.row .actions{display:flex;gap:4px;flex-shrink:0}.row .actions button{background:0;border:0;font-size:14px;padding:2px 4px;color:var(--muted)}.row .actions button:hover{color:var(--ink)}.row.deferred{opacity:.6;background:#f9f9f6}.row.deferred .desc b::after{content:" (deferred)";font-weight:400;color:var(--muted);font-size:11px;margin-left:6px}.row.no-top-border{border-top:0}.inline-buttons{display:flex;gap:8px;flex-wrap:wrap}.inline-buttons .btn{flex:1;min-width:80px}.pending-badge{background:#fef3c7;color:#92400e;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:600}.pending-list .pending-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}.pending-list .pending-row:last-child{border-bottom:0}.pending-list .confirm-btn{background:var(--paid);color:#fff;border:0;padding:4px 12px;border-radius:99px;font-size:12px}.confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:24px}.confirm-box{background:var(--surface);border-radius:16px;padding:20px;max-width:340px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.25)}.confirm-msg{font-size:15px;color:var(--ink);margin-bottom:18px;line-height:1.5}.confirm-btns{display:flex;gap:10px}.confirm-btns .btn{flex:1}.pending-list .pending-row .info{flex:1;min-width:0}.pending-list .pending-row .info b{display:block;font-weight:600}.pending-list .pending-row .info small{font-size:12px;color:var(--muted);display:block}.switch{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted)}.switch input{position:absolute;opacity:0;width:0;height:0}.switch-track{position:relative;width:34px;height:20px;background:var(--border-strong);border-radius:99px;flex:none;transition:background .15s}.switch-thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}.switch input:checked+.switch-track{background:var(--green)}.switch input:checked+.switch-track .switch-thumb{transform:translateX(14px)}.switch-label{font-weight:600}.period-row-renamed{background:var(--green-soft);border-radius:8px;padding:10px 12px!important}.period-rename-input{border:1px solid var(--border-strong);border-radius:6px;padding:4px 8px;font-size:14px;font-weight:600;width:100%;max-width:200px}.period-rename-input:focus{outline:0;border-color:var(--green);box-shadow:0 0 0 2px var(--green-soft)}.period-rename-cancel{background:0;border:0;cursor:pointer;font-size:16px;padding:2px 6px;color:var(--muted)}.period-rename-cancel:hover{color:var(--due)}.filter-tab{flex:1 1 30%;display:flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap}.tab-count{font-size:11px;font-weight:700;padding:1px 6px;border-radius:99px;background:var(--border);color:var(--muted)}.filter-tab.active .tab-count{background:var(--green);color:#fff}.dir-arrow{color:var(--muted);font-weight:700;margin:0 2px}</style>
 </head>
 <body>
 <header>
@@ -43,11 +43,26 @@
           <button class="btn small ghost" id="logoutBtn">Log out</button>
         </div>
       </div>
-      <div class="stats" style="grid-template-columns:1fr">
-        <div class="stat" style="text-align:center;padding:18px 16px">
+      <div class="stats" style="grid-template-columns:repeat(2,1fr)">
+        <div class="stat" style="text-align:center">
           <div class="k">Still to collect</div>
-          <div class="v due" id="stOut" style="font-size:30px">₹0</div>
-          <div class="sub" id="stPendingCount" style="font-size:13px;color:var(--muted);margin-top:4px">—</div>
+          <div class="v due" id="stOut" style="font-size:22px">₹0</div>
+          <div class="sub" id="stPendingCount" style="font-size:11.5px;color:var(--muted);margin-top:4px">—</div>
+        </div>
+        <div class="stat" style="text-align:center">
+          <div class="k">Overdue</div>
+          <div class="v due" id="stOverdue" style="font-size:22px">—</div>
+          <div class="sub" id="stOverdueCount" style="font-size:11.5px;color:var(--muted);margin-top:4px">—</div>
+        </div>
+        <div class="stat" style="text-align:center">
+          <div class="k">Deferred</div>
+          <div class="v" style="font-size:22px;color:var(--partial)" id="stDeferred">₹0</div>
+          <div class="sub" id="stDeferredCount" style="font-size:11.5px;color:var(--muted);margin-top:4px">—</div>
+        </div>
+        <div class="stat" style="text-align:center">
+          <div class="k">Overpaid</div>
+          <div class="v paid" id="stOverpaid" style="font-size:22px">₹0</div>
+          <div class="sub" id="stOverpaidCount" style="font-size:11.5px;color:var(--muted);margin-top:4px">—</div>
         </div>
       </div>
       <div class="toolbar">
@@ -60,12 +75,13 @@
           <div id="pendingList" class="pending-list"></div>
         </div>
       </div>
-      <select id="adminFilter" class="period-sel" style="margin-bottom:12px">
-        <option value="pending" selected>Pending</option>
-        <option value="deferred">Deferred</option>
-        <option value="overpaid">Overpaid</option>
-        <option value="all">All</option>
-      </select>
+      <div class="seg" id="adminFilterTabs" style="flex-wrap:wrap;margin-bottom:12px">
+        <button class="filter-tab active" data-filter="pending">Pending <span class="tab-count" data-count="pending">0</span></button>
+        <button class="filter-tab" data-filter="overdue">Overdue <span class="tab-count" data-count="overdue">0</span></button>
+        <button class="filter-tab" data-filter="deferred">Deferred <span class="tab-count" data-count="deferred">0</span></button>
+        <button class="filter-tab" data-filter="overpaid">Overpaid <span class="tab-count" data-count="overpaid">0</span></button>
+        <button class="filter-tab" data-filter="all">All <span class="tab-count" data-count="all">0</span></button>
+      </div>
       <div id="periodWrap" style="margin-bottom:12px">
         <select id="periodSel" class="period-sel"><option value="">All pending (any period)</option></select>
       </div>
@@ -76,7 +92,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.27.0</footer>
+<footer>New Serchhip North Village Council · v1.28.0</footer>
 
 <script type="module">
 /* ============================================================
@@ -167,6 +183,38 @@ function getDeferredAmount(c){
     if(e.type==="charge" && e.deferred) total += Number(e.amount || 0);
   }
   return total;
+}
+// FIFO-allocates payments against non-deferred, non-excluded charges in
+// chronological order, same rule getEffectiveBalance uses. Returns each
+// still-owed charge's period note and the amount of it left unpaid (a
+// charge can be partially covered by leftover payment credit).
+function getOwedBreakdown(entries){
+  const chrono=[...entries].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+  let pay=0;
+  for(const e of chrono) if(e.type==="payment") pay+=Number(e.amount||0);
+  const owed=[];
+  for(const e of chrono){
+    if(e.type!=="charge" || e.deferred || isChargeExcluded(e)) continue;
+    const amt=Number(e.amount||0);
+    if(pay>=amt){ pay-=amt; continue; }
+    owed.push({note:e.note, remaining:amt-pay});
+    pay=0;
+  }
+  return owed;
+}
+// Overdue = owed charges from periods before the citizen's own most
+// recently-charged period (mirrors "previous-period unpaid charges that
+// aren't deferred"). Periods are typed free text ("MAY2", "April 2026",
+// historical imports, ...) with no reliable shared ordering, so this uses
+// getOwedBreakdown's chronological (createdAt) order instead of parsing
+// period names: the last owed charge entered is "current due", anything
+// owed before it is overdue.
+function getOverdueBreakdown(entries, precomputedOwed){
+  const owed=precomputedOwed || getOwedBreakdown(entries);
+  if(!owed.length) return {overdue:0, currentDue:0};
+  const currentDue = owed[owed.length-1].remaining;
+  const overdue = owed.slice(0,-1).reduce((s,o)=>s+o.remaining,0);
+  return {overdue, currentDue};
 }
 const statusLabel = {paid:"Cleared", partial:"Partly paid", due:"Due"};
 function todayISO(){ return new Date().toISOString().slice(0,10); }
@@ -969,7 +1017,7 @@ let citizensUnsub=null;
 let allCitizens=[], rawCitizens=[];
 // Caching & Performance
 let ledgerCache=new Map(), periodStatsCache=null;
-let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null;
+let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null, overdueRefreshTimer=null;
 // Configuration
 
 try {
@@ -1158,6 +1206,15 @@ function scheduleDashboardRefresh(){
       console.warn("Background ledger cache refresh failed:", e);
     });
   }, CACHE_REFRESH_DELAY_MS);
+  // The Overdue summary card/tab needs each pending citizen's ledger, which
+  // isn't in the live citizen list — same lazy fetch the period dropdown
+  // already used, just also kicked off quietly here so the dashboard fills
+  // in without waiting for someone to open that dropdown. Debounced so a
+  // burst of snapshot events (bulk import, rapid edits) settles first.
+  clearTimeout(overdueRefreshTimer);
+  overdueRefreshTimer = setTimeout(()=>{
+    if(!periodsReady && !loadingPeriods) loadOwedBreakdown();
+  }, CACHE_REFRESH_DELAY_MS);
 }
 async function refreshDashboard(){
   const seq = ++dashboardRefreshSeq;
@@ -1189,10 +1246,33 @@ function renderStats(){
   const out = pending.reduce((s,c)=>s+Math.max(0,getEffectiveBalance(c)),0);
   $("stOut").textContent = fmt(out);
   $("stPendingCount").textContent = `${pending.length} household${pending.length===1?"":"s"} pending`;
+
+  if(periodsReady){
+    const {total, count} = overdueTotals();
+    $("stOverdue").textContent = fmt(total);
+    $("stOverdueCount").textContent = `${count} household${count===1?"":"s"} overdue`;
+  } else {
+    $("stOverdue").textContent = "…";
+    $("stOverdueCount").textContent = loadingPeriods ? "Loading…" : "—";
+  }
+
+  const deferred = allCitizens.filter(c=>getDeferredAmount(c)>0);
+  const deferredOut = deferred.reduce((s,c)=>s+getDeferredAmount(c),0);
+  $("stDeferred").textContent = fmt(deferredOut);
+  $("stDeferredCount").textContent = `${deferred.length} household${deferred.length===1?"":"s"} deferred`;
+
+  const overpaid = allCitizens.filter(c=>getEffectiveBalance(c)<0);
+  const overpaidOut = overpaid.reduce((s,c)=>s+Math.abs(getEffectiveBalance(c)),0);
+  $("stOverpaid").textContent = fmt(overpaidOut);
+  $("stOverpaidCount").textContent = `${overpaid.length} household${overpaid.length===1?"":"s"} overpaid`;
 }
 let adminFilter="pending", adminShown=20;
 const ADMIN_STEP=20;
 let periodFilter="", unpaidCache=new Map(), periodsReady=false, loadingPeriods=false;
+// Overdue/current-due amounts, keyed by citizen id. Populated alongside
+// unpaidCache in loadOwedBreakdown() since both need the same per-citizen
+// ledger fetch — computing them together avoids doubling that cost.
+let overdueCache=new Map();
 
 function periodKey(note){
   const s=String(note||"").trim().toUpperCase();
@@ -1202,32 +1282,34 @@ function periodKey(note){
   return idx*10 + (m[2]?parseInt(m[2],10):0);
 }
 function unpaidPeriods(entries){
-  const chrono=[...entries].sort((a,b)=>a.createdAt-b.createdAt);
-  let pay=0; for(const e of chrono) if(e.type==="payment") pay+=(e.amount||0);
-  const owed=[];
-  for(const e of chrono){
-    if(e.type!=="charge" || e.deferred || isChargeExcluded(e)) continue;
-    if(pay>=(e.amount||0)){ pay-=(e.amount||0); }
-    else { if(e.note) owed.push(e.note); pay=0; }
-  }
-  return owed;
+  return getOwedBreakdown(entries).filter(o=>o.note).map(o=>o.note);
 }
-async function loadPendingPeriods(){
+async function loadOwedBreakdown(){
   if(loadingPeriods) return; loadingPeriods=true;
   const pend=allCitizens.filter(c=>getEffectiveBalance(c)>0);
-  const cache=new Map(), set=new Set();
+  const cache=new Map(), overdue=new Map(), set=new Set();
   await Promise.all(pend.map(async c => {
-    try{ const led=ledgerCache.get(c.id)||await store.getLedger(c.id); const up=unpaidPeriods(led);
-      cache.set(c.id, up); up.forEach(p=>set.add(p)); }catch(e){}
+    try{
+      const led=ledgerCache.get(c.id)||await store.getLedger(c.id);
+      const owed=getOwedBreakdown(led);
+      const up=owed.filter(o=>o.note).map(o=>o.note);
+      cache.set(c.id, up); up.forEach(p=>set.add(p));
+      overdue.set(c.id, getOverdueBreakdown(null, owed));
+    }catch(e){}
   }));
-  unpaidCache=cache; periodsReady=true; loadingPeriods=false;
+  unpaidCache=cache; overdueCache=overdue; periodsReady=true; loadingPeriods=false;
   const sel=$("periodSel");
   if(sel){
     const periods=[...set].sort((a,b)=>periodKey(a)-periodKey(b));
     sel.innerHTML=`<option value="">All pending (any period)</option>`+
       periods.map(p=>`<option value="${esc(p)}"${p===periodFilter?" selected":""}>Pending: ${esc(prettyPeriod(p))}</option>`).join("");
   }
-  renderList();
+  renderStats(); renderList();
+}
+function overdueTotals(){
+  let total=0, count=0;
+  for(const {overdue} of overdueCache.values()){ if(overdue>0){ total+=overdue; count++; } }
+  return {total, count};
 }
 
 $("adminSearch").addEventListener("input", ()=>{
@@ -1239,13 +1321,15 @@ $("clearSearchBtn").addEventListener("click", ()=>{
   $("clearSearchBtn").style.display = "none";
   adminShown=20; renderList();
 });
-$("adminFilter").addEventListener("change", ()=>{
-  adminFilter=$("adminFilter").value; adminShown=20;
-  if(adminFilter!=="pending") periodFilter="";
-  renderList();
+document.querySelectorAll("#adminFilterTabs .filter-tab").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    adminFilter=btn.dataset.filter; adminShown=20;
+    if(adminFilter!=="pending") periodFilter="";
+    renderList();
+  });
 });
 $("periodSel").addEventListener("change", ()=>{ periodFilter=$("periodSel").value; adminShown=20; renderList(); });
-$("periodSel").addEventListener("focus", ()=>{ if(!periodsReady && !loadingPeriods) loadPendingPeriods(); });
+$("periodSel").addEventListener("focus", ()=>{ if(!periodsReady && !loadingPeriods) loadOwedBreakdown(); });
 
 function filterCitizenList(citizens, searchTerm, filter, periodFilter){
   let list = citizens.slice();
@@ -1254,9 +1338,12 @@ function filterCitizenList(citizens, searchTerm, filter, periodFilter){
   } else if(filter==="pending"){
     list = list.filter(c => getEffectiveBalance(c)>0);
     if(periodFilter){
-      if(!periodsReady && !loadingPeriods) loadPendingPeriods();
+      if(!periodsReady && !loadingPeriods) loadOwedBreakdown();
       list = list.filter(c => (unpaidCache.get(c.id)||[]).includes(periodFilter));
     }
+  } else if(filter==="overdue"){
+    if(!periodsReady && !loadingPeriods) loadOwedBreakdown();
+    list = list.filter(c => (overdueCache.get(c.id)?.overdue||0)>0);
   } else if(filter==="deferred"){
     list = list.filter(c => getDeferredAmount(c)>0);
   } else if(filter==="overpaid"){
@@ -1272,7 +1359,12 @@ function buildCitizenCardHTML(citizen, filter){
   const st = statusOf(citizen);
   let small, balText, balColor;
 
-  if(filter==="deferred"){
+  if(filter==="overdue"){
+    const overdueAmt = overdueCache.get(citizen.id)?.overdue||0;
+    small = `${esc(citizen.jobCard||citizen.id)} · Overdue`;
+    balText = fmt(overdueAmt);
+    balColor = 'var(--due)';
+  } else if(filter==="deferred"){
     small = `${esc(citizen.jobCard||citizen.id)} · Deferred ${fmt(deferred)}`;
     balText = fmt(deferred);
     balColor = 'var(--partial)';
@@ -1303,7 +1395,25 @@ function attachCitizenListListeners(){
   if(moreBtn) moreBtn.addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
 }
 
+function renderFilterTabs(){
+  document.querySelectorAll("#adminFilterTabs .filter-tab").forEach(btn=>{
+    btn.classList.toggle("active", btn.dataset.filter===adminFilter);
+  });
+  const counts = {
+    pending: allCitizens.filter(c=>getEffectiveBalance(c)>0).length,
+    overdue: periodsReady ? overdueTotals().count : null,
+    deferred: allCitizens.filter(c=>getDeferredAmount(c)>0).length,
+    overpaid: allCitizens.filter(c=>getEffectiveBalance(c)<0).length,
+    all: allCitizens.length
+  };
+  for(const [key,val] of Object.entries(counts)){
+    const el = document.querySelector(`.tab-count[data-count="${key}"]`);
+    if(el) el.textContent = val===null ? "…" : val;
+  }
+}
+
 function renderList(){
+  renderFilterTabs();
   const term = $("adminSearch").value.trim().toLowerCase();
   const showPeriod = (adminFilter==="pending" && !term);
   $("periodWrap").classList.toggle("hidden", !showPeriod);
@@ -1441,7 +1551,7 @@ async function handlePeriodsSave(pendingRenames){
     pendingRenames.clear();
     msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excl.length} exclusions, ${renamed} rename${renamed===1?"":"s"}.</div>`;
     toast("Periods updated");
-    await refreshDashboard(); loadPendingPeriods();
+    await refreshDashboard(); loadOwedBreakdown();
   }catch(err){
     console.error(err);
     msg.innerHTML='<div class="notice err">Failed to save.</div>';
@@ -1627,7 +1737,7 @@ async function savePeriods(){
     msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excluded.length} periods excluded from calculations.</div>`;
     toast("Periods updated");
     await refreshDashboard();
-    loadPendingPeriods();
+    loadOwedBreakdown();
   }catch(err){ console.error(err); msg.innerHTML=`<div class="notice err">Failed to save. Try again.</div>`; }
   finally{ btn.disabled=false; }
 }
@@ -2231,7 +2341,23 @@ function renderHistoryRows(entries, editing){
   return entries.map(e => renderEntryRow(e, editing)).join("");
 }
 
-function buildCitizenDetailHTML(citizen, balance, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount){
+function buildFinancialBreakdownHTML(overdue, currentDue, deferredAmt){
+  // Total remaining is derived from overdue+currentDue (both computed from
+  // the same freshly-fetched ledger) rather than the citizen's cached
+  // balance, which can lag a moment behind right after a payment/waive —
+  // keeping this panel internally consistent even if the balance-block
+  // above it hasn't re-rendered yet.
+  const totalRemaining = overdue + currentDue;
+  if(totalRemaining<=0 && deferredAmt<=0) return '';
+  return `<div class="breakdown">
+    ${overdue>0 ? `<div class="brow"><span>Overdue</span><b class="money" style="color:var(--due)">${fmt(overdue)}</b></div>` : ''}
+    ${currentDue>0 ? `<div class="brow"><span>Current due</span><b class="money">${fmt(currentDue)}</b></div>` : ''}
+    ${deferredAmt>0 ? `<div class="brow"><span>Deferred</span><b class="money" style="color:var(--partial)">${fmt(deferredAmt)}</b></div>` : ''}
+    <div class="brow total"><span>Total remaining</span><b class="money">${fmt(totalRemaining)}</b></div>
+  </div>`;
+}
+
+function buildCitizenDetailHTML(citizen, balance, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount, breakdownHTML){
   return `
   <button class="back" id="adminBackBtn">‹ Back</button>
   <div class="statement">
@@ -2248,10 +2374,11 @@ function buildCitizenDetailHTML(citizen, balance, historyHTML, headerBadge, acti
         ? `<div class="amount money zero">${fmt(Math.abs(balance))} <span style="font-size:14px;font-weight:400;color:var(--paid)">overpaid</span></div>`
         : `<div class="amount money ${balance<=0?'zero':'owing'}">${fmt(Math.max(0,balance))}</div>`}
     </div>
+    ${breakdownHTML}
     ${actionBadges}
     <div class="ledger">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px 6px">
-        <b style="font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">History (${totalEntries})</b>
+        <b style="font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">Transaction History (${totalEntries})</b>
         <button class="btn small ghost" id="histEditBtn" style="font-size:12px;padding:4px 10px">Edit</button>
       </div>
       <div id="historyBody">${historyHTML}</div>
@@ -2280,7 +2407,7 @@ async function renderCitizenDetail(id){
     const hasOwing = bal > 0;
     const isOverpaid = bal < 0;
     const headerBadge = hasOwing
-      ? `<span class="badge action action-paid" id="hdrMarkPaid">Mark Paid</span>`
+      ? `<span class="badge action action-paid" id="hdrMarkPaid">Pay Full Balance</span>`
       : isOverpaid
         ? `<span class="badge paid">Overpaid</span>`
         : `<span class="badge paid">Cleared</span>`;
@@ -2294,14 +2421,17 @@ async function renderCitizenDetail(id){
     const visibleEntries = state.historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
     const hiddenCount = totalEntries - Math.min(INITIAL_HISTORY, totalEntries);
     const historyHTML = renderHistoryRows(visibleEntries, false);
+    const deferredAmt = getDeferredAmount(c);
+    const {overdue, currentDue} = getOverdueBreakdown(entries);
+    const breakdownHTML = buildFinancialBreakdownHTML(overdue, currentDue, deferredAmt);
 
-    $("adminDetail").innerHTML = buildCitizenDetailHTML(c, bal, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount);
+    $("adminDetail").innerHTML = buildCitizenDetailHTML(c, bal, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount, breakdownHTML);
     attachCitizenDetailListeners(id, c, bal, allSorted, INITIAL_HISTORY, state);
   } catch(err) { console.error(err); }
 }
 
 function attachCitizenDetailListeners(id, citizen, balance, allSorted, initialHistoryCount, stateRef){
-  // Mark Paid
+  // Pay Full Balance
   if($("hdrMarkPaid")) $("hdrMarkPaid").addEventListener("click", async ()=>{
     const name = citizen.name || id;
     const ok = await confirmAction(`Mark ${name} fully paid (${fmt(balance)})?`);
