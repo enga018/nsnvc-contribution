@@ -96,7 +96,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.1</footer>
+<footer>New Serchhip North Village Council · v1.29.2</footer>
 
 <script type="module">
 /* ============================================================
@@ -1140,6 +1140,11 @@ async function onAuth(isIn){
       ]);
     } catch(err){ console.error("Failed to load excluded periods:", err); }
     setTimeout(refreshPending, 0);
+    // Background integrity check: recalculate all balances from ledgers after
+    // login so any cached totals that drifted out of sync are silently repaired.
+    setTimeout(()=>{
+      store.recalcAll().then(()=>console.log("Login integrity recalc complete")).catch(e=>console.error("Login integrity recalc failed:", e));
+    }, 3000);
   } else {
     $("loginCard").classList.remove("hidden");
     $("dashboard").classList.add("hidden");
@@ -2101,8 +2106,10 @@ async function runUpload(){
       await store.bulkAppendPayments(payItems,(d,t)=>{ done=pendingUpload.charges.length+d; prog.innerHTML=`<div class="notice info">Processing payments… ${d} / ${t}</div>`; });
     }
     clearOperationErrors();
-    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${pendingUpload.charges.length} charges and ${pendingUpload.payments.length} payments processed.</div>`;
-    pendingUpload=null; setTimeout(()=>{ closeSheet(); toast("Upload complete"); },SHEET_CLOSE_DELAY_MS);
+    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${pendingUpload.charges.length} charges and ${pendingUpload.payments.length} payments processed. Recalculating balances…</div>`;
+    pendingUpload=null;
+    store.recalcAll().then(()=>toast("Balances recalculated")).catch(e=>console.error("recalcAll after upload failed:", e));
+    setTimeout(()=>{ closeSheet(); toast("Upload complete"); },SHEET_CLOSE_DELAY_MS);
   }catch(err){
     handleOperationError("bulkUpload", err);
     prog.innerHTML=`<div class="notice err">Update failed partway. Check connection and try again.</div>`;
@@ -2223,8 +2230,10 @@ async function runBank(){
   prog.innerHTML=`<div class="notice info">Recording… 0 / ${items.length}</div>`;
   try{
     await store.bulkAppendPayments(items,(d,t)=>{ prog.innerHTML=`<div class="notice info">Recording… ${d} / ${t}</div>`; });
-    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${items.length} bank payments recorded.</div>`;
-    pendingBank=null; setTimeout(()=>{ closeSheet(); toast("Bank payments recorded"); },SHEET_CLOSE_DELAY_MS);
+    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${items.length} bank payments recorded. Recalculating balances…</div>`;
+    pendingBank=null;
+    store.recalcAll().then(()=>toast("Balances recalculated")).catch(e=>console.error("recalcAll after bank upload failed:", e));
+    setTimeout(()=>{ closeSheet(); toast("Bank payments recorded"); },SHEET_CLOSE_DELAY_MS);
   }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Recording failed partway. Check connection and try again.</div>`; btn.disabled=false; }
 }
 
