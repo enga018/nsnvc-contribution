@@ -1,0 +1,22 @@
+name: Version sync check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - VERSION
+      - index.html
+      - sw.js
+  push:
+    branches: [main]
+    paths:
+      - VERSION
+      - index.html
+      - sw.js
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check-version-sync.sh
