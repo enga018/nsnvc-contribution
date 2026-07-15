@@ -60,8 +60,13 @@ echo "$NEW_VERSION" > "$VERSION_FILE"
 # Update version in index.html footer
 sed -i "s/v${CURRENT_VERSION}/v${NEW_VERSION}/g" index.html
 
+# Update sw.js's CACHE_NAME too — if this drifts behind VERSION, installed
+# PWAs never see an update (the browser only reinstalls a service worker
+# when sw.js's bytes change). See scripts/check-version-sync.sh.
+sed -i "s/nsnvc-tracker-v${CURRENT_VERSION}/nsnvc-tracker-v${NEW_VERSION}/g" sw.js
+
 # Stage and amend the commit
-git add VERSION index.html
+git add VERSION index.html sw.js
 git commit --amend --no-edit
 
 echo ""
