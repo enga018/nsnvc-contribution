@@ -195,7 +195,7 @@ function getDeferredAmount(c){
 function getOwedBreakdown(entries){
   const chrono=[...entries].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
   let pay=0;
-  for(const e of chrono) if(e.type==="payment") pay+=Number(e.amount||0);
+  for(const e of chrono) if(e.type==="payment" || e.type==="sanitationFee") pay+=Number(e.amount||0);
   const owed=[];
   for(const e of chrono){
     if(e.type!=="charge" || e.deferred || isChargeExcluded(e)) continue;
@@ -2313,10 +2313,11 @@ function closeCitizenDetail(){
 function renderEntryRow(entry, editing){
   const isPayment = entry.type==="payment";
   const isForgive = entry.type==="forgive";
+  const isSanitationFee = entry.type==="sanitationFee";
   const isDeferred = entry.deferred && entry.type==="charge";
   const label = entryLabel(entry);
-  const amtClass = isPayment || isForgive ? "payment" : "charge";
-  const amtSign = isPayment || isForgive ? "− " : "+ ";
+  const amtClass = isPayment || isForgive || isSanitationFee ? "payment" : "charge";
+  const amtSign = isPayment || isForgive || isSanitationFee ? "− " : "+ ";
   const rowClass = "row" + (isDeferred ? " deferred" : "");
 
   const actions = editing ? `<span class="actions">
@@ -2421,6 +2422,7 @@ async function renderCitizenDetail(id){
       <span class="badge action action-waive" id="btnWaive">Waive</span>
     </div>` : isOverpaid ? `<div class="badge-row" style="padding:0 18px 14px">
       <span class="badge action action-return" id="btnReturn">Return</span>
+      <span class="badge action action-return" id="btnSanitationFee">Sanitation Fee</span>
     </div>` : '';
     const totalEntries = allSorted.length;
     const visibleEntries = state.historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
@@ -2451,6 +2453,9 @@ function attachCitizenDetailListeners(id, citizen, balance, allSorted, initialHi
 
   // Return badge → open sheet
   if($("btnReturn")) $("btnReturn").addEventListener("click", ()=> openReturnSheet(id, balance));
+
+  // Sanitation Fee badge → open sheet
+  if($("btnSanitationFee")) $("btnSanitationFee").addEventListener("click", ()=> openSanitationFeeSheet(id, balance));
 
   $("delCitizen").addEventListener("click", ()=>deleteCitizen(id));
   $("adminBackBtn").addEventListener("click", closeCitizenDetail);
@@ -2642,6 +2647,42 @@ function openReturnSheet(id, bal){
     <div id="returnMsg" style="margin-top:10px"></div>
   `);
   $("returnSubmit").addEventListener("click", ()=> handleReturnSubmit(id));
+}
+
+async function handleSanitationFeeSubmit(id){
+  const amount = parseFloat($("sanitationFeeAmt").value);
+  if(!(amount>0)){ toast("Enter a valid amount"); return; }
+  if(isNaN(amount)){ toast("Enter a valid amount"); return; }
+  const note = $("sanitationFeeNote").value.trim() || "Sanitation Fee";
+  const date = $("sanitationFeeDate").value || todayISO();
+  if(!(await confirmAction(`Record a sanitation fee of ${fmt(amount)} for this citizen?`))) return;
+  $("sanitationFeeSubmit").disabled=true;
+  try{
+    await store.addEntry(id, "sanitationFee", amount, note, date);
+    clearOperationErrors();
+    toast("Sanitation fee recorded");
+    closeSheet();
+    await renderCitizenDetail(id);
+  }catch(err){
+    handleOperationError("recordSanitationFee", err);
+    toast("Couldn't save. Try again.");
+    $("sanitationFeeSubmit").disabled=false;
+  }
+}
+
+function openSanitationFeeSheet(id, bal){
+  const overpaidAmt = bal<0 ? Math.abs(bal) : 0;
+  openSheet("Record sanitation fee", `
+    <div class="field"><label>Amount (${CURRENCY})</label>
+      <input id="sanitationFeeAmt" inputmode="decimal" placeholder="0" value="${overpaidAmt>0?overpaidAmt:""}"></div>
+    <div class="field"><label>Note</label>
+      <input id="sanitationFeeNote" value="Sanitation Fee"></div>
+    <div class="field"><label>Date</label>
+      <input id="sanitationFeeDate" type="date" value="${todayISO()}"></div>
+    <button class="btn block" id="sanitationFeeSubmit">Record sanitation fee</button>
+    <div id="sanitationFeeMsg" style="margin-top:10px"></div>
+  `);
+  $("sanitationFeeSubmit").addEventListener("click", ()=> handleSanitationFeeSubmit(id));
 }
 
 
