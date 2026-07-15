@@ -96,7 +96,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.0</footer>
+<footer>New Serchhip North Village Council · v1.29.1</footer>
 
 <script type="module">
 /* ============================================================
@@ -195,7 +195,7 @@ function getDeferredAmount(c){
 function getOwedBreakdown(entries){
   const chrono=[...entries].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
   let pay=0;
-  for(const e of chrono) if(e.type==="payment" || e.type==="sanitationFee") pay+=Number(e.amount||0);
+  for(const e of chrono) if(e.type==="payment") pay+=Number(e.amount||0);
   const owed=[];
   for(const e of chrono){
     if(e.type!=="charge" || e.deferred || isChargeExcluded(e)) continue;
@@ -287,10 +287,10 @@ function makeLocalStore(){
   function recalcTotals(c){
     let tc=0, tp=0, dt=0;
     for(const e of (c.ledger||[])){
-      if(e.type==="charge"){
+      if(e.type==="charge" || e.type==="sanitationFee"){
         if(e.deferred) dt += e.amount;
         else tc += e.amount;
-      } else if(e.type==="payment" || e.type==="sanitationFee"){
+      } else if(e.type==="payment"){
         tp += e.amount;
       } else if(e.type==="forgive"){
         tc -= e.amount;
@@ -691,7 +691,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
       entries.push(entry);
       ledgerCache.set(id,entries); periodStatsCache=null;
       const updates={ updatedAt:fs.serverTimestamp() };
-      if(type==="charge"){
+      if(type==="charge" || type==="sanitationFee"){
         updates.totalCharged=fs.increment(amt);
         if(deferred) updates.deferredTotal=fs.increment(amt);
         else updates.balance=fs.increment(amt);
@@ -1177,8 +1177,8 @@ function recalcFromLedger(entries){
     if(!e || typeof e.amount === 'undefined') continue;
     const amt = Number(e.amount) || 0;
     if(isNaN(amt)) { console.warn("Invalid amount in ledger entry:", e); continue; }
-    if(e.type==="charge"){ if(e.deferred) dt+=amt; else tc+=amt; }
-    else if(e.type==="payment" || e.type==="sanitationFee") tp+=amt;
+    if(e.type==="charge" || e.type==="sanitationFee"){ if(e.deferred) dt+=amt; else tc+=amt; }
+    else if(e.type==="payment") tp+=amt;
     else if(e.type==="forgive") tc-=amt;
   }
   return { totalCharged:tc+dt, totalPaid:tp, balance:tc-tp, deferredTotal:dt };
@@ -2313,11 +2313,10 @@ function closeCitizenDetail(){
 function renderEntryRow(entry, editing){
   const isPayment = entry.type==="payment";
   const isForgive = entry.type==="forgive";
-  const isSanitationFee = entry.type==="sanitationFee";
   const isDeferred = entry.deferred && entry.type==="charge";
   const label = entryLabel(entry);
-  const amtClass = isPayment || isForgive || isSanitationFee ? "payment" : "charge";
-  const amtSign = isPayment || isForgive || isSanitationFee ? "− " : "+ ";
+  const amtClass = isPayment || isForgive ? "payment" : "charge";
+  const amtSign = isPayment || isForgive ? "− " : "+ ";
   const rowClass = "row" + (isDeferred ? " deferred" : "");
 
   const actions = editing ? `<span class="actions">
