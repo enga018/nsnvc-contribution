@@ -92,7 +92,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.5</footer>
+<footer>New Serchhip North Village Council · v1.29.6</footer>
 
 <script type="module">
 /* ============================================================
@@ -2802,18 +2802,17 @@ async function doExportPdf(){
       .filter(c => getEffectiveBalance(c) > 0);
     if(!list.length){ toast("No owing households to export"); return; }
 
+    const fmtRs = n => "Rs. " + (Number(n)||0).toLocaleString("en-IN");
     const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
-    let total = 0;
     const rows = [];
     for(const c of list){
       const bal = getEffectiveBalance(c);
-      total += bal;
       const entries = ledgers[c.id] || await store.getLedger(c.id);
-      const payments = entries.filter(e=>e.type==="payment").map(e=>fmt(e.amount));
+      const payments = entries.filter(e=>e.type==="payment").map(e=>fmtRs(e.amount));
       rows.push({
         name: c.name || "—",
         jobCard: c.jobCard || c.id,
-        amount: fmt(bal),
+        amount: fmtRs(bal),
         payments: payments.length ? "Payment: " + payments.join(", ") : ""
       });
     }
@@ -2842,7 +2841,7 @@ async function doExportPdf(){
       doc.setFont(undefined, "bold");
       doc.setTextColor(40, 40, 40);
       doc.setFontSize(11);
-      const nameLines = doc.splitTextToSize(r.name, pageW - margin*2 - 50);
+      const nameLines = doc.splitTextToSize(r.name, pageW - margin*2 - 55);
       doc.text(nameLines, margin, y);
 
       const amountW = doc.getTextWidth(r.amount);
@@ -2857,10 +2856,10 @@ async function doExportPdf(){
       doc.text(r.jobCard, margin, y);
 
       if(r.payments){
-        const payLines = doc.splitTextToSize(r.payments, pageW - margin*2 - 55);
-        const payW = doc.getTextWidth(payLines[payLines.length-1]);
+        const payMaxW = 70;
+        const payLines = doc.splitTextToSize(r.payments, payMaxW);
         doc.setTextColor(26, 125, 66);
-        doc.text(payLines, rightX - payW, y);
+        doc.text(payLines, rightX, y, { align: "right" });
       }
 
       doc.setFontSize(11);
@@ -2868,15 +2867,6 @@ async function doExportPdf(){
       doc.line(margin, y, pageW - margin, y);
       y += 8;
     }
-
-    // Total
-    if(y > doc.internal.pageSize.getHeight() - 20){ doc.addPage(); y = 20; }
-    doc.setFont(undefined, "bold");
-    doc.setTextColor(40, 40, 40);
-    doc.text("Total", margin, y);
-    const totalW = doc.getTextWidth(fmt(total));
-    doc.setTextColor(180, 40, 40);
-    doc.text(fmt(total), rightX - totalW, y);
 
     doc.save(`owing_${todayISO()}.pdf`);
     toast("PDF exported");
