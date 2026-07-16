@@ -1,0 +1,12 @@
+#!/bin/bash
+# Auto-sync version strings in index.html and sw.js to match VERSION before commit.
+set -e
+
+scripts/sync-version.sh
+
+# Stage any changes made by the sync script so they're included in the commit.
+if git diff --quiet -- index.html sw.js; then
+  : # no changes
+else
+  git add index.html sw.js
+fi
