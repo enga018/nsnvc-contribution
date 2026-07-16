@@ -92,7 +92,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.3</footer>
+<footer>New Serchhip North Village Council · v1.29.4</footer>
 
 <script type="module">
 /* ============================================================
@@ -2802,80 +2802,63 @@ async function doExportPdf(){
       .filter(c => getEffectiveBalance(c) > 0);
     if(!list.length){ toast("No owing households to export"); return; }
 
-    const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
-    const rows = [];
     let total = 0;
-    for(const c of list){
+    const rows = list.map(c => {
       const bal = getEffectiveBalance(c);
       total += bal;
-      const entries = ledgers[c.id] || await store.getLedger(c.id);
-      const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
-      rows.push([
-        c.name || "—",
-        c.jobCard || c.id,
-        fmt(bal),
-        payments || "—"
-      ]);
-    }
+      return { name: c.name || "—", jobCard: c.jobCard || c.id, amount: fmt(bal) };
+    });
 
-    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const pageW = doc.internal.pageSize.getWidth();
-    const margin = 14;
-    let y = 20;
+    const margin = 16;
+    const rightX = pageW - margin;
+    let y = 22;
 
-    doc.setFontSize(16);
+    doc.setFontSize(18);
     doc.setFont(undefined, "bold");
-    doc.text("New Serchhip North Village Council", margin, y);
-    y += 8;
-    doc.setFontSize(12);
-    doc.setFont(undefined, "normal");
-    doc.text(`Owing List — ${todayISO()}`, margin, y);
-    y += 6;
-    doc.setFontSize(10);
-    doc.text(`Filter: ${adminFilter.charAt(0).toUpperCase()+adminFilter.slice(1)}${periodFilter?` · Period: ${periodFilter}`:""}`, margin, y);
+    doc.text("Owing List", margin, y);
     y += 10;
 
-    // Table header
-    const colX = [margin, margin+55, margin+110, margin+140];
-    const colW = [55, 55, 30, pageW-margin-colX[3]-5];
-    doc.setFillColor(26, 77, 62);
-    doc.setTextColor(255, 255, 255);
-    doc.rect(margin, y-5, pageW-margin*2, 8, "F");
-    doc.setFont(undefined, "bold");
-    doc.text("Name", colX[0]+2, y);
-    doc.text("Job Card", colX[1]+2, y);
-    doc.text("Outstanding", colX[2]+2, y);
-    doc.text("Payment History", colX[3]+2, y);
-    y += 8;
-
-    // Rows
-    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
     doc.setFont(undefined, "normal");
-    doc.setFontSize(9);
-    for(const r of rows){
-      if(y > doc.internal.pageSize.getHeight() - 20){ doc.addPage(); y = 20; }
-      const linesName = doc.splitTextToSize(r[0], colW[0]-4);
-      const linesJob = doc.splitTextToSize(r[1], colW[1]-4);
-      const linesPay = doc.splitTextToSize(r[3], colW[3]-4);
-      const rowH = Math.max(linesName.length, linesJob.length, 1, linesPay.length) * 4 + 3;
+    doc.text(`${todayISO()} · ${adminFilter.charAt(0).toUpperCase()+adminFilter.slice(1)}${periodFilter?` · ${periodFilter}`:""}`, margin, y);
+    y += 14;
 
-      doc.setDrawColor(220, 220, 220);
-      doc.line(margin, y+rowH-1, pageW-margin, y+rowH-1);
-      doc.text(linesName, colX[0]+2, y+4);
-      doc.text(linesJob, colX[1]+2, y+4);
-      doc.text(r[2], colX[2]+2, y+4);
-      doc.text(linesPay, colX[3]+2, y+4);
-      y += rowH;
+    doc.setDrawColor(230, 230, 230);
+    doc.setFontSize(11);
+    for(const r of rows){
+      if(y > doc.internal.pageSize.getHeight() - 24){ doc.addPage(); y = 20; }
+
+      doc.setFont(undefined, "bold");
+      doc.setTextColor(40, 40, 40);
+      const nameLines = doc.splitTextToSize(r.name, pageW - margin*2 - 45);
+      doc.text(nameLines, margin, y);
+
+      const amountW = doc.getTextWidth(r.amount);
+      doc.setTextColor(180, 40, 40);
+      doc.text(r.amount, rightX - amountW, y);
+
+      doc.setFont(undefined, "normal");
+      doc.setTextColor(120, 120, 120);
+      doc.setFontSize(9);
+      y += nameLines.length * 4.5 + 1;
+      doc.text(r.jobCard, margin, y);
+      doc.setFontSize(11);
+
+      y += 6;
+      doc.line(margin, y, pageW - margin, y);
+      y += 8;
     }
 
-    // Total row
+    // Total
     if(y > doc.internal.pageSize.getHeight() - 20){ doc.addPage(); y = 20; }
-    doc.setFillColor(240, 240, 240);
-    doc.rect(margin, y-5, pageW-margin*2, 8, "F");
     doc.setFont(undefined, "bold");
-    doc.setFontSize(10);
-    doc.text("Total Outstanding", colX[0]+2, y);
-    doc.text(fmt(total), colX[2]+2, y);
+    doc.setTextColor(40, 40, 40);
+    doc.text("Total", margin, y);
+    const totalW = doc.getTextWidth(fmt(total));
+    doc.setTextColor(180, 40, 40);
+    doc.text(fmt(total), rightX - totalW, y);
 
     doc.save(`owing_${todayISO()}.pdf`);
     toast("PDF exported");
