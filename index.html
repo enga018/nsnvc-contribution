@@ -92,7 +92,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.4</footer>
+<footer>New Serchhip North Village Council · v1.29.5</footer>
 
 <script type="module">
 /* ============================================================
@@ -2802,12 +2802,21 @@ async function doExportPdf(){
       .filter(c => getEffectiveBalance(c) > 0);
     if(!list.length){ toast("No owing households to export"); return; }
 
+    const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
     let total = 0;
-    const rows = list.map(c => {
+    const rows = [];
+    for(const c of list){
       const bal = getEffectiveBalance(c);
       total += bal;
-      return { name: c.name || "—", jobCard: c.jobCard || c.id, amount: fmt(bal) };
-    });
+      const entries = ledgers[c.id] || await store.getLedger(c.id);
+      const payments = entries.filter(e=>e.type==="payment").map(e=>fmt(e.amount));
+      rows.push({
+        name: c.name || "—",
+        jobCard: c.jobCard || c.id,
+        amount: fmt(bal),
+        payments: payments.length ? "Payment: " + payments.join(", ") : ""
+      });
+    }
 
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const pageW = doc.internal.pageSize.getWidth();
@@ -2826,26 +2835,35 @@ async function doExportPdf(){
     y += 14;
 
     doc.setDrawColor(230, 230, 230);
-    doc.setFontSize(11);
     for(const r of rows){
-      if(y > doc.internal.pageSize.getHeight() - 24){ doc.addPage(); y = 20; }
+      if(y > doc.internal.pageSize.getHeight() - 28){ doc.addPage(); y = 20; }
 
+      // Row 1: name (left) and amount (right)
       doc.setFont(undefined, "bold");
       doc.setTextColor(40, 40, 40);
-      const nameLines = doc.splitTextToSize(r.name, pageW - margin*2 - 45);
+      doc.setFontSize(11);
+      const nameLines = doc.splitTextToSize(r.name, pageW - margin*2 - 50);
       doc.text(nameLines, margin, y);
 
       const amountW = doc.getTextWidth(r.amount);
       doc.setTextColor(180, 40, 40);
       doc.text(r.amount, rightX - amountW, y);
 
+      // Row 2: job card (left) and payment history (right)
+      y += nameLines.length * 4.5 + 1;
       doc.setFont(undefined, "normal");
       doc.setTextColor(120, 120, 120);
       doc.setFontSize(9);
-      y += nameLines.length * 4.5 + 1;
       doc.text(r.jobCard, margin, y);
-      doc.setFontSize(11);
 
+      if(r.payments){
+        const payLines = doc.splitTextToSize(r.payments, pageW - margin*2 - 55);
+        const payW = doc.getTextWidth(payLines[payLines.length-1]);
+        doc.setTextColor(26, 125, 66);
+        doc.text(payLines, rightX - payW, y);
+      }
+
+      doc.setFontSize(11);
       y += 6;
       doc.line(margin, y, pageW - margin, y);
       y += 8;
