@@ -92,7 +92,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.2</footer>
+<footer>New Serchhip North Village Council · v1.29.3</footer>
 
 <script type="module">
 /* ============================================================
@@ -1684,12 +1684,14 @@ function openImportExport(){
       <button class="btn block ghost" id="exportAllBtn">Export all households (CSV)</button>
       <button class="btn block ghost" id="exportPeriodBtn" style="margin-top:8px">Export by period (CSV)</button>
       <button class="btn block ghost" id="exportCsvBtn2" style="margin-top:8px">Export owing list (CSV)</button>
+      <button class="btn block ghost" id="exportPdfBtn" style="margin-top:8px">Export owing list (PDF)</button>
     </div>
   `);
   $("impUploadBtn").addEventListener("click", openUpload);
   $("exportAllBtn").addEventListener("click", doExportAll);
   $("exportPeriodBtn").addEventListener("click", openExportPeriod);
   $("exportCsvBtn2").addEventListener("click", doExportCsv);
+  $("exportPdfBtn").addEventListener("click", doExportPdf);
 }
 function openBackup(){
   openSheet("Backup / Restore", `
@@ -1930,6 +1932,24 @@ async function ensureXLSX(){
     });
   }
   return window.XLSX;
+}
+
+async function ensureJsPDF(){
+  if(window.jspdf && window.jspdf.jsPDF) return window.jspdf.jsPDF;
+  try {
+    await new Promise((res,rej)=>{
+      const s=document.createElement("script");
+      s.src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+      s.crossOrigin="anonymous";
+      s.onload=res;
+      s.onerror=()=>rej(new Error("jsPDF load failed"));
+      document.head.appendChild(s);
+    });
+  } catch(e) {
+    console.warn("jsPDF load failed:", e);
+    throw new Error("Couldn't load PDF generator. Check your connection.");
+  }
+  return window.jspdf.jsPDF;
 }
 
 const _num = v => { const n=parseFloat(v); return isNaN(n)?0:n; };
@@ -2771,6 +2791,94 @@ async function doExportCsv(){
     const csv = await store.exportOwingCsv();
     downloadBlob(csv, `owing_${todayISO()}.csv`, "text/csv");
     toast("CSV exported");
+  });
+}
+
+async function doExportPdf(){
+  await withExportUI("exportPdfBtn", "Export owing list (PDF)", async ()=>{
+    const jsPDF = await ensureJsPDF();
+    const searchTerm = $("adminSearch").value.trim().toLowerCase();
+    const list = filterCitizenList(allCitizens, searchTerm, adminFilter, periodFilter)
+      .filter(c => getEffectiveBalance(c) > 0);
+    if(!list.length){ toast("No owing households to export"); return; }
+
+    const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
+    const rows = [];
+    let total = 0;
+    for(const c of list){
+      const bal = getEffectiveBalance(c);
+      total += bal;
+      const entries = ledgers[c.id] || await store.getLedger(c.id);
+      const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
+      rows.push([
+        c.name || "—",
+        c.jobCard || c.id,
+        fmt(bal),
+        payments || "—"
+      ]);
+    }
+
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    const margin = 14;
+    let y = 20;
+
+    doc.setFontSize(16);
+    doc.setFont(undefined, "bold");
+    doc.text("New Serchhip North Village Council", margin, y);
+    y += 8;
+    doc.setFontSize(12);
+    doc.setFont(undefined, "normal");
+    doc.text(`Owing List — ${todayISO()}`, margin, y);
+    y += 6;
+    doc.setFontSize(10);
+    doc.text(`Filter: ${adminFilter.charAt(0).toUpperCase()+adminFilter.slice(1)}${periodFilter?` · Period: ${periodFilter}`:""}`, margin, y);
+    y += 10;
+
+    // Table header
+    const colX = [margin, margin+55, margin+110, margin+140];
+    const colW = [55, 55, 30, pageW-margin-colX[3]-5];
+    doc.setFillColor(26, 77, 62);
+    doc.setTextColor(255, 255, 255);
+    doc.rect(margin, y-5, pageW-margin*2, 8, "F");
+    doc.setFont(undefined, "bold");
+    doc.text("Name", colX[0]+2, y);
+    doc.text("Job Card", colX[1]+2, y);
+    doc.text("Outstanding", colX[2]+2, y);
+    doc.text("Payment History", colX[3]+2, y);
+    y += 8;
+
+    // Rows
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(9);
+    for(const r of rows){
+      if(y > doc.internal.pageSize.getHeight() - 20){ doc.addPage(); y = 20; }
+      const linesName = doc.splitTextToSize(r[0], colW[0]-4);
+      const linesJob = doc.splitTextToSize(r[1], colW[1]-4);
+      const linesPay = doc.splitTextToSize(r[3], colW[3]-4);
+      const rowH = Math.max(linesName.length, linesJob.length, 1, linesPay.length) * 4 + 3;
+
+      doc.setDrawColor(220, 220, 220);
+      doc.line(margin, y+rowH-1, pageW-margin, y+rowH-1);
+      doc.text(linesName, colX[0]+2, y+4);
+      doc.text(linesJob, colX[1]+2, y+4);
+      doc.text(r[2], colX[2]+2, y+4);
+      doc.text(linesPay, colX[3]+2, y+4);
+      y += rowH;
+    }
+
+    // Total row
+    if(y > doc.internal.pageSize.getHeight() - 20){ doc.addPage(); y = 20; }
+    doc.setFillColor(240, 240, 240);
+    doc.rect(margin, y-5, pageW-margin*2, 8, "F");
+    doc.setFont(undefined, "bold");
+    doc.setFontSize(10);
+    doc.text("Total Outstanding", colX[0]+2, y);
+    doc.text(fmt(total), colX[2]+2, y);
+
+    doc.save(`owing_${todayISO()}.pdf`);
+    toast("PDF exported");
   });
 }
 
