@@ -92,7 +92,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.8</footer>
+<footer>New Serchhip North Village Council · v1.29.9</footer>
 
 <script type="module">
 /* ============================================================
@@ -2809,11 +2809,13 @@ async function doExportPdf(){
       const bal = getEffectiveBalance(c);
       const entries = ledgers[c.id] || await store.getLedger(c.id);
       const payments = entries.filter(e=>e.type==="payment").map(e=>fmtRs(e.amount));
+      const charges = entries.filter(e=>e.type==="charge" && !e.deferred).map(e=>fmtRs(e.amount));
       rows.push({
         name: c.name || "—",
         jobCard: c.jobCard || c.id,
         amount: fmtRs(bal),
-        payments: payments.length ? "Payment: " + payments.join(", ") : ""
+        payments: payments.length ? "Payment: " + payments.join(", ") : "",
+        charges: charges.length ? "Charge: " + charges.join(", ") : ""
       });
     }
 
@@ -2835,7 +2837,7 @@ async function doExportPdf(){
 
     doc.setDrawColor(230, 230, 230);
     for(const r of rows){
-      if(y > doc.internal.pageSize.getHeight() - 28){ doc.addPage(); y = 20; }
+      if(y > doc.internal.pageSize.getHeight() - 36){ doc.addPage(); y = 20; }
 
       // Row 1: name (left) and amount (right)
       doc.setFont(undefined, "bold");
@@ -2860,6 +2862,15 @@ async function doExportPdf(){
         const payLines = doc.splitTextToSize(r.payments, payMaxW);
         doc.setTextColor(26, 125, 66);
         doc.text(payLines, rightX, y, { align: "right" });
+      }
+
+      // Row 3: charges (right, red)
+      if(r.charges){
+        y += 4.5;
+        const chargeMaxW = 70;
+        const chargeLines = doc.splitTextToSize(r.charges, chargeMaxW);
+        doc.setTextColor(180, 40, 40);
+        doc.text(chargeLines, rightX, y, { align: "right" });
       }
 
       doc.setFontSize(11);
