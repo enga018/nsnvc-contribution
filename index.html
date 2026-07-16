@@ -92,7 +92,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.7</footer>
+<footer>New Serchhip North Village Council · v1.29.8</footer>
 
 <script type="module">
 /* ============================================================
@@ -1934,22 +1934,22 @@ async function ensureXLSX(){
   return window.XLSX;
 }
 
-async function ensureHtml2Pdf(){
-  if(window.html2pdf) return window.html2pdf;
+async function ensureJsPDF(){
+  if(window.jspdf && window.jspdf.jsPDF) return window.jspdf.jsPDF;
   try {
     await new Promise((res,rej)=>{
       const s=document.createElement("script");
-      s.src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+      s.src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
       s.crossOrigin="anonymous";
       s.onload=res;
-      s.onerror=()=>rej(new Error("html2pdf load failed"));
+      s.onerror=()=>rej(new Error("jsPDF load failed"));
       document.head.appendChild(s);
     });
   } catch(e) {
-    console.warn("html2pdf load failed:", e);
+    console.warn("jsPDF load failed:", e);
     throw new Error("Couldn't load PDF generator. Check your connection.");
   }
-  return window.html2pdf;
+  return window.jspdf.jsPDF;
 }
 
 const _num = v => { const n=parseFloat(v); return isNaN(n)?0:n; };
@@ -2796,69 +2796,80 @@ async function doExportCsv(){
 
 async function doExportPdf(){
   await withExportUI("exportPdfBtn", "Export owing list (PDF)", async ()=>{
-    const html2pdf = await ensureHtml2Pdf();
+    const jsPDF = await ensureJsPDF();
     const searchTerm = $("adminSearch").value.trim().toLowerCase();
     const list = filterCitizenList(allCitizens, searchTerm, adminFilter, periodFilter)
       .filter(c => getEffectiveBalance(c) > 0);
     if(!list.length){ toast("No owing households to export"); return; }
 
+    const fmtRs = n => "Rs. " + (Number(n)||0).toLocaleString("en-IN");
     const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
     const rows = [];
     for(const c of list){
       const bal = getEffectiveBalance(c);
       const entries = ledgers[c.id] || await store.getLedger(c.id);
-      const payments = entries.filter(e=>e.type==="payment").map(e=>fmt(e.amount));
+      const payments = entries.filter(e=>e.type==="payment").map(e=>fmtRs(e.amount));
       rows.push({
-        name: esc(c.name || "—"),
-        jobCard: esc(c.jobCard || c.id),
-        amount: fmt(bal),
+        name: c.name || "—",
+        jobCard: c.jobCard || c.id,
+        amount: fmtRs(bal),
         payments: payments.length ? "Payment: " + payments.join(", ") : ""
       });
     }
 
-    const rowHtml = rows.map(r => `
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #e5e5e5;padding:10px 0;">
-        <div style="flex:1;min-width:0;padding-right:12px;">
-          <div style="font-size:14px;font-weight:600;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name}</div>
-          <div style="font-size:11px;color:#777;margin-top:2px;">${r.jobCard}</div>
-        </div>
-        <div style="text-align:right;max-width:45%;">
-          <div style="font-size:14px;font-weight:700;color:#b91c1c;">${r.amount}</div>
-          ${r.payments ? `<div style="font-size:10px;color:#15803d;margin-top:2px;word-break:break-word;">${r.payments}</div>` : ""}
-        </div>
-      </div>
-    `).join("");
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    const margin = 16;
+    const rightX = pageW - margin;
+    let y = 22;
 
-    const el = document.createElement("div");
-    el.style.position = "fixed";
-    el.style.left = "-9999px";
-    el.style.top = "0";
-    el.style.width = "210mm";
-    el.style.padding = "16mm";
-    el.style.background = "#fff";
-    el.style.fontFamily = "Arial, sans-serif";
-    el.innerHTML = `
-      <div style="font-size:22px;font-weight:700;color:#1b4d3e;margin-bottom:4px;">Owing List</div>
-      <div style="font-size:11px;color:#666;margin-bottom:16px;">${todayISO()} · ${adminFilter.charAt(0).toUpperCase()+adminFilter.slice(1)}${periodFilter?` · ${periodFilter}`:""}</div>
-      ${rowHtml}
-    `;
-    document.body.appendChild(el);
+    doc.setFontSize(18);
+    doc.setFont(undefined, "bold");
+    doc.text("Owing List", margin, y);
+    y += 10;
 
-    try{
-      await html2pdf().set({
-        margin: 0,
-        filename: `owing_${todayISO()}.pdf`,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
-      }).from(el).save();
-      toast("PDF exported");
-    }catch(err){
-      console.error("PDF export failed:", err);
-      toast("PDF export failed");
-    } finally {
-      document.body.removeChild(el);
+    doc.setFontSize(10);
+    doc.setFont(undefined, "normal");
+    doc.text(`${todayISO()} · ${adminFilter.charAt(0).toUpperCase()+adminFilter.slice(1)}${periodFilter?` · ${periodFilter}`:""}`, margin, y);
+    y += 14;
+
+    doc.setDrawColor(230, 230, 230);
+    for(const r of rows){
+      if(y > doc.internal.pageSize.getHeight() - 28){ doc.addPage(); y = 20; }
+
+      // Row 1: name (left) and amount (right)
+      doc.setFont(undefined, "bold");
+      doc.setTextColor(40, 40, 40);
+      doc.setFontSize(11);
+      const nameLines = doc.splitTextToSize(r.name, pageW - margin*2 - 55);
+      doc.text(nameLines, margin, y);
+
+      const amountW = doc.getTextWidth(r.amount);
+      doc.setTextColor(180, 40, 40);
+      doc.text(r.amount, rightX - amountW, y);
+
+      // Row 2: job card (left) and payment history (right)
+      y += nameLines.length * 4.5 + 1;
+      doc.setFont(undefined, "normal");
+      doc.setTextColor(120, 120, 120);
+      doc.setFontSize(9);
+      doc.text(r.jobCard, margin, y);
+
+      if(r.payments){
+        const payMaxW = 70;
+        const payLines = doc.splitTextToSize(r.payments, payMaxW);
+        doc.setTextColor(26, 125, 66);
+        doc.text(payLines, rightX, y, { align: "right" });
+      }
+
+      doc.setFontSize(11);
+      y += 6;
+      doc.line(margin, y, pageW - margin, y);
+      y += 8;
     }
+
+    doc.save(`owing_${todayISO()}.pdf`);
+    toast("PDF exported");
   });
 }
 
