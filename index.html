@@ -92,7 +92,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.9</footer>
+<footer>New Serchhip North Village Council · v1.29.10</footer>
 
 <script type="module">
 /* ============================================================
@@ -2850,33 +2850,33 @@ async function doExportPdf(){
       doc.setTextColor(180, 40, 40);
       doc.text(r.amount, rightX - amountW, y);
 
-      // Row 2: job card (left) and payment history (right)
-      y += nameLines.length * 4.5 + 1;
+      // Row 2: job card (left) and charges (right, red)
+      y += nameLines.length * 3.8 + 1;
       doc.setFont(undefined, "normal");
       doc.setTextColor(120, 120, 120);
       doc.setFontSize(9);
       doc.text(r.jobCard, margin, y);
 
-      if(r.payments){
-        const payMaxW = 70;
-        const payLines = doc.splitTextToSize(r.payments, payMaxW);
-        doc.setTextColor(26, 125, 66);
-        doc.text(payLines, rightX, y, { align: "right" });
-      }
-
-      // Row 3: charges (right, red)
       if(r.charges){
-        y += 4.5;
         const chargeMaxW = 70;
         const chargeLines = doc.splitTextToSize(r.charges, chargeMaxW);
         doc.setTextColor(180, 40, 40);
         doc.text(chargeLines, rightX, y, { align: "right" });
       }
 
+      // Row 3: payments (right, green)
+      if(r.payments){
+        y += 3.8;
+        const payMaxW = 70;
+        const payLines = doc.splitTextToSize(r.payments, payMaxW);
+        doc.setTextColor(26, 125, 66);
+        doc.text(payLines, rightX, y, { align: "right" });
+      }
+
       doc.setFontSize(11);
-      y += 6;
+      y += 4;
       doc.line(margin, y, pageW - margin, y);
-      y += 8;
+      y += 6;
     }
 
     doc.save(`owing_${todayISO()}.pdf`);
