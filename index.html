@@ -92,7 +92,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.11</footer>
+<footer>New Serchhip North Village Council · v1.29.11</footer>
 
 <script type="module">
 /* ============================================================
@@ -1067,6 +1067,9 @@ if(!isLocalMode){
   console.warn("⚠️ SECURITY CHECK: Ensure Firestore security rules are deployed. See FIRESTORE_SECURITY_RULES.md for configuration.");
 }
 store.onAuth(onAuth);
+
+// Preload PDF library in the background so export is instant when clicked.
+setTimeout(()=>{ ensureJsPDF().catch(()=>{}); }, 4000);
 
 let consecutiveErrors = 0;
 let connectionWarningShown = false;
