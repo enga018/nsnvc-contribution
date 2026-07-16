@@ -92,7 +92,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.10</footer>
+<footer>New Serchhip North Village Council · v1.29.10</footer>
 
 <script type="module">
 /* ============================================================
@@ -2809,13 +2809,16 @@ async function doExportPdf(){
       const bal = getEffectiveBalance(c);
       const entries = ledgers[c.id] || await store.getLedger(c.id);
       const payments = entries.filter(e=>e.type==="payment").map(e=>fmtRs(e.amount));
-      const charges = entries.filter(e=>e.type==="charge" && !e.deferred).map(e=>fmtRs(e.amount));
+      const charges = entries.filter(e=>e.type==="charge" && !e.deferred).map(e=>{
+        const period = e.note && e.note.trim() ? e.note.trim() : "Charge";
+        return `${period}: ${fmtRs(e.amount)}`;
+      });
       rows.push({
         name: c.name || "—",
         jobCard: c.jobCard || c.id,
         amount: fmtRs(bal),
-        payments: payments.length ? "Payment: " + payments.join(", ") : "",
-        charges: charges.length ? "Charge: " + charges.join(", ") : ""
+        payments: payments.length ? "Paid: " + payments.join(", ") : "",
+        charges: charges.length ? charges.join(", ") : ""
       });
     }
 
@@ -2852,6 +2855,7 @@ async function doExportPdf(){
 
       // Row 2: job card (left) and charges (right, red)
       y += nameLines.length * 3.8 + 1;
+      let rightY = y;
       doc.setFont(undefined, "normal");
       doc.setTextColor(120, 120, 120);
       doc.setFontSize(9);
@@ -2861,22 +2865,25 @@ async function doExportPdf(){
         const chargeMaxW = 70;
         const chargeLines = doc.splitTextToSize(r.charges, chargeMaxW);
         doc.setTextColor(180, 40, 40);
-        doc.text(chargeLines, rightX, y, { align: "right" });
+        doc.text(chargeLines, rightX, rightY, { align: "right" });
+        rightY += chargeLines.length * 3.8;
       }
 
       // Row 3: payments (right, green)
       if(r.payments){
-        y += 3.8;
+        rightY += 1;
         const payMaxW = 70;
         const payLines = doc.splitTextToSize(r.payments, payMaxW);
         doc.setTextColor(26, 125, 66);
-        doc.text(payLines, rightX, y, { align: "right" });
+        doc.text(payLines, rightX, rightY, { align: "right" });
+        rightY += payLines.length * 3.8;
       }
 
+      y = Math.max(y + 3.8, rightY);
       doc.setFontSize(11);
-      y += 4;
+      y += 2;
       doc.line(margin, y, pageW - margin, y);
-      y += 6;
+      y += 5;
     }
 
     doc.save(`owing_${todayISO()}.pdf`);
