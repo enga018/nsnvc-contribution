@@ -5,24 +5,39 @@
 # others is what silently strands installed PWAs on stale cached content —
 # the browser only reinstalls a service worker when sw.js's bytes change,
 # so an unbumped CACHE_NAME means no update is ever detected (this has
-# happened twice already: v1.25.6 and v1.28.0/v1.29.2).
+# happened repeatedly: v1.25.6, v1.28.0/v1.29.2, and a stray-\r corruption
+# from a buggy sync script around v1.29.10-11).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION_FILE=$(tr -d ' \n' < VERSION)
-SW_VERSION=$(grep -oP "CACHE_NAME = 'nsnvc-tracker-v\K[0-9.]+(?=')" sw.js || true)
-FOOTER_VERSION=$(grep -oP 'Village Council · v\K[0-9.]+(?=</footer>)' index.html || true)
+VERSION_FILE=$(tr -d ' \r\n' < VERSION)
+SW_LINE=$(grep -m1 "CACHE_NAME = 'nsnvc-tracker-v" sw.js || true)
+FOOTER_LINE=$(grep -m1 '<footer>' index.html || true)
+
+SW_VERSION=$(printf '%s' "$SW_LINE" | grep -oP "CACHE_NAME = 'nsnvc-tracker-v\K[0-9.]+(?=')" || true)
+FOOTER_VERSION=$(printf '%s' "$FOOTER_LINE" | grep -oP 'Village Council · v\K[0-9.]+(?=</footer>)' || true)
 
 fail=0
 
-if [ -z "$SW_VERSION" ]; then
-  echo "::error file=sw.js::Could not find CACHE_NAME version string (expected format: const CACHE_NAME = 'nsnvc-tracker-vX.Y.Z';)"
+# Reports not just "couldn't find it" but shows the raw line with control
+# characters made visible (cat -A), so a future stray-\r-style corruption
+# is obvious in the CI log instead of requiring someone to dig it out by
+# hand the way this had to be diagnosed the first time.
+check_extracted() {
+  local label="$1" line="$2" extracted="$3"
+  if [ -n "$extracted" ]; then
+    return 0
+  fi
+  if [ -z "$line" ]; then
+    echo "::error::$label: could not find a version string at all — has the surrounding text changed?"
+  else
+    echo "::error::$label: found the line but couldn't cleanly extract a version from it — there's likely stray whitespace or a control character (e.g. an embedded \\r) right after the version digits. Raw line (cat -A): $(printf '%s' "$line" | cat -A)"
+  fi
   fail=1
-fi
-if [ -z "$FOOTER_VERSION" ]; then
-  echo "::error file=index.html::Could not find footer version string (expected format: ...Village Council · vX.Y.Z</footer>)"
-  fail=1
-fi
+}
+
+check_extracted "sw.js CACHE_NAME" "$SW_LINE" "$SW_VERSION"
+check_extracted "index.html footer" "$FOOTER_LINE" "$FOOTER_VERSION"
 
 if [ "$fail" -eq 0 ]; then
   if [ "$VERSION_FILE" != "$SW_VERSION" ]; then
@@ -41,7 +56,7 @@ if [ "$fail" -ne 0 ]; then
   echo "sw.js CACHE_NAME: ${SW_VERSION:-<not found>}"
   echo "index.html footer: ${FOOTER_VERSION:-<not found>}"
   echo ""
-  echo "All three must match on every version bump."
+  echo "All three must match on every version bump, with no stray characters."
   exit 1
 fi
 

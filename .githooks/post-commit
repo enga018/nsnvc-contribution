@@ -12,7 +12,7 @@ if [ ! -f "$VERSION_FILE" ]; then
   exit 0
 fi
 
-CURRENT_VERSION=$(cat "$VERSION_FILE" | tr -d ' \n')
+CURRENT_VERSION=$(cat "$VERSION_FILE" | tr -d ' \r\n')
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -57,13 +57,15 @@ esac
 # Update VERSION file
 echo "$NEW_VERSION" > "$VERSION_FILE"
 
-# Update version in index.html footer
-sed -i "s/v${CURRENT_VERSION}/v${NEW_VERSION}/g" index.html
+# Update version in index.html footer. Consumes any trailing junk up to
+# the next '<' too, so stray characters from a previous buggy run (see
+# scripts/sync-version.sh's history) get cleaned up instead of preserved.
+sed -i "s/v${CURRENT_VERSION}[^<]*/v${NEW_VERSION}/g" index.html
 
 # Update sw.js's CACHE_NAME too — if this drifts behind VERSION, installed
 # PWAs never see an update (the browser only reinstalls a service worker
 # when sw.js's bytes change). See scripts/check-version-sync.sh.
-sed -i "s/nsnvc-tracker-v${CURRENT_VERSION}/nsnvc-tracker-v${NEW_VERSION}/g" sw.js
+sed -i "s/nsnvc-tracker-v${CURRENT_VERSION}[^']*/nsnvc-tracker-v${NEW_VERSION}/g" sw.js
 
 # Stage and amend the commit
 git add VERSION index.html sw.js
