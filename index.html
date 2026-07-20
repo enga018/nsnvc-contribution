@@ -92,7 +92,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.12</footer>
+<footer>New Serchhip North Village Council · v1.29.13</footer>
 
 <script type="module">
 /* ============================================================
@@ -577,9 +577,16 @@ function seedData(){
 }
 
 async function loadFirebase(cfg){
-  const appMod  = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
-  const authMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
-  const fsMod   = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+  // Fetched in parallel rather than one-after-another — on the patchy
+  // connectivity this app is built for (see README), three sequential CDN
+  // round-trips could burn through more of the 15s init timeout than
+  // necessary and fall back to local test mode on a connection that would
+  // have been fine given all three requests at once.
+  const [appMod, authMod, fsMod] = await Promise.all([
+    import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
+    import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
+    import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
+  ]);
   const app  = appMod.initializeApp(cfg);
   const auth = authMod.getAuth(app);
   const db   = fsMod.getFirestore(app);
