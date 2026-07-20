@@ -92,7 +92,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.11</footer>
+<footer>New Serchhip North Village Council · v1.29.12</footer>
 
 <script type="module">
 /* ============================================================
@@ -2959,6 +2959,15 @@ async function doExportPeriod(period){
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('./sw.js').then(reg=>{
     console.log('Service Worker registered', reg.scope);
+    // The browser only checks sw.js for changes on navigation to a fresh
+    // page load — reopening an installed PWA from the home screen often
+    // just resumes an existing session instead, so that check never fires
+    // on its own. Forcing it whenever the app comes back to the foreground
+    // is what actually surfaces new versions without a manual hard reload.
+    reg.update().catch(()=>{});
+    document.addEventListener('visibilitychange', ()=>{
+      if(document.visibilityState === 'visible') reg.update().catch(()=>{});
+    });
   }).catch(err=>{
     console.log('Service Worker registration failed', err);
   });
