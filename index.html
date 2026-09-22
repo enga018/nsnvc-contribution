@@ -183,13 +183,16 @@ function downloadBlob(content, filename, mimeType="application/octet-stream"){
   }
 }
 let excludedPeriods=[];
+let deferredPeriods=[];
 // Single source of truth for "does this charge count toward period-based
 // calculations" — used by getEffectiveBalance, unpaidPeriods, and the
 // Firebase store's listOwing so exclusion behaves identically everywhere.
 // A charge with no note can't match any excluded period name, so it's
 // never excluded by this check.
 function isChargeExcluded(e){
-  return !!(e.note && excludedPeriods.includes(e.note));
+  if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return false;
+  const note=String(e.note||"").trim();
+  return excludedPeriods.includes(note) || deferredPeriods.includes(note);
 }
 function statusOf(c){
   const bal = getEffectiveBalance(c);
@@ -214,11 +217,13 @@ function getEffectiveBalance(c){
   return includedCharged - Number(c.totalPaid || 0);
 }
 function getDeferredAmount(c){
-  if(typeof c.deferredTotal === "number") return Number(c.deferredTotal || 0);
   if(!c.ledger) return 0;
   let total=0;
   for(const e of c.ledger){
-    if(e.type==="charge" && e.deferred) total += Number(e.amount || 0);
+    if((e.type==="charge" || e.type==="sanitationFee") &&
+       (e.deferred || deferredPeriods.includes(String(e.note||"").trim()))){
+      total += Number(e.amount||0);
+    }
   }
   return total;
 }
@@ -542,6 +547,14 @@ function makeLocalStore(){
     async setExcludedPeriods(periods){
       if(!data.meta) data.meta={};
       data.meta.excludedPeriods=periods;
+      persist();
+    },
+    async getDeferredPeriods(){
+      return (data.meta && data.meta.deferredPeriods) ? data.meta.deferredPeriods.slice() : [];
+    },
+    async setDeferredPeriods(periods){
+      if(!data.meta) data.meta={};
+      data.meta.deferredPeriods=periods;
       persist();
     },
     async importAll(backup, onProgress){
@@ -969,6 +982,14 @@ function makeFirebaseStore({ auth, db, fs, au }){
     async setExcludedPeriods(periods){
       await fs.setDoc(fs.doc(db,"meta","excludedPeriods"), { periods }, {merge:true});
     },
+    async getDeferredPeriods(){
+      const doc=await fs.getDoc(fs.doc(db,"meta","deferredPeriods"));
+      if(doc.exists()) return doc.data().periods||[];
+      return [];
+    },
+    async setDeferredPeriods(periods){
+      await fs.setDoc(fs.doc(db,"meta","deferredPeriods"), { periods }, {merge:true});
+    },
     async importAll(backup, onProgress){
       if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
       if(onProgress) onProgress(0, 3);
@@ -1173,6 +1194,7 @@ async function onAuth(isIn){
     try{
       await Promise.all([
         store.getExcludedPeriods().then(p=>{ excludedPeriods = p; }),
+        store.getDeferredPeriods().then(p=>{ deferredPeriods = p; }),
         Promise.resolve(subscribeCitizens())
       ]);
     } catch(err){ console.error("Failed to load excluded periods:", err); }
@@ -1266,7 +1288,7 @@ function scheduleDashboardRefresh(){
 async function refreshDashboard(){
   const seq = ++dashboardRefreshSeq;
   let list = rawCitizens || [];
-  if(excludedPeriods.length){
+  if(excludedPeriods.length || deferredPeriods.length){
     if(ledgerCache.size===0){
       try{ await store.getAllLedgers(); }catch(e){ console.error("Failed to load ledgers:", e); }
     }
@@ -1510,10 +1532,11 @@ async function openSettings(){
   $("settingsLogout").addEventListener("click", doLogout);
 }
 
-function buildPeriodRowHTML(period, stats, isExcluded){
+function buildPeriodRowHTML(period, stats, isExcluded, isDeferred){
   return `<div class="period-row" data-original="${esc(period)}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
     <label class="switch" style="flex:none"><input type="checkbox" class="period-toggle" value="${esc(period)}" ${!isExcluded?"checked":""}><span class="switch-track"><span class="switch-thumb"></span></span></label>
     <div style="flex:1;min-width:0"><span class="period-name"><b style="font-size:14px">${esc(prettyPeriod(period))}</b></span><br><small style="font-size:12px;color:var(--muted)">${stats.count} charge${stats.count===1?"":"s"} · ${fmt(stats.amount)}</small></div>
+    <button class="period-defer-btn btn small ghost" data-period="${esc(period)}" data-deferred="${isDeferred?"1":"0"}" style="padding:6px 9px;font-size:12px;color:var(--partial);border-color:var(--partial)">${isDeferred?"Restore":"Defer"}</button>
     <button class="period-rename-btn" data-period="${esc(period)}" style="background:transparent;border:none;cursor:pointer;font-size:14px;padding:4px;color:var(--muted)" title="Rename">✏️</button>
   </div>`;
 }
@@ -1523,7 +1546,8 @@ function renderPeriodsList(periods, stats, excluded){
   return periods.map(p => {
     const s = stats.get(p) || {count:0, amount:0};
     const isExcl = excluded.includes(p);
-    return buildPeriodRowHTML(p, s, isExcl);
+    const isDef = deferredPeriods.includes(p);
+    return buildPeriodRowHTML(p, s, isExcl, isDef);
   }).join("");
 }
 
@@ -1606,7 +1630,35 @@ async function handlePeriodsSave(pendingRenames){
   }
 }
 
+async function togglePeriodDeferred(period, shouldDefer){
+  const next = deferredPeriods.filter(p=>p!==period);
+  if(shouldDefer) next.push(period);
+  await store.setDeferredPeriods(next);
+  deferredPeriods = next;
+  periodsReady=false;
+  unpaidCache=new Map();
+  overdueCache=new Map();
+  await refreshDashboard();
+  loadOwedBreakdown();
+  toast(shouldDefer ? `Deferred ${prettyPeriod(period)}` : `Restored ${prettyPeriod(period)}`);
+}
+
 function attachPeriodListeners(pendingRenames){
+  document.querySelectorAll(".period-defer-btn").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const period=btn.dataset.period;
+      const shouldDefer=btn.dataset.deferred!=="1";
+      btn.disabled=true;
+      try{
+        await togglePeriodDeferred(period, shouldDefer);
+        await openManagePeriods();
+      }catch(err){
+        console.error(err);
+        toast("Failed to update period");
+        btn.disabled=false;
+      }
+    });
+  });
   document.querySelectorAll(".period-rename-btn").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       const row = btn.closest(".period-row");
@@ -1624,7 +1676,7 @@ async function openManagePeriods(){
   const rows = renderPeriodsList(periods, stats, excluded);
 
   openSheet("Manage Periods", `
-    <p style="font-size:13px;color:var(--muted);margin:0 0 14px">Toggle exclusion and rename periods. Unchecked periods are excluded from balance calculations.</p>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 14px">Use <b>Defer</b> to temporarily move a whole period out of current collection. Deferred periods remain recorded and appear under <b>Deferred</b>. Use <b>Restore</b> when you want to collect them.</p>
     ${rows}
     <button class="btn block" id="savePeriodsBtn" disabled style="margin-top:14px">Save</button>
     <div id="periodsMsg" style="margin-top:12px"></div>
