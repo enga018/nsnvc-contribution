@@ -2660,7 +2660,6 @@ function buildCitizenDetailHTML(citizen, balance, historyHTML, headerBadge, acti
         ? `<div class="amount money zero">${fmt(Math.abs(balance))} <span style="font-size:14px;font-weight:400;color:var(--paid)">overpaid</span></div>`
         : `<div class="amount money ${balance<=0?'zero':'owing'}">${fmt(Math.max(0,balance))}</div>`}
     </div>
-    ${breakdownHTML}
     ${actionBadges}
     <div class="ledger">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px 6px">
@@ -2714,10 +2713,6 @@ async function renderCitizenDetail(id){
     const visibleEntries = viewState.historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
     const hiddenCount = totalEntries - Math.min(INITIAL_HISTORY, totalEntries);
     const historyHTML = renderHistoryRows(visibleEntries, false, id);
-    const deferredAmt = getDeferredAmount(c);
-    const {overdue, currentDue} = getOverdueBreakdown(entries, null, id);
-    const breakdownHTML = buildFinancialBreakdownHTML(overdue, currentDue, deferredAmt);
-
     $("adminDetail").innerHTML = buildCitizenDetailHTML(c, bal, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount, breakdownHTML);
     attachCitizenDetailListeners(id, c, bal, allSorted, INITIAL_HISTORY, viewState);
   } catch(err) { console.error(err); }
