@@ -210,42 +210,52 @@ function statusOf(c){
 }
 function allocateLedgerPayments(entries, citizenId){
   const chrono=[...(entries||[])].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
-  let pay=0;
+  const charges=[];
+  let credit=0;
+
+  // Payments and waivers are credits against the ledger. They are allocated
+  // FIFO to the earliest charge, including deferred charges. A waiver is not
+  // a payment and can never become an overpayment/credit by itself.
   for(const e of chrono){
-    if(e.type==="payment") pay += Number(e.amount||0);
+    if(e.type==="charge" || e.type==="sanitationFee"){
+      const amt=Number(e.amount||0);
+      if(!(amt>0)) continue;
+      const applied=Math.min(credit, amt);
+      credit-=applied;
+      charges.push({
+        entry:e,
+        remaining:amt-applied
+      });
+    }else if(e.type==="payment" || e.type==="forgive"){
+      credit += Number(e.amount||0);
+      for(const c of charges){
+        if(credit<=0) break;
+        if(c.remaining<=0) continue;
+        const applied=Math.min(credit, c.remaining);
+        c.remaining-=applied;
+        credit-=applied;
+      }
+    }
   }
 
   const owed=[];
-  for(const e of chrono){
-    if(e.type!=="charge" && e.type!=="sanitationFee") continue;
-
-    const amt=Number(e.amount||0);
-    if(!(amt>0)) continue;
-
-    if(pay>=amt){
-      pay-=amt;
-      continue;
-    }
-
-    const remaining=amt-pay;
-    pay=0;
-
-    // Payments are allocated against all charges first, including deferred
-    // and excluded periods. Only the remaining amount of an active charge
-    // contributes to the current balance.
+  for(const c of charges){
+    if(c.remaining<=0) continue;
+    const e=c.entry;
+    const period=String(e.note||"").trim();
     const deferred = e.deferred ||
-      (deferredPeriods.includes(String(e.note||"").trim()) &&
-       !isDeferredPeriodRestoredForCitizen(citizenId, String(e.note||"").trim()));
+      (deferredPeriods.includes(period) &&
+       !isDeferredPeriodRestoredForCitizen(citizenId, period));
 
     if(!deferred && !isChargeExcluded(e, citizenId)){
       owed.push({
         note:e.type==="sanitationFee" ? "" : e.note,
-        remaining
+        remaining:c.remaining
       });
     }
   }
 
-  return { owed, unappliedPayment:pay };
+  return { owed, unappliedPayment:credit };
 }
 
 function getEffectiveBalance(c){
