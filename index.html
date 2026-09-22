@@ -890,7 +890,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
       const e=entries.find(x=>x.entryId===entryId);
       if(e) Object.assign(e,updates);
       ledgerCache.set(id,entries); periodStatsCache=null;
-      const totals=recalcFromLedger(entries);
+      const totals=recalcFromLedger(entries, id);
       await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
     },
     async deleteCitizen(id){
