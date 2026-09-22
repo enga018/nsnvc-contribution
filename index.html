@@ -354,8 +354,13 @@ function getEffectiveBalance(c){
 }
 function getDeferredAmount(c){
   if(!c.ledger) return 0;
-  const allocation=allocateLedgerPayments(c.ledger, c.id);
-  return allocation.deferredRemaining;
+  // Informational only. Deferred charges never participate in balance.
+  return c.ledger.reduce((sum,e)=>{
+    if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return sum;
+    const deferred=isPeriodDeferredForCitizen(e,c.id);
+    const excluded=isChargeExcluded(e,c.id);
+    return sum + (deferred && !excluded ? Math.max(0,Number(e.amount)||0) : 0);
+  },0);
 }
 // FIFO-allocates payments against all charges first, then exposes only
 // active (non-deferred, non-excluded) charges as currently owed. This prevents
@@ -2682,8 +2687,10 @@ async function renderCitizenDetail(id){
     // The citizen document may contain a stale cached balance and normally
     // does not contain the full ledger. The detail page has the authoritative
     // ledger already, so always calculate the displayed balance from it.
-    const allocation = allocateLedgerPayments(entries, id);
-    const bal = allocation.owed.reduce((sum,o)=>sum+o.remaining,0) - allocation.unappliedPayment;
+    const state = calculateLedgerState(entries, id);
+    // This is the actual remaining balance: active charges minus all
+    // payments and waivers. Deferred charges are excluded by the engine.
+    const bal = state.balance;
     const allSorted = [...entries].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
     const INITIAL_HISTORY = 3;
 
