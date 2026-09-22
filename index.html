@@ -184,15 +184,23 @@ function downloadBlob(content, filename, mimeType="application/octet-stream"){
 }
 let excludedPeriods=[];
 let deferredPeriods=[];
+let deferredPeriodOverrides={};
 // Single source of truth for "does this charge count toward period-based
 // calculations" — used by getEffectiveBalance, unpaidPeriods, and the
 // Firebase store's listOwing so exclusion behaves identically everywhere.
 // A charge with no note can't match any excluded period name, so it's
 // never excluded by this check.
-function isChargeExcluded(e){
+function isDeferredPeriodRestoredForCitizen(citizenId, period){
+  if(!citizenId || !period) return false;
+  const restored = deferredPeriodOverrides[citizenId];
+  return Array.isArray(restored) && restored.includes(period);
+}
+function isChargeExcluded(e, citizenId){
   if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return false;
   const note=String(e.note||"").trim();
-  return excludedPeriods.includes(note) || deferredPeriods.includes(note);
+  if(excludedPeriods.includes(note)) return true;
+  if(deferredPeriods.includes(note) && !isDeferredPeriodRestoredForCitizen(citizenId, note)) return true;
+  return false;
 }
 function statusOf(c){
   const bal = getEffectiveBalance(c);
@@ -210,7 +218,7 @@ function getEffectiveBalance(c){
   }
   let includedCharged=0;
   for(const e of c.ledger){
-    if(e.type==="charge" && !e.deferred && !isChargeExcluded(e)){
+    if(e.type==="charge" && !e.deferred && !isChargeExcluded(e, c.id)){
       includedCharged += Number(e.amount || 0);
     }
   }
@@ -220,8 +228,9 @@ function getDeferredAmount(c){
   if(!c.ledger) return 0;
   let total=0;
   for(const e of c.ledger){
+    const period=String(e.note||"").trim();
     if((e.type==="charge" || e.type==="sanitationFee") &&
-       (e.deferred || deferredPeriods.includes(String(e.note||"").trim()))){
+       (e.deferred || (deferredPeriods.includes(period) && !isDeferredPeriodRestoredForCitizen(c.id, period)))){
       total += Number(e.amount||0);
     }
   }
@@ -231,13 +240,13 @@ function getDeferredAmount(c){
 // chronological order, same rule getEffectiveBalance uses. Returns each
 // still-owed charge's period note and the amount of it left unpaid (a
 // charge can be partially covered by leftover payment credit).
-function getOwedBreakdown(entries){
+function getOwedBreakdown(entries, citizenId){
   const chrono=[...entries].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
   let pay=0;
   for(const e of chrono) if(e.type==="payment") pay+=Number(e.amount||0);
   const owed=[];
   for(const e of chrono){
-    if(e.type!=="charge" || e.deferred || isChargeExcluded(e)) continue;
+    if(e.type!=="charge" || e.deferred || isChargeExcluded(e, citizenId)) continue;
     const amt=Number(e.amount||0);
     if(pay>=amt){ pay-=amt; continue; }
     owed.push({note:e.note, remaining:amt-pay});
@@ -252,8 +261,8 @@ function getOwedBreakdown(entries){
 // getOwedBreakdown's chronological (createdAt) order instead of parsing
 // period names: the last owed charge entered is "current due", anything
 // owed before it is overdue.
-function getOverdueBreakdown(entries, precomputedOwed){
-  const owed=precomputedOwed || getOwedBreakdown(entries);
+function getOverdueBreakdown(entries, precomputedOwed, citizenId){
+  const owed=precomputedOwed || getOwedBreakdown(entries, citizenId);
   if(!owed.length) return {overdue:0, currentDue:0};
   const currentDue = owed[owed.length-1].remaining;
   const overdue = owed.slice(0,-1).reduce((s,o)=>s+o.remaining,0);
@@ -557,6 +566,14 @@ function makeLocalStore(){
       data.meta.deferredPeriods=periods;
       persist();
     },
+    async getDeferredPeriodOverrides(){
+      return (data.meta && data.meta.deferredPeriodOverrides) ? {...data.meta.deferredPeriodOverrides} : {};
+    },
+    async setDeferredPeriodOverrides(overrides){
+      if(!data.meta) data.meta={};
+      data.meta.deferredPeriodOverrides=overrides;
+      persist();
+    },
     async importAll(backup, onProgress){
       if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
       const validTypes = ["charge", "payment", "forgive", "sanitationFee"];
@@ -715,7 +732,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
             let includedCharged=0;
             ledSnap.docs.forEach(doc=>{
               const e=doc.data();
-              if(e.type==="charge" && !e.deferred && !isChargeExcluded(e)){
+              if(e.type==="charge" && !e.deferred && !isChargeExcluded(e, c.id)){
                 includedCharged += Number(e.amount || 0);
               }
             });
@@ -990,6 +1007,14 @@ function makeFirebaseStore({ auth, db, fs, au }){
     async setDeferredPeriods(periods){
       await fs.setDoc(fs.doc(db,"meta","deferredPeriods"), { periods }, {merge:true});
     },
+    async getDeferredPeriodOverrides(){
+      const doc=await fs.getDoc(fs.doc(db,"meta","deferredPeriodOverrides"));
+      if(doc.exists()) return doc.data().overrides||{};
+      return {};
+    },
+    async setDeferredPeriodOverrides(overrides){
+      await fs.setDoc(fs.doc(db,"meta","deferredPeriodOverrides"), { overrides }, {merge:true});
+    },
     async importAll(backup, onProgress){
       if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
       if(onProgress) onProgress(0, 3);
@@ -1195,6 +1220,7 @@ async function onAuth(isIn){
       await Promise.all([
         store.getExcludedPeriods().then(p=>{ excludedPeriods = p; }),
         store.getDeferredPeriods().then(p=>{ deferredPeriods = p; }),
+        store.getDeferredPeriodOverrides().then(p=>{ deferredPeriodOverrides = p || {}; }),
         Promise.resolve(subscribeCitizens())
       ]);
     } catch(err){ console.error("Failed to load excluded periods:", err); }
@@ -1350,8 +1376,8 @@ function periodKey(note){
   const idx={JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12}[m[1]];
   return idx*10 + (m[2]?parseInt(m[2],10):0);
 }
-function unpaidPeriods(entries){
-  return getOwedBreakdown(entries).filter(o=>o.note).map(o=>o.note);
+function unpaidPeriods(entries, citizenId){
+  return getOwedBreakdown(entries, citizenId).filter(o=>o.note).map(o=>o.note);
 }
 async function loadOwedBreakdown(){
   if(loadingPeriods) return; loadingPeriods=true;
@@ -1360,10 +1386,10 @@ async function loadOwedBreakdown(){
   await Promise.all(pend.map(async c => {
     try{
       const led=ledgerCache.get(c.id)||await store.getLedger(c.id);
-      const owed=getOwedBreakdown(led);
+      const owed=getOwedBreakdown(led, c.id);
       const up=owed.filter(o=>o.note).map(o=>o.note);
       cache.set(c.id, up); up.forEach(p=>set.add(p));
-      overdue.set(c.id, getOverdueBreakdown(null, owed));
+      overdue.set(c.id, getOverdueBreakdown(null, owed, c.id));
     }catch(e){}
   }));
   unpaidCache=cache; overdueCache=overdue; periodsReady=true; loadingPeriods=false;
@@ -2459,10 +2485,12 @@ function closeCitizenDetail(){
   renderList();
 }
 
-function renderEntryRow(entry, editing){
+function renderEntryRow(entry, editing, citizenId){
   const isPayment = entry.type==="payment";
   const isForgive = entry.type==="forgive";
-  const isDeferred = entry.deferred && entry.type==="charge";
+  const period=String(entry.note||"").trim();
+  const globalDeferred = entry.type==="charge" && deferredPeriods.includes(period) && !isDeferredPeriodRestoredForCitizen(citizenId, period);
+  const isDeferred = entry.type==="charge" && (entry.deferred || globalDeferred);
   const label = entryLabel(entry);
   const amtClass = isPayment || isForgive ? "payment" : "charge";
   const amtSign = isPayment || isForgive ? "− " : "+ ";
@@ -2474,14 +2502,14 @@ function renderEntryRow(entry, editing){
   </span>` : '';
 
   let deferToggle = '';
-  if(editing && entry.type==="charge"){
-    const checked = entry.deferred ? 'checked' : '';
+  if(entry.type==="charge"){
+    const checked = isDeferred ? 'checked' : '';
+    const labelText = isDeferred ? "Restore" : "Defer";
     deferToggle = `<label class="switch" data-id="${entry.entryId}" style="margin-left:8px">
-      <input type="checkbox" class="defer-chk" data-id="${entry.entryId}" ${checked}>
+      <input type="checkbox" class="defer-chk" data-id="${entry.entryId}" data-period="${esc(period)}" data-global-deferred="${globalDeferred?"1":"0"}" ${checked}>
       <span class="switch-track"><span class="switch-thumb"></span></span>
-      <span class="switch-label">Defer</span>
+      <span class="switch-label">${labelText}</span>
     </label>`;
-  }
 
   return `<div class="${rowClass}">
     <div class="desc"><div class="desc-head"><b>${esc(label)}</b> ${deferToggle}</div><small>${esc(displayDate(entry.date))}</small></div>
@@ -2490,9 +2518,9 @@ function renderEntryRow(entry, editing){
   </div>`;
 }
 
-function renderHistoryRows(entries, editing){
+function renderHistoryRows(entries, editing, citizenId){
   if(!entries.length) return `<div class="empty">No entries yet.</div>`;
-  return entries.map(e => renderEntryRow(e, editing)).join("");
+  return entries.map(e => renderEntryRow(e, editing, citizenId)).join("");
 }
 
 function buildFinancialBreakdownHTML(overdue, currentDue, deferredAmt){
@@ -2575,9 +2603,9 @@ async function renderCitizenDetail(id){
     const totalEntries = allSorted.length;
     const visibleEntries = state.historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
     const hiddenCount = totalEntries - Math.min(INITIAL_HISTORY, totalEntries);
-    const historyHTML = renderHistoryRows(visibleEntries, false);
+    const historyHTML = renderHistoryRows(visibleEntries, false, id);
     const deferredAmt = getDeferredAmount(c);
-    const {overdue, currentDue} = getOverdueBreakdown(entries);
+    const {overdue, currentDue} = getOverdueBreakdown(entries, null, id);
     const breakdownHTML = buildFinancialBreakdownHTML(overdue, currentDue, deferredAmt);
 
     $("adminDetail").innerHTML = buildCitizenDetailHTML(c, bal, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount, breakdownHTML);
@@ -2613,7 +2641,7 @@ function attachCitizenDetailListeners(id, citizen, balance, allSorted, initialHi
     stateRef.historyEditing = !stateRef.historyEditing;
     $("histEditBtn").textContent = stateRef.historyEditing ? "Done" : "Edit";
     const vis = stateRef.historyExpanded ? allSorted : allSorted.slice(0, initialHistoryCount);
-    $("historyBody").innerHTML = renderHistoryRows(vis, stateRef.historyEditing);
+    $("historyBody").innerHTML = renderHistoryRows(vis, stateRef.historyEditing, id);
     attachHistoryListeners(id, stateRef.historyEditing);
   });
 
@@ -2622,7 +2650,7 @@ function attachCitizenDetailListeners(id, citizen, balance, allSorted, initialHi
     stateRef.historyExpanded = !stateRef.historyExpanded;
     const vis = stateRef.historyExpanded ? allSorted : allSorted.slice(0, initialHistoryCount);
     const hid = allSorted.length - vis.length;
-    $("historyBody").innerHTML = renderHistoryRows(vis, stateRef.historyEditing);
+    $("historyBody").innerHTML = renderHistoryRows(vis, stateRef.historyEditing, id);
     if(hid > 0){
       $("histMore").textContent = stateRef.historyExpanded ? "Show less" : `See more (${hid} more)`;
     } else {
@@ -2635,24 +2663,40 @@ function attachCitizenDetailListeners(id, citizen, balance, allSorted, initialHi
 }
 
 function attachHistoryListeners(id, editing){
-  // Defer toggles
+  // Defer / restore toggles — available directly on each charge.
   document.querySelectorAll(".defer-chk").forEach(chk=>{
     chk.addEventListener("change", async ()=>{
       const entryId = chk.dataset.id;
-      const prevState = !chk.checked;
+      const period = String(chk.dataset.period||"").trim();
+      const wasGlobalDeferred = chk.dataset.globalDeferred==="1";
+      const nowChecked = chk.checked;
       try{
-        await store.toggleDefer(id, entryId, chk.checked);
+        if(wasGlobalDeferred && !nowChecked && period){
+          const next = {...deferredPeriodOverrides};
+          const restored = Array.isArray(next[id]) ? next[id].slice() : [];
+          if(!restored.includes(period)) restored.push(period);
+          next[id]=restored;
+          await store.setDeferredPeriodOverrides(next);
+          deferredPeriodOverrides=next;
+        }else if(period && deferredPeriods.includes(period) && !wasGlobalDeferred && nowChecked){
+          const next = {...deferredPeriodOverrides};
+          const restored = Array.isArray(next[id]) ? next[id].filter(p=>p!==period) : [];
+          if(restored.length) next[id]=restored; else delete next[id];
+          await store.setDeferredPeriodOverrides(next);
+          deferredPeriodOverrides=next;
+        }else{
+          await store.toggleDefer(id, entryId, nowChecked);
+        }
         clearOperationErrors();
-        toast("Deferral updated");
+        toast(nowChecked ? "Deferred" : "Restored");
         await renderCitizenDetail(id);
-      } catch(e){
+      }catch(e){
         handleOperationError("toggleDefer", e);
-        chk.checked = prevState;
+        chk.checked=!nowChecked;
         toast("Failed to update deferral. Please try again.");
       }
     });
   });
-
   if(!editing) return;
 
   // Edit entry
