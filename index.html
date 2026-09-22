@@ -349,11 +349,8 @@ function getEffectiveBalance(c){
     return cachedBalance;
   }
 
-  const allocation=allocateLedgerPayments(c.ledger, c.id);
-  const owedTotal=allocation.owed.reduce((sum,o)=>sum+o.remaining,0);
-
-  // Only genuine payment credit left after all charges is overpayment.
-  return owedTotal - allocation.unappliedPayment;
+  const state=calculateLedgerState(c.ledger, c.id);
+  return state.balance;
 }
 function getDeferredAmount(c){
   if(!c.ledger) return 0;
@@ -1369,7 +1366,7 @@ function recalcFromLedger(entries, citizenId){
   return {
     totalCharged:Math.max(0, grossCharges - Math.min(grossCharges, totalWaived)),
     totalPaid,
-    balance:allocation.owed.reduce((sum,o)=>sum+o.remaining,0)-allocation.unappliedPayment,
+    balance:allocation.balance,
     deferredTotal:allocation.deferredRemaining
   };
 }
