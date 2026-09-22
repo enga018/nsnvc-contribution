@@ -123,6 +123,15 @@ const MAX_FILE_SCAN_ROWS = 10000;
 /* ---------- helpers ---------- */
 const fmt = n => CURRENCY + (Number(n)||0).toLocaleString("en-IN");
 const $ = id => document.getElementById(id);
+
+// Attach the login controls immediately, before Firebase initialization or any
+// other startup work. This guarantees the button still responds if a later
+// startup operation throws or is delayed.
+document.getElementById("loginBtn")?.addEventListener("click", login);
+document.getElementById("adminPass")?.addEventListener("keydown", e=>{
+  if(e.key==="Enter") login();
+});
+
 const esc = s => String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function toast(msg){
   const t=document.createElement("div"); t.className="toast"; t.textContent=msg;
@@ -1028,14 +1037,6 @@ let ledgerCache=new Map(), periodStatsCache=null;
 let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null, overdueRefreshTimer=null;
 // Configuration
 
-try {
-  const adminPass = $("adminPass");
-  if(adminPass) adminPass.addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
-} catch(e) { console.error("Failed to attach password enter listener:", e); }
-try {
-  const loginBtn = $("loginBtn");
-  if(loginBtn) loginBtn.addEventListener("click", ()=> login());
-} catch(e) { console.error("Failed to attach login button listener:", e); }
 try {
   const logoutBtn = $("logoutBtn");
   if(logoutBtn) logoutBtn.addEventListener("click", ()=>{ if(store) store.signOut(); });
