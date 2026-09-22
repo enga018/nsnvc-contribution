@@ -279,19 +279,10 @@ function calculateLedgerState(entries, citizenId){
     }
   }
 
-  // Waivers reduce actual charge debt before payments are allocated.
-  let waiverCredit=totalWaived;
-  for(const c of charges){
-    if(waiverCredit<=0) break;
-    if(c.remaining<=0) continue;
-    const applied=Math.min(waiverCredit,c.remaining);
-    c.remaining-=applied;
-    waiverCredit-=applied;
-  }
-
-  // Payments are real money. Allocate them FIFO across all remaining charges,
-  // including deferred charges, so an already-paid charge never reappears as debt
-  // merely because its period was later deferred/restored.
+  // 1. Payments are real money and are allocated first, FIFO, across all
+  // charges (including sanitation fees and deferred charges).
+  // This preserves the fact that a payment already made cannot become an
+  // overpayment just because a period is later deferred/restored.
   let paymentCredit=totalPaid;
   for(const c of charges){
     if(paymentCredit<=0) break;
@@ -299,6 +290,18 @@ function calculateLedgerState(entries, citizenId){
     const applied=Math.min(paymentCredit,c.remaining);
     c.remaining-=applied;
     paymentCredit-=applied;
+  }
+
+  // 2. Waivers reduce only debt that is still unpaid after payments.
+  // A waiver therefore cannot retroactively consume an already-settled charge
+  // and shift that payment onto another period.
+  let waiverCredit=totalWaived;
+  for(const c of charges){
+    if(waiverCredit<=0) break;
+    if(c.remaining<=0) continue;
+    const applied=Math.min(waiverCredit,c.remaining);
+    c.remaining-=applied;
+    waiverCredit-=applied;
   }
 
   const owed=[];
@@ -325,12 +328,11 @@ function calculateLedgerState(entries, citizenId){
     }
   }
 
+  const grossCharges=charges.reduce((sum,c)=>sum+(Number(c.entry.amount)||0),0);
   return {
-    totalCharged:Math.max(0, charges.reduce((sum,c)=>sum+(Number(c.entry.amount)||0),0)-Math.min(
-      charges.reduce((sum,c)=>sum+(Number(c.entry.amount)||0),0),
-      totalWaived
-    )),
+    totalCharged:Math.max(0, grossCharges-Math.min(grossCharges,totalWaived)),
     totalPaid,
+    totalWaived,
     deferredRemaining,
     owed,
     activeRemaining,
@@ -874,19 +876,10 @@ function makeFirebaseStore({ auth, db, fs, au }){
       const entries=ledgerCache.get(id)||[];
       entries.push(entry);
       ledgerCache.set(id,entries); periodStatsCache=null;
-      const updates={ updatedAt:fs.serverTimestamp() };
-      if(type==="charge" || type==="sanitationFee"){
-        updates.totalCharged=fs.increment(amt);
-        if(deferred) updates.deferredTotal=fs.increment(amt);
-        else updates.balance=fs.increment(amt);
-      } else if(type==="payment"){
-        updates.totalPaid=fs.increment(amt);
-        updates.balance=fs.increment(-amt);
-      } else if(type==="forgive"){
-        updates.totalCharged=fs.increment(-amt);
-        updates.balance=fs.increment(-amt);
-      }
-      await fs.updateDoc(fs.doc(db,"citizens",id),updates);
+      // Recalculate from the complete ledger so payment/waiver ordering and
+      // defer/restore state use the same authoritative calculation immediately.
+      const totals=recalcFromLedger(entries, id);
+      await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
     },
     async toggleDefer(id, entryId, deferred){
       const ref = fs.doc(db, "citizens", id, "ledger", entryId);
