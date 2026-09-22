@@ -2747,7 +2747,13 @@ async function renderCitizenDetail(id){
     return;
   }
   try{
-    const entries = ledgerCache.get(id) || await store.getLedger(id) || [];
+    let entries = ledgerCache.get(id);
+    if(!Array.isArray(entries)){
+      entries = await store.getLedger(id) || [];
+      // Keep the already-loaded ledger in memory. Person-view actions such as
+      // Defer/Restore must never perform a second Firestore read on tap.
+      ledgerCache.set(id, entries);
+    }
     // The citizen document may contain a stale cached balance and normally
     // does not contain the full ledger. The detail page has the authoritative
     // ledger already, so always calculate the displayed balance from it.
@@ -2840,22 +2846,22 @@ function attachHistoryListeners(id, editing){
       const period = String(chk.dataset.period||"").trim();
       const nowChecked = chk.checked;
 
-      // The detail page already fetched this ledger. Cache it so the toggle
-      // never performs a second Firestore read just to discover the entry.
-      let entries = ledgerCache.get(id);
+      // The person detail page caches its ledger before rendering the
+      // checkbox, so this click path stays entirely local.
+      const entries = ledgerCache.get(id);
       if(!Array.isArray(entries)){
-        try{
-          entries = await store.getLedger(id);
-          ledgerCache.set(id, entries);
-        }catch(e){
-          handleOperationError("toggleDefer", e);
-          chk.checked=!nowChecked;
-          toast("Failed to update deferral. Please try again.");
-          return;
-        }
+        handleOperationError("toggleDefer", new Error("Person ledger cache missing"));
+        chk.checked=!nowChecked;
+        toast("Please reopen this person and try again.");
+        return;
       }
 
-      const entry = entries.find(e=>e.entryId===entryId) || { entryId, note:period };
+      const entry = entries.find(e=>e.entryId===entryId);
+      if(!entry){
+        chk.checked=!nowChecked;
+        toast("Charge not found. Please reopen this person.");
+        return;
+      }
       const previousOverrides = deferredPeriodOverrides;
       const next = {...deferredPeriodOverrides};
       setCitizenChargeOverride(next, id, entry, nowChecked);
