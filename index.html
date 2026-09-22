@@ -1207,7 +1207,9 @@ const validTypes = ["charge", "payment", "forgive", "sanitationFee"];
         },{merge:true});
         ops++;
 
-        if(ops>=FIRESTORE_BATCH_SIZE) await flush();
+        // Keep repair batches comfortably below Firestore's hard limit so a large
+        // household set can continue reliably without stalling at a batch boundary.
+        if(ops>=300) await flush();
         if((++done%25)===0&&onProgress) onProgress(done,citizenIds.length);
       }
 
@@ -1220,11 +1222,15 @@ const validTypes = ["charge", "payment", "forgive", "sanitationFee"];
       return citizenIds.length;
     },
     async getAllLedgers(){
-      // Read the ledger subcollections in one collection-group query instead of
-      // one Firestore request per citizen. This makes Recalculate All much faster.
-      const snap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
+      // Read all citizens and all ledger entries in two reads. This also keeps
+      // citizens with no ledger entries in the recalculation pass.
+      const [cSnap, ledgerSnap] = await Promise.all([
+        fs.getDocs(fs.collection(db,"citizens")),
+        fs.getDocs(fs.collectionGroup(db,"ledger"))
+      ]);
       const out={};
-      for(const d of snap.docs){
+      for(const d of cSnap.docs) out[d.id]=[];
+      for(const d of ledgerSnap.docs){
         const citizenRef=d.ref.parent.parent;
         if(!citizenRef) continue;
         const id=citizenRef.id;
