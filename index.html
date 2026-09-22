@@ -296,12 +296,14 @@ function calculateLedgerState(entries, citizenId){
   // A waiver therefore cannot retroactively consume an already-settled charge
   // and shift that payment onto another period.
   let waiverCredit=totalWaived;
+  let appliedWaiver=0;
   for(const c of charges){
     if(waiverCredit<=0) break;
     if(c.remaining<=0) continue;
     const applied=Math.min(waiverCredit,c.remaining);
     c.remaining-=applied;
     waiverCredit-=applied;
+    appliedWaiver+=applied;
   }
 
   const owed=[];
@@ -330,9 +332,12 @@ function calculateLedgerState(entries, citizenId){
 
   const grossCharges=charges.reduce((sum,c)=>sum+(Number(c.entry.amount)||0),0);
   return {
-    totalCharged:Math.max(0, grossCharges-Math.min(grossCharges,totalWaived)),
+    // Only the portion of a waiver that actually reached unpaid debt counts.
+    // Any unused waiver does not erase a payment or create a false credit.
+    totalCharged:Math.max(0, grossCharges-appliedWaiver),
     totalPaid,
     totalWaived,
+    appliedWaiver,
     deferredRemaining,
     owed,
     activeRemaining,
