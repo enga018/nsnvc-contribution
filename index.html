@@ -205,6 +205,12 @@ function getCitizenPeriodOverride(citizenId, period){
   }
   return null;
 }
+function hasCitizenPeriodOverrides(citizenId){
+  const raw = deferredPeriodOverrides[citizenId];
+  if(Array.isArray(raw)) return raw.length>0;
+  return !!(raw && typeof raw==="object" && Object.keys(raw).length);
+}
+
 function isPeriodDeferredForCitizen(e, citizenId){
   if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return false;
   const period=String(e.note||"").trim();
@@ -312,7 +318,7 @@ function allocateLedgerPayments(entries, citizenId){
 
 function getEffectiveBalance(c){
   const cachedBalance = Number(c.balance ?? 0);
-  if(typeof c.balance === "number" && !excludedPeriods.length && !deferredPeriods.length && (!c.ledger || !c.ledger.some(e => e.deferred))){
+  if(typeof c.balance === "number" && !excludedPeriods.length && !deferredPeriods.length && !hasCitizenPeriodOverrides(c.id) && (!c.ledger || !c.ledger.some(e => e.deferred))){
     return cachedBalance;
   }
   if(!c.ledger){
@@ -801,7 +807,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     async listOwing(){
       const snap=await fs.getDocs(fs.collection(db,"citizens"));
-      const needsLedger = excludedPeriods.length || deferredPeriods.length;
+      const needsLedger = excludedPeriods.length || deferredPeriods.length || Object.keys(deferredPeriodOverrides).length;
       if(!needsLedger){
         return snap.docs
           .map(d=>({ id:d.id, ...d.data(), balance:Number(d.data().balance || 0) }))
@@ -1393,7 +1399,7 @@ function scheduleDashboardRefresh(){
 async function refreshDashboard(){
   const seq = ++dashboardRefreshSeq;
   let list = rawCitizens || [];
-  if(excludedPeriods.length || deferredPeriods.length){
+  if(excludedPeriods.length || deferredPeriods.length || Object.keys(deferredPeriodOverrides).length){
     if(ledgerCache.size===0){
       try{ await store.getAllLedgers(); }catch(e){ console.error("Failed to load ledgers:", e); }
     }
