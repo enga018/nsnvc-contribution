@@ -267,7 +267,17 @@ function allocateLedgerPayments(entries, citizenId){
     }
   }
 
-  return { owed, unappliedPayment:paymentCredit };
+  const deferredRemaining = charges.reduce((sum,c)=>{
+    if(c.remaining<=0) return sum;
+    const e=c.entry;
+    const period=String(e.note||"").trim();
+    const deferred = e.deferred ||
+      (deferredPeriods.includes(period) &&
+       !isDeferredPeriodRestoredForCitizen(citizenId, period));
+    return deferred ? sum + c.remaining : sum;
+  },0);
+
+  return { owed, deferredRemaining, unappliedPayment:paymentCredit };
 }
 
 function getEffectiveBalance(c){
@@ -287,15 +297,8 @@ function getEffectiveBalance(c){
 }
 function getDeferredAmount(c){
   if(!c.ledger) return 0;
-  let total=0;
-  for(const e of c.ledger){
-    const period=String(e.note||"").trim();
-    if((e.type==="charge" || e.type==="sanitationFee") &&
-       (e.deferred || (deferredPeriods.includes(period) && !isDeferredPeriodRestoredForCitizen(c.id, period)))){
-      total += Number(e.amount||0);
-    }
-  }
-  return total;
+  const allocation=allocateLedgerPayments(c.ledger, c.id);
+  return allocation.deferredRemaining;
 }
 // FIFO-allocates payments against all charges first, then exposes only
 // active (non-deferred, non-excluded) charges as currently owed. This prevents
