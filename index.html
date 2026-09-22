@@ -178,7 +178,132 @@ function downloadBlob(content, filename, mimeType="application/octet-stream"){
 }
 let excludedPeriods=[];
 let deferredPeriods=[];
+let deferredPeriodUpdatedAt={};
 let deferredPeriodOverrides={};
+
+function nextDeferTimestamp(previous=0){
+  return Math.max(Date.now(), Number(previous)||0 + 1);
+}
+
+function normalizeDeferredPeriodState(raw){
+  if(Array.isArray(raw)){
+    const updatedAt={};
+    raw.forEach(p=>{ if(p) updatedAt[String(p)]=0; });
+    return {periods:raw.slice(), updatedAt, migrated:true};
+  }
+  if(raw && typeof raw==="object"){
+    const periods=Array.isArray(raw.periods) ? raw.periods.slice() : [];
+    const updatedAt={};
+    if(raw.updatedAt && typeof raw.updatedAt==="object"){
+      for(const [p,v] of Object.entries(raw.updatedAt)){
+        const n=Number(v);
+        if(Number.isFinite(n)) updatedAt[p]=n;
+      }
+    }
+    const migrated=!Array.isArray(raw.periods) || !raw.updatedAt || typeof raw.updatedAt!=="object";
+    periods.forEach(p=>{ if(p && !Object.prototype.hasOwnProperty.call(updatedAt,p)) updatedAt[p]=0; });
+    return {periods, updatedAt, migrated};
+  }
+  return {periods:[], updatedAt:{}, migrated:true};
+}
+
+function normalizeDeferredPeriodOverrides(raw){
+  const out={};
+  let migrated=false;
+  if(!raw || typeof raw!=="object") return {overrides:out,migrated:Boolean(raw)};
+  for(const [citizenId,value] of Object.entries(raw)){
+    if(Array.isArray(value)){
+      const map={};
+      value.forEach(period=>{ if(period) map[String(period)]={value:false,at:0}; });
+      if(Object.keys(map).length) out[citizenId]=map;
+      migrated=true;
+      continue;
+    }
+    if(!value || typeof value!=="object") { migrated=true; continue; }
+    const map={};
+    for(const [key,state] of Object.entries(value)){
+      if(state && typeof state==="object" && !Array.isArray(state) &&
+         Object.prototype.hasOwnProperty.call(state,"value")){
+        map[key]={value:Boolean(state.value),at:Number(state.at)||0};
+      }else{
+        map[key]={value:Boolean(state),at:0};
+        migrated=true;
+      }
+    }
+    if(Object.keys(map).length) out[citizenId]=map;
+  }
+  return {overrides:out,migrated};
+}
+
+function getCitizenPeriodOverride(citizenId, period){
+  if(!citizenId || !period) return null;
+  const raw = deferredPeriodOverrides[citizenId];
+  if(!raw || typeof raw!=="object") return null;
+  const state=raw[period];
+  if(state && typeof state==="object" && Object.prototype.hasOwnProperty.call(state,"value")){
+    return {value:Boolean(state.value),at:Number(state.at)||0};
+  }
+  if(typeof state==="boolean") return {value:state,at:0};
+  return null;
+}
+function getCitizenChargeOverride(citizenId, entry){
+  if(!entry || !citizenId) return null;
+  const raw = deferredPeriodOverrides[citizenId];
+  if(raw && typeof raw==="object"){
+    if(entry.entryId && Object.prototype.hasOwnProperty.call(raw, entry.entryId)){
+      const state=raw[entry.entryId];
+      if(state && typeof state==="object" && Object.prototype.hasOwnProperty.call(state,"value")){
+        return {value:Boolean(state.value),at:Number(state.at)||0};
+      }
+      if(typeof state==="boolean") return {value:state,at:0};
+    }
+  }
+  return getCitizenPeriodOverride(citizenId, String(entry.note||"").trim());
+}
+function hasCitizenPeriodOverrides(citizenId){
+  const raw = deferredPeriodOverrides[citizenId];
+  return !!(raw && typeof raw==="object" && Object.keys(raw).length);
+}
+
+function isPeriodDeferredForCitizen(e, citizenId){
+  if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return false;
+  const period=String(e.note||"").trim();
+  const override=getCitizenChargeOverride(citizenId, e);
+  const bulkAt=deferredPeriodUpdatedAt[period] || 0;
+  const overrideAt=override ? override.at : -1;
+
+  if(override && overrideAt > bulkAt) return override.value;
+  if(period && deferredPeriods.includes(period)) return true;
+  if(override) return override.value;
+  return Boolean(e.deferred);
+}
+function isChargeExcluded(e, citizenId){
+  if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return false;
+  const note=String(e.note||"").trim();
+  return excludedPeriods.includes(note);
+}
+function setCitizenChargeOverride(next, citizenId, entry, value){
+  const existing=next[citizenId];
+  let overrides;
+  if(existing && !Array.isArray(existing) && typeof existing==="object"){
+    overrides={...existing};
+  }else{
+    overrides={};
+    if(Array.isArray(existing)){
+      existing.forEach(p=>{ if(p) overrides[p]={value:false,at:0}; });
+    }
+  }
+  const key=entry && entry.entryId ? String(entry.entryId) : String(entry && entry.note || "").trim();
+  if(!key) return;
+  if(value===null){
+    delete overrides[key];
+  }else{
+    const previous=overrides[key];
+    overrides[key]={value:Boolean(value),at:nextDeferTimestamp(previous && previous.at)};
+  }
+  if(Object.keys(overrides).length) next[citizenId]=overrides;
+  else delete next[citizenId];
+}
 // Single source of truth for "does this charge count toward period-based
 // calculations" — used by getEffectiveBalance, unpaidPeriods, and the
 // Firebase store's listOwing so exclusion behaves identically everywhere.
@@ -653,26 +778,42 @@ function makeLocalStore(){
       persist();
     },
     async getDeferredPeriods(){
-      return (data.meta && data.meta.deferredPeriods) ? data.meta.deferredPeriods.slice() : [];
+      const raw=data.meta && data.meta.deferredPeriods;
+      return normalizeDeferredPeriodState(raw);
     },
     async setDeferredPeriods(periods){
       if(!data.meta) data.meta={};
-      data.meta.deferredPeriods=periods;
+      const next=Array.isArray(periods) ? periods.slice() : [];
+      const updatedAt={...(data.meta.deferredPeriods && data.meta.deferredPeriods.updatedAt || {})};
+      for(const p of next){
+        if(!updatedAt[p]) updatedAt[p]=nextDeferTimestamp();
+      }
+      for(const p of Object.keys(updatedAt)){
+        if(!next.includes(p)) delete updatedAt[p];
+      }
+      data.meta.deferredPeriods={periods:next,updatedAt};
+      deferredPeriodUpdatedAt={...updatedAt};
       persist();
     },
     async getDeferredPeriodOverrides(){
-      return (data.meta && data.meta.deferredPeriodOverrides) ? {...data.meta.deferredPeriodOverrides} : {};
+      return normalizeDeferredPeriodOverrides(data.meta && data.meta.deferredPeriodOverrides).overrides;
     },
     async setDeferredPeriodOverrides(overrides){
       if(!data.meta) data.meta={};
-      data.meta.deferredPeriodOverrides=overrides;
+      data.meta.deferredPeriodOverrides=overrides || {};
       persist();
     },
     async setCitizenChargeDeferred(citizenId, entryId, deferred){
       if(!data.meta) data.meta={};
       if(!data.meta.deferredPeriodOverrides) data.meta.deferredPeriodOverrides={};
       if(!data.meta.deferredPeriodOverrides[citizenId]) data.meta.deferredPeriodOverrides[citizenId]={};
-      data.meta.deferredPeriodOverrides[citizenId][String(entryId)] = Boolean(deferred);
+      const key=String(entryId);
+      const previous=data.meta.deferredPeriodOverrides[citizenId][key];
+      const previousAt=previous && typeof previous==="object" ? previous.at : 0;
+      data.meta.deferredPeriodOverrides[citizenId][key]={
+        value:Boolean(deferred),
+        at:nextDeferTimestamp(previousAt)
+      };
       persist();
     },
     async importAll(backup, onProgress){
@@ -1097,24 +1238,36 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     async getDeferredPeriods(){
       const doc=await fs.getDoc(fs.doc(db,"meta","deferredPeriods"));
-      if(doc.exists()) return doc.data().periods||[];
-      return [];
+      if(doc.exists()) return normalizeDeferredPeriodState(doc.data());
+      return {periods:[],updatedAt:{},migrated:false};
     },
     async setDeferredPeriods(periods){
-      await fs.setDoc(fs.doc(db,"meta","deferredPeriods"), { periods }, {merge:true});
+      const next=Array.isArray(periods) ? periods.slice() : [];
+      const updatedAt={...deferredPeriodUpdatedAt};
+      for(const p of next){
+        if(!updatedAt[p]) updatedAt[p]=nextDeferTimestamp();
+      }
+      for(const p of Object.keys(updatedAt)){
+        if(!next.includes(p)) delete updatedAt[p];
+      }
+      deferredPeriodUpdatedAt={...updatedAt};
+      await fs.setDoc(fs.doc(db,"meta","deferredPeriods"), { periods:next, updatedAt }, {merge:true});
     },
     async getDeferredPeriodOverrides(){
       const doc=await fs.getDoc(fs.doc(db,"meta","deferredPeriodOverrides"));
-      if(doc.exists()) return doc.data().overrides||{};
+      if(doc.exists()) return normalizeDeferredPeriodOverrides(doc.data().overrides||{}).overrides;
       return {};
     },
     async setDeferredPeriodOverrides(overrides){
-      await fs.setDoc(fs.doc(db,"meta","deferredPeriodOverrides"), { overrides }, {merge:true});
+      await fs.setDoc(fs.doc(db,"meta","deferredPeriodOverrides"), { overrides:overrides||{} }, {merge:true});
     },
     async setCitizenChargeDeferred(citizenId, entryId, deferred){
-      // Update only this citizen/charge override instead of rewriting the entire override map.
+      // Update the value and timestamp together so a later action can supersede an earlier one.
       const field = `overrides.${String(citizenId)}.${String(entryId)}`;
-      await fs.updateDoc(fs.doc(db,"meta","deferredPeriodOverrides"), { [field]: Boolean(deferred) });
+      const at=nextDeferTimestamp();
+      await fs.updateDoc(fs.doc(db,"meta","deferredPeriodOverrides"), {
+        [field]: {value:Boolean(deferred),at}
+      });
     },
     async importAll(backup, onProgress){
       if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
@@ -1375,12 +1528,27 @@ async function onAuth(isIn){
     $("loginCard").classList.add("hidden");
     $("dashboard").classList.remove("hidden");
     try{
-      await Promise.all([
-        store.getExcludedPeriods().then(p=>{ excludedPeriods = p; }),
-        store.getDeferredPeriods().then(p=>{ deferredPeriods = p; }),
-        store.getDeferredPeriodOverrides().then(p=>{ deferredPeriodOverrides = p || {}; }),
-        Promise.resolve(subscribeCitizens())
+      const [excluded, deferredState, rawOverrides] = await Promise.all([
+        store.getExcludedPeriods(),
+        store.getDeferredPeriods(),
+        store.getDeferredPeriodOverrides()
       ]);
+      excludedPeriods = excluded || [];
+      const normalizedPeriods=normalizeDeferredPeriodState(deferredState);
+      deferredPeriods = normalizedPeriods.periods;
+      deferredPeriodUpdatedAt = normalizedPeriods.updatedAt;
+      const normalizedOverrides=normalizeDeferredPeriodOverrides(rawOverrides);
+      deferredPeriodOverrides = normalizedOverrides.overrides;
+
+      // Migrate legacy shapes once on load. Missing timestamps become 0 so
+      // existing per-person state remains valid until a new action supersedes it.
+      if(normalizedPeriods.migrated){
+        await store.setDeferredPeriods(deferredPeriods.slice());
+      }
+      if(normalizedOverrides.migrated){
+        await store.setDeferredPeriodOverrides(deferredPeriodOverrides);
+      }
+      subscribeCitizens();
     } catch(err){ console.error("Failed to load excluded periods:", err); }
     setTimeout(refreshPending, 0);
   } else {
@@ -1806,6 +1974,7 @@ async function handlePeriodsSave(pendingRenames){
 function togglePeriodDeferred(period, shouldDefer){
   const next = deferredPeriods.filter(p=>p!==period);
   if(shouldDefer) next.push(period);
+  deferredPeriodUpdatedAt[period]=nextDeferTimestamp(deferredPeriodUpdatedAt[period]);
   deferredPeriods = next;
   periodsReady=false;
   unpaidCache=new Map();
@@ -1820,6 +1989,7 @@ function attachPeriodListeners(pendingRenames){
       const period=btn.dataset.period;
       const shouldDefer=btn.dataset.deferred!=="1";
       const previous = deferredPeriods.slice();
+      const previousUpdatedAt = {...deferredPeriodUpdatedAt};
 
       btn.disabled=true;
       togglePeriodDeferred(period, shouldDefer);
@@ -1837,6 +2007,7 @@ function attachPeriodListeners(pendingRenames){
         .catch(err=>{
           console.error(err);
           deferredPeriods=previous;
+          deferredPeriodUpdatedAt=previousUpdatedAt;
           periodsReady=false;
           unpaidCache=new Map();
           periodStatsCache=null;
@@ -2688,7 +2859,7 @@ function renderEntryRow(entry, editing, citizenId){
     const checked = isDeferred ? 'checked' : '';
     const labelText = isDeferred ? "Restore" : "Defer";
     deferToggle = `<label class="switch" data-id="${entry.entryId}" style="margin-left:8px">
-      <input type="checkbox" class="defer-chk" data-id="${entry.entryId}" data-period="${esc(period)}" data-global-deferred="${globalDeferred?"1":"0"}" data-period-override="${override===null?"":(override?"1":"0")}" ${checked}>
+      <input type="checkbox" class="defer-chk" data-id="${entry.entryId}" data-period="${esc(period)}" data-global-deferred="${globalDeferred?"1":"0"}" data-period-override="${override===null?"":(override.value?"1":"0")}" ${checked}>
       <span class="switch-track"><span class="switch-thumb"></span></span>
       <span class="switch-label">${labelText}</span>
     </label>`;
@@ -2862,8 +3033,8 @@ function attachHistoryListeners(id, editing){
         toast("Charge not found. Please reopen this person.");
         return;
       }
-      const previousOverrides = deferredPeriodOverrides;
-      const next = {...deferredPeriodOverrides};
+      const previousOverrides = JSON.parse(JSON.stringify(deferredPeriodOverrides));
+      const next = JSON.parse(JSON.stringify(deferredPeriodOverrides));
       setCitizenChargeOverride(next, id, entry, nowChecked);
       deferredPeriodOverrides=next;
 
