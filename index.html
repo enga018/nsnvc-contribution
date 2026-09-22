@@ -279,22 +279,22 @@ function calculateLedgerState(entries, citizenId){
     }
   }
 
-  // 1. Payments are real money and are allocated first, FIFO, across all
-  // charges (including sanitation fees and deferred charges).
-  // This preserves the fact that a payment already made cannot become an
-  // overpayment just because a period is later deferred/restored.
+  // First, allocate payments FIFO as they originally would have been
+  // allocated. We keep track of how much payment was attached to each charge.
+  // This is important when a charge is deferred later: the payment is not lost;
+  // it is released back as account credit and can cover a newer active charge.
   let paymentCredit=totalPaid;
   for(const c of charges){
+    c.paidApplied=0;
     if(paymentCredit<=0) break;
     if(c.remaining<=0) continue;
     const applied=Math.min(paymentCredit,c.remaining);
     c.remaining-=applied;
+    c.paidApplied=applied;
     paymentCredit-=applied;
   }
 
-  // 2. Waivers reduce only debt that is still unpaid after payments.
-  // A waiver therefore cannot retroactively consume an already-settled charge
-  // and shift that payment onto another period.
+  // Waivers reduce only debt that is still unpaid after payments.
   let waiverCredit=totalWaived;
   let appliedWaiver=0;
   for(const c of charges){
@@ -306,25 +306,56 @@ function calculateLedgerState(entries, citizenId){
     appliedWaiver+=applied;
   }
 
+  // A later deferral changes which charge the account's existing payment
+  // credit should cover. If a deferred/excluded charge had already consumed
+  // payment credit, release that payment credit and apply it to active debt.
+  // Example: July ₹400 paid, August ₹500, then July deferred:
+  // July releases ₹400 credit -> August becomes ₹100 owing.
+  let releasedPayment=0;
+  const deferredCharges=[];
+  const activeCharges=[];
+  for(const c of charges){
+    const e=c.entry;
+    const deferred=isPeriodDeferredForCitizen(e,citizenId);
+    const excluded=isChargeExcluded(e,citizenId);
+    c.deferred=deferred;
+    c.excluded=excluded;
+    if(deferred || excluded){
+      releasedPayment += c.paidApplied || 0;
+      if(deferred && !excluded) deferredCharges.push(c);
+    }else{
+      activeCharges.push(c);
+    }
+  }
+
+  // Apply released payment credit to active charges. Original active-charge
+  // payments are already reflected in c.remaining, so this only moves credit
+  // that was previously consumed by a charge that is no longer active.
+  let carryCredit=releasedPayment;
+  for(const c of activeCharges){
+    if(carryCredit<=0) break;
+    if(c.remaining<=0) continue;
+    const applied=Math.min(carryCredit,c.remaining);
+    c.remaining-=applied;
+    carryCredit-=applied;
+  }
+  paymentCredit += carryCredit;
+
   const owed=[];
   let deferredRemaining=0;
   let activeRemaining=0;
 
   for(const c of charges){
     if(c.remaining<=0) continue;
-    const e=c.entry;
-    const deferred=isPeriodDeferredForCitizen(e,citizenId);
-    const excluded=isChargeExcluded(e,citizenId);
-
-    if(deferred){
+    if(c.deferred){
       deferredRemaining += c.remaining;
-    }else if(excluded){
+    }else if(c.excluded){
       // Excluded periods are neither current debt nor deferred debt.
     }else{
       const remaining=c.remaining;
       activeRemaining += remaining;
       owed.push({
-        note:e.type==="sanitationFee" ? "" : e.note,
+        note:c.entry.type==="sanitationFee" ? "" : c.entry.note,
         remaining
       });
     }
@@ -332,8 +363,6 @@ function calculateLedgerState(entries, citizenId){
 
   const grossCharges=charges.reduce((sum,c)=>sum+(Number(c.entry.amount)||0),0);
   return {
-    // Only the portion of a waiver that actually reached unpaid debt counts.
-    // Any unused waiver does not erase a payment or create a false credit.
     totalCharged:Math.max(0, grossCharges-appliedWaiver),
     totalPaid,
     totalWaived,
