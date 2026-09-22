@@ -288,7 +288,9 @@ function calculateLedgerState(entries, citizenId){
     const excluded=isChargeExcluded(e,citizenId);
 
     if(deferred || excluded){
-      // Deferred/excluded charges do not participate in the balance.
+      // Deferred charges stay recorded but are excluded from the active balance.
+      // Keep their amount separately so the Deferred dashboard total remains live.
+      if(deferred && !excluded) deferredRemaining += amt;
       continue;
     }
 
@@ -342,8 +344,7 @@ function getEffectiveBalance(c){
     return calculateLedgerState(c.ledger, c.id).balance;
   }
   // The live citizen snapshot may not include a ledger yet. In that case use
-  // the stored summary only as a temporary fallback; dashboard refresh loads
-  // all ledgers before rendering the list.
+  // the stored summary when no period/override state requires live ledgers.
   return Number(c && c.balance != null ? c.balance : 0);
 }
 function getDeferredAmount(c){
@@ -1382,11 +1383,6 @@ async function onAuth(isIn){
       ]);
     } catch(err){ console.error("Failed to load excluded periods:", err); }
     setTimeout(refreshPending, 0);
-    // Background integrity check: recalculate all balances from ledgers after
-    // login so any cached totals that drifted out of sync are silently repaired.
-    setTimeout(()=>{
-      store.recalcAll().then(()=>console.log("Login integrity recalc complete")).catch(e=>console.error("Login integrity recalc failed:", e));
-    }, 3000);
   } else {
     $("loginCard").classList.remove("hidden");
     $("dashboard").classList.add("hidden");
@@ -1467,19 +1463,24 @@ function scheduleDashboardRefresh(){
 async function refreshDashboard(){
   const seq = ++dashboardRefreshSeq;
   let list = rawCitizens || [];
+  const needsLedger = Boolean(
+    excludedPeriods.length ||
+    deferredPeriods.length ||
+    Object.keys(deferredPeriodOverrides).length
+  );
 
-  // The dashboard status/filter lists must always be calculated from the
-  // authoritative ledger. Cached citizen.balance can be stale after imports,
-  // deferrals/restores, or older app versions, which can make Pending appear
-  // empty even when a household actually owes money.
-  try{
-    await store.getAllLedgers();
-  }catch(e){
-    console.error("Failed to load ledgers for dashboard:", e);
-  }
+  // Use the lightweight citizen snapshot by default. Full ledgers are only
+  // needed when period-based state can change the balance calculation.
+  if(needsLedger){
+    try{
+      await store.getAllLedgers();
+    }catch(e){
+      console.error("Failed to load ledgers for dashboard:", e);
+    }
 
-  if(list.length > 0) {
-    list = list.map(c => ({...c, ledger: ledgerCache.get(c.id) || []}));
+    if(list.length > 0){
+      list = list.map(c => ({...c, ledger: ledgerCache.get(c.id) || []}));
+    }
   }
   if(seq !== dashboardRefreshSeq) return; // superseded by a newer refresh; drop this stale result
   allCitizens = list;
@@ -1531,7 +1532,13 @@ async function loadOwedBreakdown(){
   const cache=new Map(), set=new Set();
   await Promise.all(pend.map(async c => {
     try{
-      const led=ledgerCache.get(c.id)||await store.getLedger(c.id);
+      // Period filtering must not turn into one Firestore read per household.
+      // Use a ledger already attached to the dashboard or present in cache;
+      // otherwise this citizen simply cannot contribute period options yet.
+      const led = Array.isArray(c.ledger)
+        ? c.ledger
+        : ledgerCache.get(c.id);
+      if(!Array.isArray(led)) return;
       const owed=getOwedBreakdown(led, c.id);
       const up=owed.filter(o=>o.note).map(o=>o.note);
       cache.set(c.id, up); up.forEach(p=>set.add(p));
@@ -1796,32 +1803,49 @@ async function handlePeriodsSave(pendingRenames){
   }
 }
 
-async function togglePeriodDeferred(period, shouldDefer){
+function togglePeriodDeferred(period, shouldDefer){
   const next = deferredPeriods.filter(p=>p!==period);
   if(shouldDefer) next.push(period);
-  await store.setDeferredPeriods(next);
   deferredPeriods = next;
   periodsReady=false;
   unpaidCache=new Map();
-  await refreshDashboard();
-  loadOwedBreakdown();
-  toast(shouldDefer ? `Deferred ${prettyPeriod(period)}` : `Restored ${prettyPeriod(period)}`);
+  periodStatsCache=null;
+  renderStats();
+  renderList();
 }
 
 function attachPeriodListeners(pendingRenames){
   document.querySelectorAll(".period-defer-btn").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
+    btn.addEventListener("click", ()=>{
       const period=btn.dataset.period;
       const shouldDefer=btn.dataset.deferred!=="1";
+      const previous = deferredPeriods.slice();
+
       btn.disabled=true;
-      try{
-        await togglePeriodDeferred(period, shouldDefer);
-        await openManagePeriods();
-      }catch(err){
-        console.error(err);
-        toast("Failed to update period");
-        btn.disabled=false;
-      }
+      togglePeriodDeferred(period, shouldDefer);
+
+      // Update only the clicked control; keep the Manage Periods sheet open.
+      btn.dataset.deferred = shouldDefer ? "1" : "0";
+      btn.textContent = shouldDefer ? "Restore" : "Defer";
+      btn.disabled=false;
+      toast(shouldDefer ? `Deferred ${prettyPeriod(period)}` : `Restored ${prettyPeriod(period)}`);
+
+      // Persist in the background. Roll back local state and the clicked
+      // control if Firestore rejects the write.
+      store.setDeferredPeriods(deferredPeriods.slice())
+        .then(()=>clearOperationErrors())
+        .catch(err=>{
+          console.error(err);
+          deferredPeriods=previous;
+          periodsReady=false;
+          unpaidCache=new Map();
+          periodStatsCache=null;
+          renderStats();
+          renderList();
+          btn.dataset.deferred = shouldDefer ? "0" : "1";
+          btn.textContent = shouldDefer ? "Defer" : "Restore";
+          toast("Failed to update period");
+        });
     });
   });
   document.querySelectorAll(".period-rename-btn").forEach(btn=>{
@@ -2427,7 +2451,9 @@ async function runUpload(){
     clearOperationErrors();
     prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${pendingUpload.charges.length} charges and ${pendingUpload.payments.length} payments processed. Recalculating balances…</div>`;
     pendingUpload=null;
-    store.recalcAll().then(()=>toast("Balances recalculated")).catch(e=>console.error("recalcAll after upload failed:", e));
+    if(excludedPeriods.length || deferredPeriods.length){
+      store.recalcAll().then(()=>toast("Balances recalculated")).catch(e=>console.error("recalcAll after upload failed:", e));
+    }
     setTimeout(()=>{ closeSheet(); toast("Upload complete"); },SHEET_CLOSE_DELAY_MS);
   }catch(err){
     handleOperationError("bulkUpload", err);
@@ -2551,7 +2577,9 @@ async function runBank(){
     await store.bulkAppendPayments(items,(d,t)=>{ prog.innerHTML=`<div class="notice info">Recording… ${d} / ${t}</div>`; });
     prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${items.length} bank payments recorded. Recalculating balances…</div>`;
     pendingBank=null;
-    store.recalcAll().then(()=>toast("Balances recalculated")).catch(e=>console.error("recalcAll after bank upload failed:", e));
+    if(excludedPeriods.length || deferredPeriods.length){
+      store.recalcAll().then(()=>toast("Balances recalculated")).catch(e=>console.error("recalcAll after bank upload failed:", e));
+    }
     setTimeout(()=>{ closeSheet(); toast("Bank payments recorded"); },SHEET_CLOSE_DELAY_MS);
   }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Recording failed partway. Check connection and try again.</div>`; btn.disabled=false; }
 }
@@ -2811,29 +2839,45 @@ function attachHistoryListeners(id, editing){
       const entryId = chk.dataset.id;
       const period = String(chk.dataset.period||"").trim();
       const nowChecked = chk.checked;
-      try{
-        // Citizen-page Defer/Restore is an explicit per-charge state.
-        // The latest action wins over bulk state and legacy entry.deferred data.
-        const entries = ledgerCache.get(id) || await store.getLedger(id);
-        const entry = entries.find(e=>e.entryId===entryId);
-        if(entry){
-          const next = {...deferredPeriodOverrides};
-          setCitizenChargeOverride(next, id, entry, nowChecked);
-          // Persist only this person/charge override. Do not rewrite the full
-          // deferral map on every click.
-          await store.setCitizenChargeDeferred(id, entryId, nowChecked);
-          deferredPeriodOverrides=next;
-        }else{
-          await store.toggleDefer(id, entryId, nowChecked);
+
+      // The detail page already fetched this ledger. Cache it so the toggle
+      // never performs a second Firestore read just to discover the entry.
+      let entries = ledgerCache.get(id);
+      if(!Array.isArray(entries)){
+        try{
+          entries = await store.getLedger(id);
+          ledgerCache.set(id, entries);
+        }catch(e){
+          handleOperationError("toggleDefer", e);
+          chk.checked=!nowChecked;
+          toast("Failed to update deferral. Please try again.");
+          return;
         }
-        clearOperationErrors();
-        toast(nowChecked ? "Deferred" : "Restored");
-        await renderCitizenDetail(id);
-      }catch(e){
-        handleOperationError("toggleDefer", e);
-        chk.checked=!nowChecked;
-        toast("Failed to update deferral. Please try again.");
       }
+
+      const entry = entries.find(e=>e.entryId===entryId) || { entryId, note:period };
+      const previousOverrides = deferredPeriodOverrides;
+      const next = {...deferredPeriodOverrides};
+      setCitizenChargeOverride(next, id, entry, nowChecked);
+      deferredPeriodOverrides=next;
+
+      // Re-render immediately from the optimistic local state. Do not wait for
+      // Firestore before updating the account view.
+      renderCitizenDetail(id);
+      clearOperationErrors();
+      toast(nowChecked ? "Deferred" : "Restored");
+
+      // Persist in the background. Roll back the local state and view only if
+      // the write fails.
+      store.setCitizenChargeDeferred(id, entryId, nowChecked)
+        .then(()=>clearOperationErrors())
+        .catch(e=>{
+          deferredPeriodOverrides=previousOverrides;
+          chk.checked=!nowChecked;
+          handleOperationError("toggleDefer", e);
+          renderCitizenDetail(id);
+          toast("Failed to update deferral. Please try again.");
+        });
     });
   });
   if(!editing) return;
