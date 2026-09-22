@@ -2724,7 +2724,11 @@ async function renderCitizenDetail(id){
   }
   try{
     const entries = ledgerCache.get(id) || await store.getLedger(id) || [];
-    const bal = getEffectiveBalance(c);
+    // The citizen document may contain a stale cached balance and normally
+    // does not contain the full ledger. The detail page has the authoritative
+    // ledger already, so always calculate the displayed balance from it.
+    const allocation = allocateLedgerPayments(entries, id);
+    const bal = allocation.owed.reduce((sum,o)=>sum+o.remaining,0) - allocation.unappliedPayment;
     const allSorted = [...entries].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
     const INITIAL_HISTORY = 3;
 
