@@ -205,6 +205,19 @@ function getCitizenPeriodOverride(citizenId, period){
   }
   return null;
 }
+// Individual actions are stored by entryId so one citizen can have multiple
+// charges in the same period without one toggle accidentally changing another.
+// Period-keyed overrides remain supported for backward compatibility.
+function getCitizenChargeOverride(citizenId, entry){
+  if(!entry || !citizenId) return null;
+  const raw = deferredPeriodOverrides[citizenId];
+  if(raw && !Array.isArray(raw) && typeof raw==="object"){
+    if(entry.entryId && Object.prototype.hasOwnProperty.call(raw, entry.entryId)){
+      return raw[entry.entryId] === true;
+    }
+  }
+  return getCitizenPeriodOverride(citizenId, String(entry.note||"").trim());
+}
 function hasCitizenPeriodOverrides(citizenId){
   const raw = deferredPeriodOverrides[citizenId];
   if(Array.isArray(raw)) return raw.length>0;
@@ -214,7 +227,7 @@ function hasCitizenPeriodOverrides(citizenId){
 function isPeriodDeferredForCitizen(e, citizenId){
   if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return false;
   const period=String(e.note||"").trim();
-  const override=getCitizenPeriodOverride(citizenId, period);
+  const override=getCitizenChargeOverride(citizenId, e);
   if(override!==null) return override;
   return Boolean(e.deferred) || (period && deferredPeriods.includes(period));
 }
@@ -223,7 +236,7 @@ function isChargeExcluded(e, citizenId){
   const note=String(e.note||"").trim();
   return excludedPeriods.includes(note);
 }
-function setCitizenPeriodOverride(next, citizenId, period, value){
+function setCitizenChargeOverride(next, citizenId, entry, value){
   const existing=next[citizenId];
   let overrides;
   if(existing && !Array.isArray(existing) && typeof existing==="object"){
@@ -234,10 +247,12 @@ function setCitizenPeriodOverride(next, citizenId, period, value){
       existing.forEach(p=>{ if(p) overrides[p]=false; });
     }
   }
+  const key=entry && entry.entryId ? String(entry.entryId) : String(entry && entry.note || "").trim();
+  if(!key) return;
   if(value===null){
-    delete overrides[period];
+    delete overrides[key];
   }else{
-    overrides[period]=Boolean(value);
+    overrides[key]=Boolean(value);
   }
   if(Object.keys(overrides).length) next[citizenId]=overrides;
   else delete next[citizenId];
@@ -2574,7 +2589,7 @@ function renderEntryRow(entry, editing, citizenId){
   const isPayment = entry.type==="payment";
   const isForgive = entry.type==="forgive";
   const period=String(entry.note||"").trim();
-  const override = getCitizenPeriodOverride(citizenId, period);
+  const override = getCitizenChargeOverride(citizenId, entry);
   const globalDeferred = entry.type==="charge" && deferredPeriods.includes(period);
   const isDeferred = entry.type==="charge" && isPeriodDeferredForCitizen(entry, citizenId);
   const label = entryLabel(entry);
@@ -2757,12 +2772,13 @@ function attachHistoryListeners(id, editing){
       const period = String(chk.dataset.period||"").trim();
       const nowChecked = chk.checked;
       try{
-        // Citizen-page Defer/Restore is an explicit per-citizen period state.
-        // The latest action therefore wins over both bulk state and legacy
-        // entry.deferred data.
-        if(period){
+        // Citizen-page Defer/Restore is an explicit per-charge state.
+        // The latest action wins over bulk state and legacy entry.deferred data.
+        const entries = ledgerCache.get(id) || await store.getLedger(id);
+        const entry = entries.find(e=>e.entryId===entryId);
+        if(entry){
           const next = {...deferredPeriodOverrides};
-          setCitizenPeriodOverride(next, id, period, nowChecked);
+          setCitizenChargeOverride(next, id, entry, nowChecked);
           await store.setDeferredPeriodOverrides(next);
           deferredPeriodOverrides=next;
         }else{
