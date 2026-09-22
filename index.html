@@ -3116,7 +3116,7 @@ async function doExportPdf(){
       .filter(c => getEffectiveBalance(c) > 0);
     if(!list.length){ toast("No owing households to export"); return; }
 
-    const fmtRs = n => "₹" + (Number(n)||0).toLocaleString("en-IN");
+    const fmtRs = n => "Rs. " + (Number(n)||0).toLocaleString("en-IN");
     const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
     const rows = [];
     for(const c of list){
@@ -3180,9 +3180,7 @@ async function doExportPdf(){
       doc.setTextColor(180, 40, 40);
       doc.text(r.amount, amountX, y + (nameLines.length - 1) * 3.8);
 
-      // Row 2: job card (left) and charges (right, red)
-      y += nameLines.length * 3.8 + 1;
-      let rightY = y;
+      // Row 2: job card (left) and charges (right, red).\n      // The right-side details start on the same line as the citizen name.\n      y += nameLines.length * 3.8 + 1;\n      let rightY = y - nameLines.length * 3.8 - 1;
       doc.setFont(undefined, "normal");
       doc.setTextColor(120, 120, 120);
       doc.setFontSize(9);
