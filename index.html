@@ -337,8 +337,7 @@ function allocateLedgerPayments(entries, citizenId){
 }
 function getEffectiveBalance(c){
   // When a ledger is attached, it is always authoritative. This is the same
-  // calculation used by the person account view, so dashboard Pending/Overdue
-  // status cannot disagree with the household's actual account.
+  // calculation used by the person account view, so dashboard status cannot disagree with the household's actual account.
   if(c && Array.isArray(c.ledger)){
     return calculateLedgerState(c.ledger, c.id).balance;
   }
@@ -363,20 +362,6 @@ function getDeferredAmount(c){
 // merely because that period was later deferred.
 function getOwedBreakdown(entries, citizenId){
   return allocateLedgerPayments(entries, citizenId).owed;
-}
-// Overdue = owed charges from periods before the citizen's own most
-// recently-charged period (mirrors "previous-period unpaid charges that
-// aren't deferred"). Periods are typed free text ("MAY2", "April 2026",
-// historical imports, ...) with no reliable shared ordering, so this uses
-// getOwedBreakdown's chronological (createdAt) order instead of parsing
-// period names: the last owed charge entered is "current due", anything
-// owed before it is overdue.
-function getOverdueBreakdown(entries, precomputedOwed, citizenId){
-  const owed=precomputedOwed || getOwedBreakdown(entries, citizenId);
-  if(!owed.length) return {overdue:0, currentDue:0};
-  const currentDue = owed[owed.length-1].remaining;
-  const overdue = owed.slice(0,-1).reduce((s,o)=>s+o.remaining,0);
-  return {overdue, currentDue};
 }
 const statusLabel = {paid:"Cleared", partial:"Partly paid", due:"Due"};
 function todayISO(){ return new Date().toISOString().slice(0,10); }
@@ -1281,7 +1266,7 @@ let citizensUnsub=null;
 let allCitizens=[], rawCitizens=[];
 // Caching & Performance
 let ledgerCache=new Map(), periodStatsCache=null;
-let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null, overdueRefreshTimer=null;
+let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null;
 // Configuration
 
 try {
@@ -1478,15 +1463,6 @@ function scheduleDashboardRefresh(){
       console.warn("Background ledger cache refresh failed:", e);
     });
   }, CACHE_REFRESH_DELAY_MS);
-  // The Overdue summary card/tab needs each pending citizen's ledger, which
-  // isn't in the live citizen list — same lazy fetch the period dropdown
-  // already used, just also kicked off quietly here so the dashboard fills
-  // in without waiting for someone to open that dropdown. Debounced so a
-  // burst of snapshot events (bulk import, rapid edits) settles first.
-  clearTimeout(overdueRefreshTimer);
-  overdueRefreshTimer = setTimeout(()=>{
-    if(!periodsReady && !loadingPeriods) loadOwedBreakdown();
-  }, CACHE_REFRESH_DELAY_MS);
 }
 async function refreshDashboard(){
   const seq = ++dashboardRefreshSeq;
@@ -1525,15 +1501,6 @@ function renderStats(){
   $("stOut").textContent = fmt(out);
   $("stPendingCount").textContent = `${pending.length} household${pending.length===1?"":"s"} pending`;
 
-  if(periodsReady){
-    const {total, count} = overdueTotals();
-    $("stOverdue").textContent = fmt(total);
-    $("stOverdueCount").textContent = `${count} household${count===1?"":"s"} overdue`;
-  } else {
-    $("stOverdue").textContent = "…";
-    $("stOverdueCount").textContent = loadingPeriods ? "Loading…" : "—";
-  }
-
   const deferred = allCitizens.filter(c=>getDeferredAmount(c)>0);
   const deferredOut = deferred.reduce((s,c)=>s+getDeferredAmount(c),0);
   $("stDeferred").textContent = fmt(deferredOut);
@@ -1547,10 +1514,6 @@ function renderStats(){
 let adminFilter="pending", adminShown=20;
 const ADMIN_STEP=20;
 let periodFilter="", unpaidCache=new Map(), periodsReady=false, loadingPeriods=false;
-// Overdue/current-due amounts, keyed by citizen id. Populated alongside
-// unpaidCache in loadOwedBreakdown() since both need the same per-citizen
-// ledger fetch — computing them together avoids doubling that cost.
-let overdueCache=new Map();
 
 function periodKey(note){
   const s=String(note||"").trim().toUpperCase();
@@ -1565,17 +1528,16 @@ function unpaidPeriods(entries, citizenId){
 async function loadOwedBreakdown(){
   if(loadingPeriods) return; loadingPeriods=true;
   const pend=allCitizens.filter(c=>getEffectiveBalance(c)>0);
-  const cache=new Map(), overdue=new Map(), set=new Set();
+  const cache=new Map(), set=new Set();
   await Promise.all(pend.map(async c => {
     try{
       const led=ledgerCache.get(c.id)||await store.getLedger(c.id);
       const owed=getOwedBreakdown(led, c.id);
       const up=owed.filter(o=>o.note).map(o=>o.note);
       cache.set(c.id, up); up.forEach(p=>set.add(p));
-      overdue.set(c.id, getOverdueBreakdown(null, owed, c.id));
     }catch(e){}
   }));
-  unpaidCache=cache; overdueCache=overdue; periodsReady=true; loadingPeriods=false;
+  unpaidCache=cache; periodsReady=true; loadingPeriods=false;
   const sel=$("periodSel");
   if(sel){
     const periods=[...set].sort((a,b)=>periodKey(a)-periodKey(b));
@@ -1584,11 +1546,7 @@ async function loadOwedBreakdown(){
   }
   renderStats(); renderList();
 }
-function overdueTotals(){
-  let total=0, count=0;
-  for(const {overdue} of overdueCache.values()){ if(overdue>0){ total+=overdue; count++; } }
-  return {total, count};
-}
+
 
 $("adminSearch").addEventListener("input", ()=>{
   $("clearSearchBtn").style.display = $("adminSearch").value ? "" : "none";
@@ -1620,9 +1578,6 @@ function filterCitizenList(citizens, searchTerm, filter, periodFilter){
       if(!periodsReady && !loadingPeriods) loadOwedBreakdown();
       list = list.filter(c => (unpaidCache.get(c.id)||[]).includes(periodFilter));
     }
-  } else if(filter==="overdue"){
-    if(!periodsReady && !loadingPeriods) loadOwedBreakdown();
-    list = list.filter(c => (overdueCache.get(c.id)?.overdue||0)>0);
   } else if(filter==="deferred"){
     list = list.filter(c => getDeferredAmount(c)>0);
   } else if(filter==="overpaid"){
@@ -1638,12 +1593,7 @@ function buildCitizenCardHTML(citizen, filter){
   const st = statusOf(citizen);
   let small, balText, balColor;
 
-  if(filter==="overdue"){
-    const overdueAmt = overdueCache.get(citizen.id)?.overdue||0;
-    small = `${esc(citizen.jobCard||citizen.id)} · Overdue`;
-    balText = fmt(overdueAmt);
-    balColor = 'var(--due)';
-  } else if(filter==="deferred"){
+  if(filter==="deferred"){
     small = `${esc(citizen.jobCard||citizen.id)} · Deferred ${fmt(deferred)}`;
     balText = fmt(deferred);
     balColor = 'var(--partial)';
@@ -1680,7 +1630,6 @@ function renderFilterTabs(){
   });
   const counts = {
     pending: allCitizens.filter(c=>getEffectiveBalance(c)>0).length,
-    overdue: periodsReady ? overdueTotals().count : null,
     deferred: allCitizens.filter(c=>getDeferredAmount(c)>0).length,
     overpaid: allCitizens.filter(c=>getEffectiveBalance(c)<0).length,
     all: allCitizens.length
@@ -1854,7 +1803,6 @@ async function togglePeriodDeferred(period, shouldDefer){
   deferredPeriods = next;
   periodsReady=false;
   unpaidCache=new Map();
-  overdueCache=new Map();
   await refreshDashboard();
   loadOwedBreakdown();
   toast(shouldDefer ? `Deferred ${prettyPeriod(period)}` : `Restored ${prettyPeriod(period)}`);
@@ -2730,21 +2678,7 @@ function renderHistoryRows(entries, editing, citizenId){
   return entries.map(e => renderEntryRow(e, editing, citizenId)).join("");
 }
 
-function buildFinancialBreakdownHTML(overdue, currentDue, deferredAmt){
-  // Total remaining is derived from overdue+currentDue (both computed from
-  // the same freshly-fetched ledger) rather than the citizen's cached
-  // balance, which can lag a moment behind right after a payment/waive —
-  // keeping this panel internally consistent even if the balance-block
-  // above it hasn't re-rendered yet.
-  const totalRemaining = overdue + currentDue;
-  if(totalRemaining<=0 && deferredAmt<=0) return '';
-  return `<div class="breakdown">
-    ${overdue>0 ? `<div class="brow"><span>Overdue</span><b class="money" style="color:var(--due)">${fmt(overdue)}</b></div>` : ''}
-    ${currentDue>0 ? `<div class="brow"><span>Current due</span><b class="money">${fmt(currentDue)}</b></div>` : ''}
-    ${deferredAmt>0 ? `<div class="brow"><span>Deferred</span><b class="money" style="color:var(--partial)">${fmt(deferredAmt)}</b></div>` : ''}
-    <div class="brow total"><span>Total remaining</span><b class="money">${fmt(totalRemaining)}</b></div>
-  </div>`;
-}
+
 
 function buildCitizenDetailHTML(citizen, balance, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount){
   return `
