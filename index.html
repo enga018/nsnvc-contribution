@@ -3116,7 +3116,7 @@ async function doExportPdf(){
       .filter(c => getEffectiveBalance(c) > 0);
     if(!list.length){ toast("No owing households to export"); return; }
 
-    const fmtRs = n => "Rs. " + (Number(n)||0).toLocaleString("en-IN");
+    const fmtRs = n => "₹" + (Number(n)||0).toLocaleString("en-IN");
     const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
     const rows = [];
     for(const c of list){
