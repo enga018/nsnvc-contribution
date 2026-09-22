@@ -1464,13 +1464,19 @@ function scheduleDashboardRefresh(){
 async function refreshDashboard(){
   const seq = ++dashboardRefreshSeq;
   let list = rawCitizens || [];
-  if(excludedPeriods.length || deferredPeriods.length || Object.keys(deferredPeriodOverrides).length){
-    if(ledgerCache.size===0){
-      try{ await store.getAllLedgers(); }catch(e){ console.error("Failed to load ledgers:", e); }
-    }
-    if(list.length > 0) {
-      list = list.map(c => ({...c, ledger: ledgerCache.get(c.id) || []}));
-    }
+
+  // The dashboard status/filter lists must always be calculated from the
+  // authoritative ledger. Cached citizen.balance can be stale after imports,
+  // deferrals/restores, or older app versions, which can make Pending appear
+  // empty even when a household actually owes money.
+  try{
+    await store.getAllLedgers();
+  }catch(e){
+    console.error("Failed to load ledgers for dashboard:", e);
+  }
+
+  if(list.length > 0) {
+    list = list.map(c => ({...c, ledger: ledgerCache.get(c.id) || []}));
   }
   if(seq !== dashboardRefreshSeq) return; // superseded by a newer refresh; drop this stale result
   allCitizens = list;
@@ -1580,7 +1586,8 @@ function filterCitizenList(citizens, searchTerm, filter, periodFilter){
   let list = citizens.slice();
   if(searchTerm){
     list = list.filter(c => (c.jobCard||c.id).toLowerCase().includes(searchTerm) || (c.name||"").toLowerCase().includes(searchTerm));
-  } else if(filter==="pending"){
+  }
+  if(filter==="pending"){
     list = list.filter(c => getEffectiveBalance(c)>0);
     if(periodFilter){
       if(!periodsReady && !loadingPeriods) loadOwedBreakdown();
