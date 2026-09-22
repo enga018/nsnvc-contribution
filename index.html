@@ -263,74 +263,89 @@ function statusOf(c){
   if((c.totalPaid||0)>0) return "partial";
   return "due";
 }
-function allocateLedgerPayments(entries, citizenId){
+function calculateLedgerState(entries, citizenId){
   const chrono=[...(entries||[])].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
   const charges=[];
-  let paymentCredit=0;
+  let totalPaid=0, totalWaived=0;
 
   for(const e of chrono){
-    if(e.type==="charge" || e.type==="sanitationFee"){
-      const amt=Number(e.amount||0);
-      if(!(amt>0)) continue;
-      charges.push({entry:e, remaining:amt});
+    const amt=Number(e && e.amount)||0;
+    if(e && (e.type==="charge" || e.type==="sanitationFee")){
+      if(amt>0) charges.push({entry:e, remaining:amt});
+    }else if(e && e.type==="payment"){
+      totalPaid += Math.max(0, amt);
+    }else if(e && e.type==="forgive"){
+      totalWaived += Math.max(0, amt);
     }
   }
 
-  // Waivers cancel debt; they do not create transferable credit or
-  // overpayment. Allocate them FIFO across the remaining charges.
-  let waiverCredit=0;
-  for(const e of chrono){
-    if(e.type!=="forgive") continue;
-    waiverCredit += Number(e.amount||0);
-    if(!(waiverCredit>0)) continue;
-    for(const c of charges){
-      if(waiverCredit<=0) break;
-      if(c.remaining<=0) continue;
-      const applied=Math.min(waiverCredit, c.remaining);
-      c.remaining-=applied;
-      waiverCredit-=applied;
-    }
+  // Waivers reduce actual charge debt before payments are allocated.
+  let waiverCredit=totalWaived;
+  for(const c of charges){
+    if(waiverCredit<=0) break;
+    if(c.remaining<=0) continue;
+    const applied=Math.min(waiverCredit,c.remaining);
+    c.remaining-=applied;
+    waiverCredit-=applied;
   }
 
-  // Payments are real money and can settle deferred charges as well as active
-  // charges. Any amount left after every charge is genuine overpayment.
-  for(const e of chrono){
-    if(e.type==="payment") paymentCredit += Number(e.amount||0);
-  }
+  // Payments are real money. Allocate them FIFO across all remaining charges,
+  // including deferred charges, so an already-paid charge never reappears as debt
+  // merely because its period was later deferred/restored.
+  let paymentCredit=totalPaid;
   for(const c of charges){
     if(paymentCredit<=0) break;
     if(c.remaining<=0) continue;
-    const applied=Math.min(paymentCredit, c.remaining);
+    const applied=Math.min(paymentCredit,c.remaining);
     c.remaining-=applied;
     paymentCredit-=applied;
   }
 
   const owed=[];
+  let deferredRemaining=0;
+  let activeRemaining=0;
+
   for(const c of charges){
     if(c.remaining<=0) continue;
     const e=c.entry;
-    const period=String(e.note||"").trim();
-    const deferred = isPeriodDeferredForCitizen(e, citizenId);
+    const deferred=isPeriodDeferredForCitizen(e,citizenId);
+    const excluded=isChargeExcluded(e,citizenId);
 
-    if(!deferred && !isChargeExcluded(e, citizenId)){
+    if(deferred){
+      deferredRemaining += c.remaining;
+    }else if(excluded){
+      // Excluded periods are neither current debt nor deferred debt.
+    }else{
+      const remaining=c.remaining;
+      activeRemaining += remaining;
       owed.push({
         note:e.type==="sanitationFee" ? "" : e.note,
-        remaining:c.remaining
+        remaining
       });
     }
   }
 
-  const deferredRemaining = charges.reduce((sum,c)=>{
-    if(c.remaining<=0) return sum;
-    const e=c.entry;
-    const period=String(e.note||"").trim();
-    const deferred = isPeriodDeferredForCitizen(e, citizenId);
-    return deferred ? sum + c.remaining : sum;
-  },0);
-
-  return { owed, deferredRemaining, unappliedPayment:paymentCredit };
+  return {
+    totalCharged:Math.max(0, charges.reduce((sum,c)=>sum+(Number(c.entry.amount)||0),0)-Math.min(
+      charges.reduce((sum,c)=>sum+(Number(c.entry.amount)||0),0),
+      totalWaived
+    )),
+    totalPaid,
+    deferredRemaining,
+    owed,
+    activeRemaining,
+    unappliedPayment:Math.max(0,paymentCredit)
+  };
 }
 
+function allocateLedgerPayments(entries, citizenId){
+  const state=calculateLedgerState(entries,citizenId);
+  return {
+    owed:state.owed,
+    deferredRemaining:state.deferredRemaining,
+    unappliedPayment:state.unappliedPayment
+  };
+}
 function getEffectiveBalance(c){
   const cachedBalance = Number(c.balance ?? 0);
   if(typeof c.balance === "number" && !excludedPeriods.length && !deferredPeriods.length && !hasCitizenPeriodOverrides(c.id) && (!c.ledger || !c.ledger.some(e => e.deferred))){
