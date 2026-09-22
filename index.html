@@ -211,31 +211,43 @@ function statusOf(c){
 function allocateLedgerPayments(entries, citizenId){
   const chrono=[...(entries||[])].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
   const charges=[];
-  let credit=0;
+  let paymentCredit=0;
 
-  // Payments and waivers are credits against the ledger. They are allocated
-  // FIFO to the earliest charge, including deferred charges. A waiver is not
-  // a payment and can never become an overpayment/credit by itself.
   for(const e of chrono){
     if(e.type==="charge" || e.type==="sanitationFee"){
       const amt=Number(e.amount||0);
       if(!(amt>0)) continue;
-      const applied=Math.min(credit, amt);
-      credit-=applied;
-      charges.push({
-        entry:e,
-        remaining:amt-applied
-      });
-    }else if(e.type==="payment" || e.type==="forgive"){
-      credit += Number(e.amount||0);
-      for(const c of charges){
-        if(credit<=0) break;
-        if(c.remaining<=0) continue;
-        const applied=Math.min(credit, c.remaining);
-        c.remaining-=applied;
-        credit-=applied;
-      }
+      charges.push({entry:e, remaining:amt});
     }
+  }
+
+  // Waivers cancel debt; they do not create transferable credit or
+  // overpayment. Allocate them FIFO across the remaining charges.
+  let waiverCredit=0;
+  for(const e of chrono){
+    if(e.type!=="forgive") continue;
+    waiverCredit += Number(e.amount||0);
+    if(!(waiverCredit>0)) continue;
+    for(const c of charges){
+      if(waiverCredit<=0) break;
+      if(c.remaining<=0) continue;
+      const applied=Math.min(waiverCredit, c.remaining);
+      c.remaining-=applied;
+      waiverCredit-=applied;
+    }
+  }
+
+  // Payments are real money and can settle deferred charges as well as active
+  // charges. Any amount left after every charge is genuine overpayment.
+  for(const e of chrono){
+    if(e.type==="payment") paymentCredit += Number(e.amount||0);
+  }
+  for(const c of charges){
+    if(paymentCredit<=0) break;
+    if(c.remaining<=0) continue;
+    const applied=Math.min(paymentCredit, c.remaining);
+    c.remaining-=applied;
+    paymentCredit-=applied;
   }
 
   const owed=[];
@@ -255,7 +267,7 @@ function allocateLedgerPayments(entries, citizenId){
     }
   }
 
-  return { owed, unappliedPayment:credit };
+  return { owed, unappliedPayment:paymentCredit };
 }
 
 function getEffectiveBalance(c){
@@ -758,7 +770,8 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     async listOwing(){
       const snap=await fs.getDocs(fs.collection(db,"citizens"));
-      if(!excludedPeriods.length){
+      const needsLedger = excludedPeriods.length || deferredPeriods.length;
+      if(!needsLedger){
         return snap.docs
           .map(d=>({ id:d.id, ...d.data(), balance:Number(d.data().balance || 0) }))
           .filter(c=>c.balance>0);
@@ -766,16 +779,11 @@ function makeFirebaseStore({ auth, db, fs, au }){
       const ledgerPromises = snap.docs.map(d=>
         fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"))
           .then(ledSnap=>{
-            const c=d.data();
-            let includedCharged=0;
-            ledSnap.docs.forEach(doc=>{
-              const e=doc.data();
-              if(e.type==="charge" && !e.deferred && !isChargeExcluded(e, c.id)){
-                includedCharged += Number(e.amount || 0);
-              }
-            });
-            const effBal = includedCharged - Number(c.totalPaid || 0);
-            return effBal>0 ? { id:d.id, ...c, balance:effBal } : null;
+            const c={id:d.id, ...d.data()};
+            const entries=ledSnap.docs.map(doc=>doc.data());
+            const allocation=allocateLedgerPayments(entries, c.id);
+            const effBal=allocation.owed.reduce((sum,o)=>sum+o.remaining,0)-allocation.unappliedPayment;
+            return effBal>0 ? { ...c, balance:effBal } : null;
           })
       );
       const results = await Promise.all(ledgerPromises);
@@ -1335,7 +1343,7 @@ function scheduleDashboardRefresh(){
   dashboardRefreshTimer = setTimeout(refreshDashboard, DASHBOARD_REFRESH_DEBOUNCE_MS);
   clearTimeout(cacheRefreshTimer);
   cacheRefreshTimer = setTimeout(()=>{
-    if(excludedPeriods.length) store.getAllLedgers().catch(e=>{
+    if(excludedPeriods.length || deferredPeriods.length) store.getAllLedgers().catch(e=>{
       console.warn("Background ledger cache refresh failed:", e);
     });
   }, CACHE_REFRESH_DELAY_MS);
