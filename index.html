@@ -2139,6 +2139,7 @@ function buildUploadItems(){
     notFound.push(full+(nm?" ("+nm+")":""));
   }
 }
+}
   if(!charges.length && !payments.length && !notFound.length && !ambiguous.length){ $("mapMsg").innerHTML=`<div class="notice err">No rows with an amount found.</div>`; return; }
   pendingUpload={charges,payments};
   const issues = [...ambiguous.map(x=>"⚠︎ "+x+" — number matches more than one person"),
