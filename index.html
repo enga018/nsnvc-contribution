@@ -2083,9 +2083,30 @@ function buildUploadItems(){
         const note = modeVal.includes("upi") ? "UPI" : modeVal.includes("cash") ? "Cash" : "Bank";
         payments.push({ id, amount:payAmtVal, name:nm, jobCard:full, note }); payAmt+=payAmtVal;
       }
-    }else if(cand.length>1){ ambiguous.push(full+(nm?" ("+nm+")":"")); }
-    else { notFound.push(full+(nm?" ("+nm+")":"")); }
+    }else if(cand.length>1){
+  ambiguous.push(full+(nm?" ("+nm+")":""));
+}else{
+  // NEW JOB CARD
+  const chargeAmtVal = cCharge>=0 ? _num(row[cCharge]) : 0;
+  const payAmtVal = cPayment>=0 ? _num(row[cPayment]) : 0;
+
+  // Create new citizen only when a valid name and charge exist
+  if(chargeAmtVal > 0 && nm){
+    const id = fullKey(full);
+
+    charges.push({
+      id,
+      jobCard: full,
+      cardNo: suffixOf(full),
+      name: nm,
+      amount: chargeAmtVal
+    });
+
+    chargeAmt += chargeAmtVal;
+  } else {
+    notFound.push(full+(nm?" ("+nm+")":""));
   }
+}
   if(!charges.length && !payments.length && !notFound.length && !ambiguous.length){ $("mapMsg").innerHTML=`<div class="notice err">No rows with an amount found.</div>`; return; }
   pendingUpload={charges,payments};
   const issues = [...ambiguous.map(x=>"⚠︎ "+x+" — number matches more than one person"),
