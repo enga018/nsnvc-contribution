@@ -1168,19 +1168,43 @@ const validTypes = ["charge", "payment", "forgive", "sanitationFee"];
     async getImportedPeriods(){ const s=await fs.getDoc(fs.doc(db,"meta","imports")); return s.exists()? (s.data().periods||[]) : []; },
     async recordImportedPeriod(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { periods:fs.arrayUnion(p) }, {merge:true}); },
     async recalcAll(onProgress){
-      await this.getAllLedgers();
+      // Always rebuild from the complete Firestore ledgers. Do not trust cached
+      // citizen totals or a partially populated ledgerCache.
+      const ledgers = await this.getAllLedgers();
+      const citizenIds = Object.keys(ledgers);
       let batch=fs.writeBatch(db), ops=0, done=0;
-      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
-      const citizenIds=[...ledgerCache.keys()];
+
+      const flush=async()=>{
+        if(ops===0) return;
+        await batch.commit();
+        batch=fs.writeBatch(db);
+        ops=0;
+      };
+
       for(const id of citizenIds){
-        const {totalCharged, totalPaid, balance, deferredTotal} = recalcFromLedger(ledgerCache.get(id), id);
-        batch.update(fs.doc(db,"citizens",id),{ totalCharged, totalPaid, balance, deferredTotal, updatedAt:fs.serverTimestamp() }); ops++;
+        const {totalCharged,totalPaid,balance,deferredTotal}=recalcFromLedger(ledgers[id]||[],id);
+        // merge:true makes the repair tolerant of a document whose cached
+        // summary fields are missing, while preserving all other citizen data.
+        batch.set(fs.doc(db,"citizens",id),{
+          totalCharged,
+          totalPaid,
+          balance,
+          deferredTotal,
+          updatedAt:fs.serverTimestamp()
+        },{merge:true});
+        ops++;
+
         if(ops>=FIRESTORE_BATCH_SIZE) await flush();
-        if((++done%50)===0&&onProgress) onProgress(done, citizenIds.length);
+        if((++done%25)===0&&onProgress) onProgress(done,citizenIds.length);
       }
+
       await flush();
       invalidateLedgerCache();
-      if(onProgress) onProgress(citizenIds.length, citizenIds.length);
+
+      // Reload the live totals after the writes so the dashboard reflects the
+      // repaired values immediately instead of waiting for the snapshot.
+      try{ await new Promise(resolve=>setTimeout(resolve,250)); }catch(_){}
+      if(onProgress) onProgress(citizenIds.length,citizenIds.length);
       return citizenIds.length;
     },
     async getAllLedgers(){
@@ -1827,16 +1851,37 @@ function closeSettings(){
   renderList();
 }
 
+let recalculateBusy=false;
 async function doRecalcAllFromSettings(){
+  if(recalculateBusy) return;
   const ok = await confirmAction("Recalculate every household's balance from its history? This is safe and fixes any wrong totals.");
   if(!ok) return;
+
+  recalculateBusy=true;
   const msg=$("settingsMsg");
-  msg.innerHTML='<div class="notice info">Recalculating…</div>';
+  const btn=$("settingsRecalc");
+  if(btn){ btn.disabled=true; btn.textContent="Recalculating…"; }
+  msg.innerHTML='<div class="notice info">Reading every household ledger…</div>';
+
   try{
-    const n=await store.recalcAll((d,t)=>{ msg.innerHTML=`<div class="notice info">Recalculating… ${d} / ${t}</div>`; });
-    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${n} households recalculated.</div>`;
+    const n=await store.recalcAll((d,t)=>{
+      msg.innerHTML=`<div class="notice info">Recalculating… ${d} / ${t}</div>`;
+    });
+
+    // The live Firestore listener will normally update the dashboard, but
+    // refresh explicitly so the repaired totals are visible immediately.
+    await refreshDashboard();
+    clearOperationErrors();
+    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${n} households recalculated from transaction history.</div>`;
     toast("Balances recalculated");
-  }catch(err){ console.error(err); msg.innerHTML='<div class="notice err">Recalculate failed. Try again.</div>'; }
+  }catch(err){
+    console.error("Recalculate failed:",err);
+    const detail = err && (err.code || err.message) ? ` ${esc(err.code||"")}${err.message ? ": "+esc(err.message) : ""}` : "";
+    msg.innerHTML=`<div class="notice err">Recalculate failed.${detail}</div>`;
+  }finally{
+    recalculateBusy=false;
+    if(btn){ btn.disabled=false; btn.textContent="Recalculate all balances"; }
+  }
 }
 
 async function doDeleteAllFromSettings(){
