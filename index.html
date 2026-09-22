@@ -190,17 +190,51 @@ let deferredPeriodOverrides={};
 // Firebase store's listOwing so exclusion behaves identically everywhere.
 // A charge with no note can't match any excluded period name, so it's
 // never excluded by this check.
-function isDeferredPeriodRestoredForCitizen(citizenId, period){
-  if(!citizenId || !period) return false;
-  const restored = deferredPeriodOverrides[citizenId];
-  return Array.isArray(restored) && restored.includes(period);
+// Per-citizen period state is an explicit override of the bulk period state.
+// null = no override (follow the bulk setting / entry state)
+// false = explicitly restored/active for this citizen
+// true = explicitly deferred for this citizen
+// Older versions stored restored periods as an array; that format is still
+// understood as an explicit "active" override for backwards compatibility.
+function getCitizenPeriodOverride(citizenId, period){
+  if(!citizenId || !period) return null;
+  const raw = deferredPeriodOverrides[citizenId];
+  if(Array.isArray(raw)) return raw.includes(period) ? false : null;
+  if(raw && typeof raw==="object" && Object.prototype.hasOwnProperty.call(raw, period)){
+    return raw[period] === true;
+  }
+  return null;
+}
+function isPeriodDeferredForCitizen(e, citizenId){
+  if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return false;
+  const period=String(e.note||"").trim();
+  const override=getCitizenPeriodOverride(citizenId, period);
+  if(override!==null) return override;
+  return Boolean(e.deferred) || (period && deferredPeriods.includes(period));
 }
 function isChargeExcluded(e, citizenId){
   if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return false;
   const note=String(e.note||"").trim();
-  if(excludedPeriods.includes(note)) return true;
-  if(deferredPeriods.includes(note) && !isDeferredPeriodRestoredForCitizen(citizenId, note)) return true;
-  return false;
+  return excludedPeriods.includes(note);
+}
+function setCitizenPeriodOverride(next, citizenId, period, value){
+  const existing=next[citizenId];
+  let overrides;
+  if(existing && !Array.isArray(existing) && typeof existing==="object"){
+    overrides={...existing};
+  }else{
+    overrides={};
+    if(Array.isArray(existing)){
+      existing.forEach(p=>{ if(p) overrides[p]=false; });
+    }
+  }
+  if(value===null){
+    delete overrides[period];
+  }else{
+    overrides[period]=Boolean(value);
+  }
+  if(Object.keys(overrides).length) next[citizenId]=overrides;
+  else delete next[citizenId];
 }
 function statusOf(c){
   const bal = getEffectiveBalance(c);
@@ -255,9 +289,7 @@ function allocateLedgerPayments(entries, citizenId){
     if(c.remaining<=0) continue;
     const e=c.entry;
     const period=String(e.note||"").trim();
-    const deferred = e.deferred ||
-      (deferredPeriods.includes(period) &&
-       !isDeferredPeriodRestoredForCitizen(citizenId, period));
+    const deferred = isPeriodDeferredForCitizen(e, citizenId);
 
     if(!deferred && !isChargeExcluded(e, citizenId)){
       owed.push({
@@ -271,9 +303,7 @@ function allocateLedgerPayments(entries, citizenId){
     if(c.remaining<=0) return sum;
     const e=c.entry;
     const period=String(e.note||"").trim();
-    const deferred = e.deferred ||
-      (deferredPeriods.includes(period) &&
-       !isDeferredPeriodRestoredForCitizen(citizenId, period));
+    const deferred = isPeriodDeferredForCitizen(e, citizenId);
     return deferred ? sum + c.remaining : sum;
   },0);
 
@@ -2538,8 +2568,9 @@ function renderEntryRow(entry, editing, citizenId){
   const isPayment = entry.type==="payment";
   const isForgive = entry.type==="forgive";
   const period=String(entry.note||"").trim();
-  const globalDeferred = entry.type==="charge" && deferredPeriods.includes(period) && !isDeferredPeriodRestoredForCitizen(citizenId, period);
-  const isDeferred = entry.type==="charge" && (entry.deferred || globalDeferred);
+  const override = getCitizenPeriodOverride(citizenId, period);
+  const globalDeferred = entry.type==="charge" && deferredPeriods.includes(period);
+  const isDeferred = entry.type==="charge" && isPeriodDeferredForCitizen(entry, citizenId);
   const label = entryLabel(entry);
   const amtClass = isPayment || isForgive ? "payment" : "charge";
   const amtSign = isPayment || isForgive ? "− " : "+ ";
@@ -2555,7 +2586,7 @@ function renderEntryRow(entry, editing, citizenId){
     const checked = isDeferred ? 'checked' : '';
     const labelText = isDeferred ? "Restore" : "Defer";
     deferToggle = `<label class="switch" data-id="${entry.entryId}" style="margin-left:8px">
-      <input type="checkbox" class="defer-chk" data-id="${entry.entryId}" data-period="${esc(period)}" data-global-deferred="${globalDeferred?"1":"0"}" ${checked}>
+      <input type="checkbox" class="defer-chk" data-id="${entry.entryId}" data-period="${esc(period)}" data-global-deferred="${globalDeferred?"1":"0"}" data-period-override="${override===null?"":(override?"1":"0")}" ${checked}>
       <span class="switch-track"><span class="switch-thumb"></span></span>
       <span class="switch-label">${labelText}</span>
     </label>`;
@@ -2718,20 +2749,14 @@ function attachHistoryListeners(id, editing){
     chk.addEventListener("change", async ()=>{
       const entryId = chk.dataset.id;
       const period = String(chk.dataset.period||"").trim();
-      const wasGlobalDeferred = chk.dataset.globalDeferred==="1";
       const nowChecked = chk.checked;
       try{
-        if(wasGlobalDeferred && !nowChecked && period){
+        // Citizen-page Defer/Restore is an explicit per-citizen period state.
+        // The latest action therefore wins over both bulk state and legacy
+        // entry.deferred data.
+        if(period){
           const next = {...deferredPeriodOverrides};
-          const restored = Array.isArray(next[id]) ? next[id].slice() : [];
-          if(!restored.includes(period)) restored.push(period);
-          next[id]=restored;
-          await store.setDeferredPeriodOverrides(next);
-          deferredPeriodOverrides=next;
-        }else if(period && deferredPeriods.includes(period) && !wasGlobalDeferred && nowChecked){
-          const next = {...deferredPeriodOverrides};
-          const restored = Array.isArray(next[id]) ? next[id].filter(p=>p!==period) : [];
-          if(restored.length) next[id]=restored; else delete next[id];
+          setCitizenPeriodOverride(next, id, period, nowChecked);
           await store.setDeferredPeriodOverrides(next);
           deferredPeriodOverrides=next;
         }else{
