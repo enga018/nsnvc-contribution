@@ -3182,7 +3182,8 @@ async function doExportPdf(){
 
       // Row 2: job card (left) and charges (right, red).
       // The right-side details start on the same line as the citizen name.
-      y += nameLines.length * 3.8 + 1;\n      let rightY = y - nameLines.length * 3.8 - 1;
+      y += nameLines.length * 3.8 + 1;
+      let rightY = y - nameLines.length * 3.8 - 1;
       doc.setFont(undefined, "normal");
       doc.setTextColor(120, 120, 120);
       doc.setFontSize(9);
