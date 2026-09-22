@@ -92,9 +92,38 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.14</footer>
+<footer>New Serchhip North Village Council · v1.29.15</footer>
 
+<script>
+(function(){
+  const showDiagnostic = msg => {
+    const el = document.getElementById("loginErr");
+    if(el) el.innerHTML = '<div class="notice err">' + msg + '</div>';
+  };
+  window.__nsnvcModuleStarted = false;
+  window.__nsnvcLoginAttempted = false;
+  window.addEventListener("error", e => {
+    const msg = e && e.message ? e.message : "Unknown JavaScript error";
+    showDiagnostic("App error: " + msg);
+    console.error("NSNVC startup error:", e.error || e);
+  });
+  window.addEventListener("unhandledrejection", e => {
+    const reason = e && e.reason;
+    const msg = reason && reason.message ? reason.message : String(reason || "Unknown promise error");
+    showDiagnostic("App error: " + msg);
+    console.error("NSNVC unhandled rejection:", reason);
+  });
+  document.getElementById("loginBtn")?.addEventListener("click", () => {
+    setTimeout(() => {
+      if(!window.__nsnvcLoginAttempted && !window.__nsnvcModuleStarted){
+        showDiagnostic("The app JavaScript did not start. Refresh the app or open it in Brave/Chrome to test.");
+      }
+    }, 150);
+  });
+})();
+</script>
 <script type="module">
+window.__nsnvcModuleStarted = true;
 /* ============================================================
    FIREBASE CONFIG (paste your own)
    ============================================================ */
@@ -1113,6 +1142,7 @@ function addTestLoginHint(){
    ============================================================ */
 
 async function login(){
+  window.__nsnvcLoginAttempted = true;
   if(!store){
     $("loginErr").innerHTML=`<div class="notice err">App is still loading... please wait</div>`;
     console.warn("Store not ready yet");
@@ -1123,7 +1153,7 @@ async function login(){
     $("loginErr").innerHTML=`<div class="notice err">${!email?"Email is required":"Password is required"}</div>`;
     return;
   }
-  $("loginErr").innerHTML="";
+  $("loginErr").innerHTML=`<div class="notice info">Checking login…</div>`;
   const btn=$("loginBtn");
   btn.disabled=true;
   try{ await store.signIn(email, pass); }
