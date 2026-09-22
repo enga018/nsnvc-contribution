@@ -337,7 +337,8 @@ function allocateLedgerPayments(entries, citizenId){
   return {
     owed:state.owed,
     deferredRemaining:state.deferredRemaining,
-    unappliedPayment:state.unappliedPayment
+    unappliedPayment:state.unappliedPayment,
+    balance:state.balance
   };
 }
 function getEffectiveBalance(c){
