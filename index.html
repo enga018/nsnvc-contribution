@@ -1168,7 +1168,7 @@ const validTypes = ["charge", "payment", "forgive", "sanitationFee"];
     async getImportedPeriods(){ const s=await fs.getDoc(fs.doc(db,"meta","imports")); return s.exists()? (s.data().periods||[]) : []; },
     async recordImportedPeriod(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { periods:fs.arrayUnion(p) }, {merge:true}); },
     async recalcAll(onProgress){
-      if(ledgerCache.size===0) await this.getAllLedgers();
+      await this.getAllLedgers();
       let batch=fs.writeBatch(db), ops=0, done=0;
       const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
       const citizenIds=[...ledgerCache.keys()];
