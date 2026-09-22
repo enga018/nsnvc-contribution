@@ -1233,23 +1233,45 @@ const validTypes = ["charge", "payment", "forgive", "sanitationFee"];
       return citizenIds.length;
     },
     async getAllLedgers(){
-      // Read all citizens and all ledger entries in two reads. This also keeps
-      // citizens with no ledger entries in the recalculation pass.
-      const [cSnap, ledgerSnap] = await Promise.all([
-        fs.getDocs(fs.collection(db,"citizens")),
-        fs.getDocs(fs.collectionGroup(db,"ledger"))
-      ]);
+      // Prefer the fast collectionGroup read. If that query is rejected by
+      // Firestore rules/indexing, fall back to the same per-citizen ledger
+      // read used by the account detail page. Never silently return empty
+      // ledgers, because that makes every household look cleared on Pending.
+      const cSnap = await fs.getDocs(fs.collection(db,"citizens"));
       const out={};
       for(const d of cSnap.docs) out[d.id]=[];
-      for(const d of ledgerSnap.docs){
-        const citizenRef=d.ref.parent.parent;
-        if(!citizenRef) continue;
-        const id=citizenRef.id;
-        if(!out[id]) out[id]=[];
-        out[id].push(d.data());
+
+      try{
+        const ledgerSnap = await fs.getDocs(fs.collectionGroup(db,"ledger"));
+        for(const d of ledgerSnap.docs){
+          const citizenRef=d.ref.parent.parent;
+          if(!citizenRef) continue;
+          const id=citizenRef.id;
+          if(!out[id]) out[id]=[];
+          out[id].push(d.data());
+        }
+      }catch(err){
+        console.warn("Collection-group ledger read failed; loading ledgers per citizen.", err);
+        const ids=Object.keys(out);
+        const chunkSize=20;
+        for(let i=0;i<ids.length;i+=chunkSize){
+          const chunk=ids.slice(i,i+chunkSize);
+          const results=await Promise.all(chunk.map(async id=>{
+            try{
+              return [id, await this.getLedger(id)];
+            }catch(e){
+              console.error("Failed to load ledger for", id, e);
+              throw e;
+            }
+          }));
+          for(const [id,entries] of results) out[id]=entries;
+        }
       }
+
       ledgerCache.clear();
-      for(const [id,entries] of Object.entries(out)) ledgerCache.set(id,entries);
+      for(const [id,entries] of Object.entries(out)){
+        ledgerCache.set(id, entries);
+      }
       periodStatsCache=null;
       return out;
     }
