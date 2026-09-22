@@ -3127,8 +3127,11 @@ async function doExportPdf(){
       const bal = calculateLedgerState(entries, c.id).balance;
       if(!(bal > 0)) continue;
       const payments = entries.filter(e=>e.type==="payment").map(e=>fmtRs(e.amount));
-      const charges = entries.filter(e=>e.type==="charge" && !e.deferred).map(e=>{
-        const period = e.note && e.note.trim() ? e.note.trim() : "Charge";
+      const charges = entries.filter(e=>{
+        if(e.type!=="charge" && e.type!=="sanitationFee") return false;
+        return !isPeriodDeferredForCitizen(e, c.id) && !isChargeExcluded(e, c.id);
+      }).map(e=>{
+        const period = e.note && e.note.trim() ? e.note.trim() : (e.type==="sanitationFee" ? "Sanitation Fee" : "Charge");
         return `${period}: ${fmtRs(e.amount)}`;
       });
       rows.push({
