@@ -688,6 +688,13 @@ function makeLocalStore(){
       data.meta.deferredPeriodOverrides=overrides;
       persist();
     },
+    async setCitizenChargeDeferred(citizenId, entryId, deferred){
+      if(!data.meta) data.meta={};
+      if(!data.meta.deferredPeriodOverrides) data.meta.deferredPeriodOverrides={};
+      if(!data.meta.deferredPeriodOverrides[citizenId]) data.meta.deferredPeriodOverrides[citizenId]={};
+      data.meta.deferredPeriodOverrides[citizenId][String(entryId)] = Boolean(deferred);
+      persist();
+    },
     async importAll(backup, onProgress){
       if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
       const validTypes = ["charge", "payment", "forgive", "sanitationFee"];
@@ -1113,6 +1120,11 @@ function makeFirebaseStore({ auth, db, fs, au }){
     async setDeferredPeriodOverrides(overrides){
       await fs.setDoc(fs.doc(db,"meta","deferredPeriodOverrides"), { overrides }, {merge:true});
     },
+    async setCitizenChargeDeferred(citizenId, entryId, deferred){
+      // Update only this citizen/charge override instead of rewriting the entire override map.
+      const field = `overrides.${String(citizenId)}.${String(entryId)}`;
+      await fs.updateDoc(fs.doc(db,"meta","deferredPeriodOverrides"), { [field]: Boolean(deferred) });
+    },
     async importAll(backup, onProgress){
       if(!backup || !Array.isArray(backup.citizens)) throw new Error("Not a valid backup file");
       if(onProgress) onProgress(0, 3);
@@ -1202,22 +1214,27 @@ const validTypes = ["charge", "payment", "forgive", "sanitationFee"];
       await flush();
       invalidateLedgerCache();
 
-      // Reload the live totals after the writes so the dashboard reflects the
-      // repaired values immediately instead of waiting for the snapshot.
-      try{ await new Promise(resolve=>setTimeout(resolve,250)); }catch(_){}
+      // The ledger cache was invalidated above; the live snapshot/refresh will
+      // provide the repaired totals without an artificial delay.
       if(onProgress) onProgress(citizenIds.length,citizenIds.length);
       return citizenIds.length;
     },
     async getAllLedgers(){
-      const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
-      const results=await Promise.all(cSnap.docs.map(async d=>{
-        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
-        return [d.id, ledSnap.docs.map(x=>x.data())];
-      }));
+      // Read the ledger subcollections in one collection-group query instead of
+      // one Firestore request per citizen. This makes Recalculate All much faster.
+      const snap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
+      const out={};
+      for(const d of snap.docs){
+        const citizenRef=d.ref.parent.parent;
+        if(!citizenRef) continue;
+        const id=citizenRef.id;
+        if(!out[id]) out[id]=[];
+        out[id].push(d.data());
+      }
       ledgerCache.clear();
-      for(const [id,entries] of results) ledgerCache.set(id,entries);
+      for(const [id,entries] of Object.entries(out)) ledgerCache.set(id,entries);
       periodStatsCache=null;
-      return Object.fromEntries(results);
+      return out;
     }
   };
 }
@@ -2828,7 +2845,9 @@ function attachHistoryListeners(id, editing){
         if(entry){
           const next = {...deferredPeriodOverrides};
           setCitizenChargeOverride(next, id, entry, nowChecked);
-          await store.setDeferredPeriodOverrides(next);
+          // Persist only this person/charge override. Do not rewrite the full
+          // deferral map on every click.
+          await store.setCitizenChargeDeferred(id, entryId, nowChecked);
           deferredPeriodOverrides=next;
         }else{
           await store.toggleDefer(id, entryId, nowChecked);
