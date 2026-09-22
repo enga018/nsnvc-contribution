@@ -2064,7 +2064,7 @@ function buildUploadItems(){
   if(!(cFull>=0)){ $("mapMsg").innerHTML=`<div class="notice err">Choose Job card column.</div>`; return; }
   if(!(cCharge>=0) && !(cPayment>=0)){ $("mapMsg").innerHTML=`<div class="notice err">Choose at least a Charge or Payment column.</div>`; return; }
   const rows=uploadRaw.rows;
-  const charges=[]; const payments=[]; const notFound=[]; const ambiguous=[];
+  const charges=[]; const payments=[]; const notFound=[]; const ambiguous=[]; const newHouseholds=[];
   let chargeAmt=0, payAmt=0;
   for(let r=1;r<rows.length;r++){ const row=rows[r]; if(!row) continue;
     const full=String(row[cFull]||"").trim(); if(!full) continue;
@@ -2101,6 +2101,7 @@ function buildUploadItems(){
       name: nm,
       amount: chargeAmtVal
     });
+    if(!newHouseholds.includes(id)) newHouseholds.push(id);
 
     chargeAmt += chargeAmtVal;
   } else {
@@ -2116,6 +2117,7 @@ function buildUploadItems(){
     <div class="panel" style="margin-top:12px">
       <div class="brow"><span>Charges to add</span><b>${charges.length}</b></div>
       <div class="brow"><span>Payments to record</span><b>${payments.length}</b></div>
+      <div class="brow"><span>New households to create</span><b>${newHouseholds.length}</b></div>
       <div class="brow"><span>Not matched (skipped)</span><b>${notFound.length}</b></div>
       <div class="brow"><span>Ambiguous (skipped)</span><b>${ambiguous.length}</b></div>
       <div class="brow total"><span>Total charges</span><b class="money">${fmt(chargeAmt)}</b></div>
