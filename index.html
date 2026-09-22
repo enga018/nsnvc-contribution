@@ -2694,7 +2694,7 @@ async function renderCitizenDetail(id){
     const allSorted = [...entries].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
     const INITIAL_HISTORY = 3;
 
-    const state = { historyExpanded: false, historyEditing: false };
+    const viewState = { historyExpanded: false, historyEditing: false };
 
     const hasOwing = bal > 0;
     const isOverpaid = bal < 0;
@@ -2711,7 +2711,7 @@ async function renderCitizenDetail(id){
       <span class="badge action action-return" id="btnSanitationFee">Sanitation Fee</span>
     </div>` : '';
     const totalEntries = allSorted.length;
-    const visibleEntries = state.historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
+    const visibleEntries = viewState.historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
     const hiddenCount = totalEntries - Math.min(INITIAL_HISTORY, totalEntries);
     const historyHTML = renderHistoryRows(visibleEntries, false, id);
     const deferredAmt = getDeferredAmount(c);
@@ -2719,7 +2719,7 @@ async function renderCitizenDetail(id){
     const breakdownHTML = buildFinancialBreakdownHTML(overdue, currentDue, deferredAmt);
 
     $("adminDetail").innerHTML = buildCitizenDetailHTML(c, bal, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount, breakdownHTML);
-    attachCitizenDetailListeners(id, c, bal, allSorted, INITIAL_HISTORY, state);
+    attachCitizenDetailListeners(id, c, bal, allSorted, INITIAL_HISTORY, viewState);
   } catch(err) { console.error(err); }
 }
 
