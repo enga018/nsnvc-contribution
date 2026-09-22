@@ -2643,7 +2643,7 @@ function buildFinancialBreakdownHTML(overdue, currentDue, deferredAmt){
   </div>`;
 }
 
-function buildCitizenDetailHTML(citizen, balance, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount, breakdownHTML){
+function buildCitizenDetailHTML(citizen, balance, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount){
   return `
   <button class="back" id="adminBackBtn">‹ Back</button>
   <div class="statement">
@@ -2713,7 +2713,7 @@ async function renderCitizenDetail(id){
     const visibleEntries = viewState.historyExpanded ? allSorted : allSorted.slice(0, INITIAL_HISTORY);
     const hiddenCount = totalEntries - Math.min(INITIAL_HISTORY, totalEntries);
     const historyHTML = renderHistoryRows(visibleEntries, false, id);
-    $("adminDetail").innerHTML = buildCitizenDetailHTML(c, bal, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount, breakdownHTML);
+    $("adminDetail").innerHTML = buildCitizenDetailHTML(c, bal, historyHTML, headerBadge, actionBadges, totalEntries, hiddenCount);
     attachCitizenDetailListeners(id, c, bal, allSorted, INITIAL_HISTORY, viewState);
   } catch(err) { console.error(err); }
 }
