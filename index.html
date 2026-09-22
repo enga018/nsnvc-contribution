@@ -875,8 +875,19 @@ function makeFirebaseStore({ auth, db, fs, au }){
       const eRef=fs.doc(fs.collection(db,"citizens",id,"ledger"));
       await fs.setDoc(eRef, { entryId:eRef.id, type, amount:amt, note:String(note||""), date:String(date||""), deferred, createdAt:fs.serverTimestamp() });
       const entry={ entryId:eRef.id, type, amount:amt, note, date, deferred, createdAt:Date.now() };
-      const entries=ledgerCache.get(id)||[];
+      // Never rebuild the cache from only the newly-created entry. If the
+      // ledger was not already cached, load the complete history first.
+      // Otherwise the next account render can temporarily appear to have
+      // lost all previous transactions even though Firestore still has them.
+      let entries=ledgerCache.get(id);
+      if(!Array.isArray(entries)){
+        entries=await this.getLedger(id);
+      }else{
+        entries=[...entries];
+      }
       entries.push(entry);
+      entries.sort((a,b)=>(a.createdAt?.seconds ? a.createdAt.seconds*1000 : Number(a.createdAt)||0) -
+                          (b.createdAt?.seconds ? b.createdAt.seconds*1000 : Number(b.createdAt)||0));
       ledgerCache.set(id,entries); periodStatsCache=null;
       // Recalculate from the complete ledger so payment/waiver ordering and
       // defer/restore state use the same authoritative calculation immediately.
