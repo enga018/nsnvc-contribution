@@ -156,7 +156,7 @@ const $ = id => document.getElementById(id);
 // Attach the login controls immediately, before Firebase initialization or any
 // other startup work. This guarantees the button still responds if a later
 // startup operation throws or is delayed.
-document.getElementById("loginBtn")?.addEventListener("click", login);
+document.getElementById("loginBtn")?.addEventListener("click", ()=>login());
 document.getElementById("adminPass")?.addEventListener("keydown", e=>{
   if(e.key==="Enter") login();
 });
