@@ -342,16 +342,16 @@ function allocateLedgerPayments(entries, citizenId){
   };
 }
 function getEffectiveBalance(c){
-  const cachedBalance = Number(c.balance ?? 0);
-  if(typeof c.balance === "number" && !excludedPeriods.length && !deferredPeriods.length && !hasCitizenPeriodOverrides(c.id) && (!c.ledger || !c.ledger.some(e => e.deferred))){
-    return cachedBalance;
+  // When a ledger is attached, it is always authoritative. This is the same
+  // calculation used by the person account view, so dashboard Pending/Overdue
+  // status cannot disagree with the household's actual account.
+  if(c && Array.isArray(c.ledger)){
+    return calculateLedgerState(c.ledger, c.id).balance;
   }
-  if(!c.ledger){
-    return cachedBalance;
-  }
-
-  const state=calculateLedgerState(c.ledger, c.id);
-  return state.balance;
+  // The live citizen snapshot may not include a ledger yet. In that case use
+  // the stored summary only as a temporary fallback; dashboard refresh loads
+  // all ledgers before rendering the list.
+  return Number(c && c.balance != null ? c.balance : 0);
 }
 function getDeferredAmount(c){
   if(!c.ledger) return 0;
