@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.32.5</footer>
+<footer>New Serchhip North Village Council · v1.32.6</footer>
 
 <script>
 (function(){
@@ -447,7 +447,7 @@ function byCardNo(a,b){ const d=seqNum(a.cardNo)-seqNum(b.cardNo); return d!==0?
 /* ============================================================
    DATA LAYER with PERMANENT MIGRATION
    ============================================================ */
-function makeLocalStore(){
+function makeLocalStore(host){
   const KEY="nsn_contrib_v1";
   let data=null;
   try{ const raw=localStorage.getItem(KEY); if(raw) data=JSON.parse(raw); }catch(e){}
@@ -868,7 +868,7 @@ async function loadFirebase(cfg){
   return { auth, db, fs:fsMod, au:authMod };
 }
 
-function makeFirebaseStore({ auth, db, fs, au }){
+function makeFirebaseStore({ auth, db, fs, au }, host){
   // Ask Firestore to tell us when its queue of local writes has drained, so the
   // sync pill can show "Syncing changes…" and then disappear. waitForPendingWrites
   // resolves only after every queued write is acknowledged by the server, so it
@@ -1392,9 +1392,37 @@ try {
   if(logoutBtn) logoutBtn.addEventListener("click", ()=>{ if(store) store.signOut(); });
 } catch(e) { console.error("Failed to attach logout button listener:", e); }
 
+// Host adapters for the store factories. The stores are handed these instead of
+// reaching into app globals directly, so they can later move to store.js. Using
+// accessors (not a plain snapshot) is essential for state the app *reassigns*
+// (deferredPeriods, etc.) — a captured value would go stale. Step 2a: the
+// factories still live here; only their interface changed.
+const storeHost = {
+  get ledgerCache(){ return ledgerCache; },
+  get ledgerCacheSyncAt(){ return ledgerCacheSyncAt; },
+  get periodStatsCache(){ return periodStatsCache; },
+  get deferredPeriods(){ return deferredPeriods; },
+  get deferredPeriodUpdatedAt(){ return deferredPeriodUpdatedAt; },
+  get deferredPeriodOverrides(){ return deferredPeriodOverrides; },
+  get rawCitizens(){ return rawCitizens; },
+  writeDashboardCache,
+  invalidateLedgerCache,
+  invalidateStatsMemo,
+  markSyncing,
+  nextDeferTimestamp,
+  firestoreTimeMs,
+  recalcFromLedger,
+  allocateLedgerPayments,
+  getEffectiveBalance,
+  todayISO,
+  entryLabel,
+  esc,
+  fmt
+};
+
 const notConfigured = Object.values(firebaseConfig).some(v => v === "PASTE_HERE");
 if(notConfigured){
-  isLocalMode=true; store=makeLocalStore();
+  isLocalMode=true; store=makeLocalStore(storeHost);
   showModeBanner("Test mode — running on this device with sample data. Add citizens, contributions and payments to try it out; everything is saved in this browser only. Paste your Firebase config into the file to go live.");
 } else {
   try{
@@ -1404,12 +1432,12 @@ if(notConfigured){
       new Promise((_,reject) => setTimeout(()=>reject(new Error("timeout")), 15000))
     ]);
     console.log("Firebase loaded successfully");
-    store=makeFirebaseStore(fbModule);
+    store=makeFirebaseStore(fbModule, storeHost);
     console.log("Firebase store created");
   }catch(err){
     console.error("Firebase initialization failed:", err);
     isLocalMode=true;
-    store=makeLocalStore();
+    store=makeLocalStore(storeHost);
     console.log("Switched to local test mode");
     showModeBanner("Couldn't reach Firebase, running in local test mode. Check your connection or Firebase settings.");
   }
@@ -1417,7 +1445,7 @@ if(notConfigured){
 if(!store) {
   console.warn("WARNING: Store not initialized, forcing local mode");
   isLocalMode=true;
-  store=makeLocalStore();
+  store=makeLocalStore(storeHost);
 }
 if(isLocalMode) addTestLoginHint();
 // Signal that the store exists and login can proceed. The login button is
