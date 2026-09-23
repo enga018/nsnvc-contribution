@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.30.2</footer>
+<footer>New Serchhip North Village Council · v1.30.3</footer>
 
 <script>
 (function(){
@@ -235,7 +235,6 @@ async function hydrateDashboardCache(){
     }
 
     const needsLedger = Boolean(
-      excludedPeriods.length ||
       deferredPeriods.length ||
       Object.keys(deferredPeriodOverrides).length
     );
@@ -289,7 +288,6 @@ function downloadBlob(content, filename, mimeType="application/octet-stream"){
     if(url) URL.revokeObjectURL(url);
   }
 }
-let excludedPeriods=[];
 let deferredPeriods=[];
 let deferredPeriodUpdatedAt={};
 let deferredPeriodOverrides={};
@@ -394,11 +392,6 @@ function isPeriodDeferredForCitizen(e, citizenId){
   if(override) return override.value;
   return Boolean(e.deferred);
 }
-function isChargeExcluded(e, citizenId){
-  if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return false;
-  const note=String(e.note||"").trim();
-  return excludedPeriods.includes(note);
-}
 function setCitizenChargeOverride(next, citizenId, entry, value){
   const existing=next[citizenId];
   let overrides;
@@ -488,12 +481,11 @@ function calculateLedgerState(entries, citizenId){
     if(e.type!=="charge" && e.type!=="sanitationFee") continue;
 
     const deferred=isPeriodDeferredForCitizen(e,citizenId);
-    const excluded=isChargeExcluded(e,citizenId);
 
-    if(deferred || excluded){
-      // Deferred charges stay recorded but are excluded from the active balance.
-      // Keep their amount separately so the Deferred dashboard total remains live.
-      if(deferred && !excluded) deferredRemaining += amt;
+    if(deferred){
+      // Deferred charges stay recorded but are out of the active balance.
+      // Keep their amount separately so the Deferred dashboard total stays live.
+      deferredRemaining += amt;
       continue;
     }
 
@@ -565,15 +557,14 @@ function getDeferredAmount(c){
     value = c.ledger.reduce((sum,e)=>{
       if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return sum;
       const deferred=isPeriodDeferredForCitizen(e,c.id);
-      const excluded=isChargeExcluded(e,c.id);
-      return sum + (deferred && !excluded ? Math.max(0,Number(e.amount)||0) : 0);
+      return sum + (deferred ? Math.max(0,Number(e.amount)||0) : 0);
     },0);
   }
   if(rec) rec.deferred=value;
   return value;
 }
 // FIFO-allocates payments against all charges first, then exposes only
-// active (non-deferred, non-excluded) charges as currently owed. This prevents
+// active (non-deferred) charges as currently owed. This prevents
 // payments that already settled a period from becoming phantom overpayments
 // merely because that period was later deferred.
 function getOwedBreakdown(entries, citizenId){
@@ -798,14 +789,6 @@ function makeLocalStore(){
       persist(); notify();
       if(onProgress) onProgress(count, count);
       return count;
-    },
-    async getExcludedPeriods(){
-      return (data.meta && data.meta.excludedPeriods) ? data.meta.excludedPeriods.slice() : [];
-    },
-    async setExcludedPeriods(periods){
-      if(!data.meta) data.meta={};
-      data.meta.excludedPeriods=periods;
-      persist();
     },
     async getDeferredPeriods(){
       const raw=data.meta && data.meta.deferredPeriods;
@@ -1069,7 +1052,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
     },
     async listOwing(){
       const snap=await fs.getDocs(fs.collection(db,"citizens"));
-      const needsLedger = excludedPeriods.length || deferredPeriods.length || Object.keys(deferredPeriodOverrides).length;
+      const needsLedger = deferredPeriods.length || Object.keys(deferredPeriodOverrides).length;
       if(!needsLedger){
         return snap.docs
           .map(d=>({ id:d.id, ...d.data(), balance:Number(d.data().balance || 0) }))
@@ -1293,7 +1276,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
     async deleteAll(onProgress){
       if(onProgress)onProgress(0,2);const cSnap=await fs.getDocs(fs.collection(db,"citizens"));let batch=fs.writeBatch(db),ops=0;const flush=async()=>{if(ops>0){await batch.commit();batch=fs.writeBatch(db);ops=0;}};
       for(const d of cSnap.docs){const [led,pp]=await Promise.all([fs.getDocs(fs.collection(db,"citizens",d.id,"ledger")),fs.getDocs(fs.collection(db,"citizens",d.id,"pendingPayments"))]);for(const x of led.docs){batch.delete(x.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}for(const x of pp.docs){batch.delete(x.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}batch.delete(d.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}
-      await flush();batch=fs.writeBatch(db);ops=0;for(const id of ["excludedPeriods","deferredPeriods","deferredPeriodOverrides","imports"]){batch.delete(fs.doc(db,"meta",id));if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}await flush();invalidateLedgerCache();
+      await flush();batch=fs.writeBatch(db);ops=0;for(const id of ["deferredPeriods","deferredPeriodOverrides","imports"]){batch.delete(fs.doc(db,"meta",id));if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}await flush();invalidateLedgerCache();
     },
     async renamePeriod(oldPeriod, newPeriod, onProgress){
       const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
@@ -1313,14 +1296,6 @@ function makeFirebaseStore({ auth, db, fs, au }){
       invalidateLedgerCache();
       if(onProgress) onProgress(count, count);
       return count;
-    },
-    async getExcludedPeriods(){
-      const doc=await fs.getDoc(fs.doc(db,"meta","excludedPeriods"));
-      if(doc.exists()) return doc.data().periods||[];
-      return [];
-    },
-    async setExcludedPeriods(periods){
-      await fs.setDoc(fs.doc(db,"meta","excludedPeriods"), { periods }, {merge:true});
     },
     async getDeferredPeriods(){
       const doc=await fs.getDoc(fs.doc(db,"meta","deferredPeriods"));
@@ -1570,12 +1545,10 @@ async function onAuth(isIn){
     $("loginCard").classList.add("hidden");
     $("dashboard").classList.remove("hidden");
     try{
-      const [excluded, deferredState, rawOverrides] = await Promise.all([
-        store.getExcludedPeriods(),
+      const [deferredState, rawOverrides] = await Promise.all([
         store.getDeferredPeriods(),
         store.getDeferredPeriodOverrides()
       ]);
-      excludedPeriods = excluded || [];
       const normalizedPeriods=normalizeDeferredPeriodState(deferredState);
       deferredPeriods = normalizedPeriods.periods;
       deferredPeriodUpdatedAt = normalizedPeriods.updatedAt;
@@ -1594,7 +1567,7 @@ async function onAuth(isIn){
       // Firestore subscription below will replace it with authoritative data.
       await hydrateDashboardCache();
       subscribeCitizens();
-    } catch(err){ console.error("Failed to load excluded periods:", err); }
+    } catch(err){ console.error("Failed to load period settings:", err); }
     setTimeout(refreshPending, 0);
   } else {
     $("loginCard").classList.remove("hidden");
@@ -1623,14 +1596,13 @@ function subscribeCitizens(){
     scheduleDashboardRefresh();
   });
 }
-// Manage Periods excludes charges by period from balance calculations, but the
-// live citizen list from subscribe() only carries the cached totals, not each
-// household's ledger — so getEffectiveBalance can't apply the exclusion unless
-// we attach the ledger ourselves whenever some period is excluded. Note this
-// means objects in allCitizens only carry .ledger while some period is
-// excluded — any future code reading c.ledger directly (instead of going
-// through getEffectiveBalance/getDeferredAmount, which both guard for its
-// absence) needs to handle it being missing.
+// The live citizen list from subscribe() only carries cached totals, not each
+// household's ledger — so getEffectiveBalance can't apply deferrals unless we
+// attach the ledger ourselves whenever any deferral is active. Objects in
+// allCitizens therefore only carry .ledger while a period is deferred (or a
+// per-person override exists) — any future code reading c.ledger directly
+// (instead of through getEffectiveBalance/getDeferredAmount, which both guard
+// for its absence) needs to handle it being missing.
 function invalidateLedgerCache(id){
   if(id) ledgerCache.delete(id); else ledgerCache.clear();
   periodStatsCache = null;
@@ -1677,7 +1649,7 @@ function scheduleDashboardRefresh(){
   dashboardRefreshTimer = setTimeout(refreshDashboard, DASHBOARD_REFRESH_DEBOUNCE_MS);
   clearTimeout(cacheRefreshTimer);
   cacheRefreshTimer = setTimeout(()=>{
-    if(excludedPeriods.length || deferredPeriods.length){
+    if(deferredPeriods.length || Object.keys(deferredPeriodOverrides).length){
       const refresh = typeof store.refreshChangedLedgers==="function"
         ? store.refreshChangedLedgers(rawCitizens || [])
         : store.getAllLedgers();
@@ -1689,7 +1661,6 @@ async function refreshDashboard(){
   const seq = ++dashboardRefreshSeq;
   let list = rawCitizens || [];
   const needsLedger = Boolean(
-    excludedPeriods.length ||
     deferredPeriods.length ||
     Object.keys(deferredPeriodOverrides).length
   );
@@ -1939,26 +1910,20 @@ async function openSettings(){
   $("settingsLogout").addEventListener("click", doLogout);
 }
 
-function buildPeriodRowHTML(period, stats, isExcluded, isDeferred){
+function buildPeriodRowHTML(period, stats, isDeferred){
   return `<div class="period-row" data-original="${esc(period)}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-    <label class="switch" style="flex:none" title="${isExcluded?"Excluded from balances — turn on to count this period":"Counted in balances — turn off to exclude this whole period"}">
-      <input type="checkbox" class="period-toggle" value="${esc(period)}" ${!isExcluded?"checked":""}>
-      <span class="switch-track"><span class="switch-thumb"></span></span>
-      <span class="switch-label period-toggle-label"${isExcluded?' style="color:var(--partial)"':''}>${isExcluded?"Excluded":""}</span>
-    </label>
     <div style="flex:1;min-width:0"><span class="period-name"><b style="font-size:14px">${esc(prettyPeriod(period))}</b></span><br><small style="font-size:12px;color:var(--muted)">${stats.count} charge${stats.count===1?"":"s"} · ${fmt(stats.amount)}</small></div>
     <button class="period-defer-btn btn small ghost" data-period="${esc(period)}" data-deferred="${isDeferred?"1":"0"}" style="padding:6px 9px;font-size:12px;color:var(--partial);border-color:var(--partial)">${isDeferred?"Restore":"Defer"}</button>
     <button class="period-rename-btn" data-period="${esc(period)}" style="background:transparent;border:none;cursor:pointer;font-size:14px;padding:4px;color:var(--muted)" title="Rename">✏️</button>
   </div>`;
 }
 
-function renderPeriodsList(periods, stats, excluded){
+function renderPeriodsList(periods, stats){
   if(!periods.length) return '<div style="color:var(--muted)">No periods found yet.</div>';
   return periods.map(p => {
     const s = stats.get(p) || {count:0, amount:0};
-    const isExcl = excluded.includes(p);
     const isDef = deferredPeriods.includes(p);
-    return buildPeriodRowHTML(p, s, isExcl, isDef);
+    return buildPeriodRowHTML(p, s, isDef);
   }).join("");
 }
 
@@ -2021,11 +1986,10 @@ async function handlePeriodsSave(pendingRenames){
   btn.disabled=true;
   msg.innerHTML='<div class="notice info">Saving…</div>';
   try{
-    const excl=[];
-    document.querySelectorAll(".period-toggle").forEach(t=>{ if(!t.checked) excl.push(t.value); });
-    await store.setExcludedPeriods(excl);
-    excludedPeriods=excl; periodsReady=false; unpaidCache=new Map(); periodStatsCache=null; invalidateStatsMemo();
-    if(periodFilter && excludedPeriods.includes(periodFilter)) periodFilter="";
+    periodsReady=false;
+    unpaidCache=new Map();
+    periodStatsCache=null;
+    invalidateStatsMemo();
     const renameResults = await Promise.all(
       Array.from(pendingRenames).map(([oldName,newName])=>store.renamePeriod(oldName,newName))
     );
@@ -2046,7 +2010,7 @@ async function handlePeriodsSave(pendingRenames){
     }
     const renamed = renameResults.reduce((sum,n)=>sum+n,0);
     pendingRenames.clear();
-    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${excl.length} exclusions, ${renamed} rename${renamed===1?"":"s"}.</div>`;
+    msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${renamed} rename${renamed===1?"":"s"}.</div>`;
     toast("Periods updated");
     await refreshDashboard(); loadOwedBreakdown();
   }catch(err){
@@ -2070,16 +2034,6 @@ function togglePeriodDeferred(period, shouldDefer){
 }
 
 function attachPeriodListeners(pendingRenames){
-  // Keep the exclude switch's caption in sync with the checkbox (exclusion is
-  // only persisted when Save is pressed).
-  document.querySelectorAll(".period-toggle").forEach(t=>{
-    t.addEventListener("change", ()=>{
-      const lbl=t.closest("label")?.querySelector(".period-toggle-label");
-      if(!lbl) return;
-      lbl.textContent = t.checked ? "" : "Excluded";
-      lbl.style.color = t.checked ? "" : "var(--partial)";
-    });
-  });
   document.querySelectorAll(".period-defer-btn").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       const period=btn.dataset.period;
@@ -2140,12 +2094,11 @@ async function openManagePeriods(){
   }
 
   const { periods, stats } = getPeriodStats();
-  const excluded = await store.getExcludedPeriods();
   const pendingRenames = new Map();
-  const rows = renderPeriodsList(periods, stats, excluded);
+  const rows = renderPeriodsList(periods, stats);
 
   openSheet("Manage Periods", `
-    <p style="font-size:13px;color:var(--muted);margin:0 0 14px">Use <b>Defer</b> to temporarily move a whole period out of current collection. Deferred periods remain recorded and appear under <b>Deferred</b>. Use <b>Restore</b> when you want to collect them. Defer/Restore applies immediately.<br><br>The toggle on the left <b>excludes</b> a period completely: it stops counting toward any balance and is not tracked as Deferred. Exclusions are saved only when you press <b>Save</b>.</p>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 14px">Use <b>Defer</b> to temporarily move a whole period out of current collection. Deferred periods remain recorded and appear under <b>Deferred</b>. Use <b>Restore</b> when you want to collect them. Defer/Restore applies immediately.</p>
     ${rows}
     <button class="btn block" id="savePeriodsBtn" disabled style="margin-top:14px">Save</button>
     <div id="periodsMsg" style="margin-top:12px"></div>
@@ -2528,7 +2481,7 @@ async function runUpload(){
     clearOperationErrors();
     prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${pendingUpload.charges.length} charges and ${pendingUpload.payments.length} payments processed. Recalculating balances…</div>`;
     pendingUpload=null;
-    if(excludedPeriods.length || deferredPeriods.length){
+    if(deferredPeriods.length){
       store.recalcAll().then(()=>toast("Balances recalculated")).catch(e=>console.error("recalcAll after upload failed:", e));
     }
     setTimeout(()=>{ closeSheet(); toast("Upload complete"); },SHEET_CLOSE_DELAY_MS);
@@ -3125,7 +3078,7 @@ async function doExportPdf(){
       const payments = entries.filter(e=>e.type==="payment").map(e=>fmtRs(e.amount));
       const charges = entries.filter(e=>{
         if(e.type!=="charge" && e.type!=="sanitationFee") return false;
-        return !isPeriodDeferredForCitizen(e, c.id) && !isChargeExcluded(e, c.id);
+        return !isPeriodDeferredForCitizen(e, c.id);
       }).map(e=>{
         const period = e.note && e.note.trim() ? e.note.trim() : (e.type==="sanitationFee" ? "Sanitation Fee" : "Charge");
         return `${period}: ${fmtRs(e.amount)}`;
