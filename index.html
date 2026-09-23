@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.33.0</footer>
+<footer>New Serchhip North Village Council · v1.33.1</footer>
 
 <script>
 (function(){
@@ -596,43 +596,51 @@ function showModeBanner(msg){
 // failure (after showing the screen).
 async function initFirebaseStoreWithRetry(){
   const attempts = 3;
+  let lastErr = null;
   for(let i=1;i<=attempts;i++){
     try{
       console.log(`Initializing Firebase (attempt ${i}/${attempts})...`);
       const fbModule = await Promise.race([
         loadFirebase(firebaseConfig),
-        new Promise((_,reject) => setTimeout(()=>reject(new Error("timeout")), 15000))
+        new Promise((_,reject) => setTimeout(()=>reject(new Error("timeout after 15s")), 15000))
       ]);
       console.log("Firebase loaded successfully");
       return makeFirebaseStore(fbModule, storeHost);
     }catch(err){
+      lastErr = err;
       console.error(`Firebase initialization attempt ${i} failed:`, err);
       if(i < attempts){
         await new Promise(r=>setTimeout(r, 1500*i));
       }
     }
   }
-  showOfflineBlock();
+  showOfflineBlock(lastErr);
   return null;
 }
 
 // Blocking screen shown when the real data can't be loaded. The point is to make
 // it impossible to mistake this for the real app and record data into a void.
-function showOfflineBlock(){
+function showOfflineBlock(err){
   try{
     const main=document.querySelector("main");
     if(!main) return;
     document.getElementById("loginCard")?.classList.add("hidden");
     document.getElementById("dashboard")?.classList.add("hidden");
     if(document.getElementById("offlineBlock")) return;
+    const detail = err && (err.message || String(err)) ? String(err.message || err) : "unknown error";
     main.insertAdjacentHTML("afterbegin",
       `<div class="offline-block" id="offlineBlock">
         <h2>Can't reach the server</h2>
         <p>Your council records are stored online, and this device can't reach
         them right now. <strong>Nothing you enter here would be saved</strong>,
         so data entry is disabled to protect your records.</p>
-        <p>Check your internet connection, then tap Try again.</p>
+        <ol style="text-align:left;font-size:13.5px;color:var(--muted);line-height:1.6;padding-left:20px;margin:0 0 14px">
+          <li>Check your internet connection (try opening another website).</li>
+          <li>If you use an ad-blocker or privacy extension, turn it off for this site.</li>
+          <li>Then tap Try again.</li>
+        </ol>
         <button class="btn block" id="offlineRetry">Try again</button>
+        <p style="font-size:11.5px;color:var(--muted);margin-top:12px;text-align:left;word-break:break-word">Details: ${esc(detail)}</p>
       </div>`);
     document.getElementById("offlineRetry")?.addEventListener("click", ()=>location.reload());
   }catch(e){ console.error("Failed to show offline block:", e); }
