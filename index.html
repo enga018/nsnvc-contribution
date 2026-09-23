@@ -864,16 +864,21 @@ function makeLocalStore(){
       // network work. For a small number of changed ledgers, fetch only those.
       // If many ledgers are stale, one collection-group read is substantially
       // faster than opening one Firestore subcollection per citizen.
+      const recalcStart=performance.now();
       const citizens=Array.isArray(rawCitizens)?rawCitizens:[];
+      const staleDetectionStart=performance.now();
       const changed=citizens.filter(c=>{
         const entries=ledgerCache.get(c.id);
         const cachedAt=ledgerCacheSyncAt.get(c.id)||0;
         const serverAt=firestoreTimeMs(c.updatedAt);
         return !Array.isArray(entries) || serverAt>cachedAt;
       });
+      const staleDetectionMs=performance.now()-staleDetectionStart;
 
       let ledgers={};
       let usedCache=false;
+      const firestoreReadStart=performance.now();
+      let firestoreReadMs=0;
 
       if(citizens.length && changed.length===0){
         usedCache=true;
@@ -887,10 +892,16 @@ function makeLocalStore(){
         // query and avoids hundreds/thousands of individual ledger reads.
         ledgers=await this.getAllLedgers();
       }
+      firestoreReadMs=performance.now()-firestoreReadStart;
 
       const citizenIds=Object.keys(ledgers);
       const currentById=new Map(citizens.map(c=>[c.id,c]));
+      const calculationStart=performance.now();
       let batch=fs.writeBatch(db),ops=0,done=0,writeCount=0;
+
+      const calculationStartForWrite=calculationStart;
+      let calculationMs=0;
+      const writeStart=performance.now();
 
       const flush=async()=>{
         if(ops===0)return;
@@ -925,15 +936,23 @@ function makeLocalStore(){
         if((++done%25)===0&&onProgress)onProgress(done,citizenIds.length);
       }
 
+      calculationMs=performance.now()-calculationStartForWrite;
       await flush();
+      const firestoreWriteMs=performance.now()-writeStart;
       periodStatsCache=null;
       if(onProgress)onProgress(citizenIds.length,citizenIds.length);
-      console.log("Recalculate complete:",{
+      const totalMs=performance.now()-recalcStart;
+      console.log("Recalculate timing breakdown:",{
         citizens:citizenIds.length,
         staleLedgers:changed.length,
         writes:writeCount,
         usedCache,
-        bulkRead:!usedCache && changed.length>20
+        bulkRead:!usedCache && changed.length>20,
+        staleDetectionMs:Math.round(staleDetectionMs),
+        firestoreReadMs:Math.round(firestoreReadMs),
+        calculationMs:Math.round(calculationMs),
+        firestoreWriteMs:Math.round(firestoreWriteMs),
+        totalMs:Math.round(totalMs)
       });
       return citizenIds.length;
     },
@@ -2175,13 +2194,22 @@ async function doRecalcAllFromSettings(){
   msg.innerHTML='<div class="notice info">Reading every household ledger…</div>';
 
   try{
+    const recalcStart=performance.now();
     const n=await store.recalcAll((d,t)=>{
       msg.innerHTML=`<div class="notice info">Recalculating… ${d} / ${t}</div>`;
     });
+    const recalcEnd=performance.now();
 
     // The live Firestore listener will normally update the dashboard, but
     // refresh explicitly so the repaired totals are visible immediately.
+    const dashboardRefreshStart=performance.now();
     await refreshDashboard();
+    const dashboardRefreshMs=performance.now()-dashboardRefreshStart;
+    console.log("Recalculate timing:",{
+      storeTotalMs:Math.round(recalcEnd-recalcStart),
+      dashboardRefreshMs:Math.round(dashboardRefreshMs),
+      totalMs:Math.round(performance.now()-recalcStart)
+    });
     clearOperationErrors();
     msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${n} households recalculated from transaction history.</div>`;
     toast("Balances recalculated");
