@@ -1589,8 +1589,22 @@ async function refreshDashboard(){
     Object.keys(deferredPeriodOverrides).length
   );
 
-  // Use the lightweight citizen snapshot by default. Full ledgers are only
-  // needed when period-based state can change the balance calculation.
+  // Cache-first dashboard: render the last known in-memory ledger state
+  // immediately instead of waiting for another Firestore ledger read.
+  // Firestore is still refreshed in the background so the cache never becomes
+  // the authority; it is only the fast working copy used while syncing.
+  if(needsLedger && list.length > 0){
+    const cachedList = list.map(c => ({...c, ledger: ledgerCache.get(c.id) || []}));
+    const hasCompleteCache = list.every(c => Array.isArray(ledgerCache.get(c.id)));
+    if(hasCompleteCache){
+      allCitizens = cachedList;
+      periodsReady = false;
+      unpaidCache = new Map();
+      renderStats();
+      renderList();
+    }
+  }
+
   if(needsLedger){
     try{
       await store.getAllLedgers();
@@ -1602,6 +1616,7 @@ async function refreshDashboard(){
       list = list.map(c => ({...c, ledger: ledgerCache.get(c.id) || []}));
     }
   }
+
   if(seq !== dashboardRefreshSeq) return; // superseded by a newer refresh; drop this stale result
   allCitizens = list;
   // The period dropdown's cache (unpaidCache/periodsReady) was built from
