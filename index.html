@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.29.15</footer>
+<footer>New Serchhip North Village Council · v1.30.0</footer>
 
 <script>
 (function(){
@@ -235,6 +235,7 @@ async function hydrateDashboardCache(){
       ledgerCacheSyncAt.set(item.id,Number(item.syncAt||item.cachedAt||0));
     }
       periodStatsCache=null;
+      invalidateStatsMemo();
     }
 
     const needsLedger = Boolean(
@@ -420,6 +421,39 @@ function setCitizenChargeOverride(next, citizenId, entry, value){
   if(Object.keys(overrides).length) next[citizenId]=overrides;
   else delete next[citizenId];
 }
+/* ---------- Per-citizen stats memoization ----------
+   getEffectiveBalance/getDeferredAmount/statusOf run up to ~10× per household
+   per dashboard render (stats, filter tabs, list filtering, card HTML). The
+   expensive part — calculateLedgerState over the ledger — is pure for a given
+   citizen snapshot and the current period/defer/override state, so results are
+   cached against a small fingerprint:
+     - citizen id
+     - whether a ledger is attached (the no-ledger path reads c.balance)
+     - c.balance for that fallback path
+     - statsRevision, bumped wherever ledgerCache or the period/deferral/
+       override state changes (the same sites that already null
+       periodStatsCache).
+   Because the fingerprint includes c.balance, a fresh Firestore snapshot with
+   a new balance is never served stale even when statsRevision has not moved.
+   In-place ledger mutations (toggleDefer/deleteEntry/editEntry) keep the same
+   array reference but bump statsRevision, so cached numbers are invalidated
+   there too. */
+let statsRevision=0;
+const statsMemo=new Map();
+function invalidateStatsMemo(){
+  statsRevision++;
+  // Bound memory usage across many revisions (e.g. bulk imports).
+  if(statsMemo.size>5000) statsMemo.clear();
+}
+function statsMemoEntry(c){
+  if(!c || c.id==null) return null;
+  const key = Array.isArray(c.ledger)
+    ? "L|"+statsRevision+"|"+c.id
+    : "B|"+statsRevision+"|"+c.id+"|"+(c.balance!=null?c.balance:0);
+  let rec=statsMemo.get(key);
+  if(!rec){ rec={balance:null,deferred:null}; statsMemo.set(key,rec); }
+  return rec;
+}
 function statusOf(c){
   const bal = getEffectiveBalance(c);
   if(bal<=0) return "paid";
@@ -509,22 +543,34 @@ function allocateLedgerPayments(entries, citizenId){
 function getEffectiveBalance(c){
   // When a ledger is attached, it is always authoritative. This is the same
   // calculation used by the person account view, so dashboard status cannot disagree with the household's actual account.
+  const rec=statsMemoEntry(c);
+  if(rec && rec.balance!==null) return rec.balance;
+  let value;
   if(c && Array.isArray(c.ledger)){
-    return calculateLedgerState(c.ledger, c.id).balance;
+    value = calculateLedgerState(c.ledger, c.id).balance;
+  }else{
+    // The live citizen snapshot may not include a ledger yet. In that case use
+    // the stored summary when no period/override state requires live ledgers.
+    value = Number(c && c.balance != null ? c.balance : 0);
   }
-  // The live citizen snapshot may not include a ledger yet. In that case use
-  // the stored summary when no period/override state requires live ledgers.
-  return Number(c && c.balance != null ? c.balance : 0);
+  if(rec) rec.balance=value;
+  return value;
 }
 function getDeferredAmount(c){
-  if(!c.ledger) return 0;
-  // Informational only. Deferred charges never participate in balance.
-  return c.ledger.reduce((sum,e)=>{
-    if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return sum;
-    const deferred=isPeriodDeferredForCitizen(e,c.id);
-    const excluded=isChargeExcluded(e,c.id);
-    return sum + (deferred && !excluded ? Math.max(0,Number(e.amount)||0) : 0);
-  },0);
+  const rec=statsMemoEntry(c);
+  if(rec && rec.deferred!==null) return rec.deferred;
+  let value=0;
+  if(c && Array.isArray(c.ledger)){
+    // Informational only. Deferred charges never participate in balance.
+    value = c.ledger.reduce((sum,e)=>{
+      if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return sum;
+      const deferred=isPeriodDeferredForCitizen(e,c.id);
+      const excluded=isChargeExcluded(e,c.id);
+      return sum + (deferred && !excluded ? Math.max(0,Number(e.amount)||0) : 0);
+    },0);
+  }
+  if(rec) rec.deferred=value;
+  return value;
 }
 // FIFO-allocates payments against all charges first, then exposes only
 // active (non-deferred, non-excluded) charges as currently owed. This prevents
@@ -940,6 +986,7 @@ function makeLocalStore(){
       await flush();
       const firestoreWriteMs=performance.now()-writeStart;
       periodStatsCache=null;
+      invalidateStatsMemo();
       if(onProgress)onProgress(citizenIds.length,citizenIds.length);
       const totalMs=performance.now()-recalcStart;
       console.log("Recalculate timing breakdown:",{
@@ -962,6 +1009,7 @@ function makeLocalStore(){
       ledgerCache.clear();
       for(const [id,entries] of Object.entries(out)) ledgerCache.set(id,entries);
       periodStatsCache=null;
+      invalidateStatsMemo();
       return out;
     }
   };
@@ -1062,17 +1110,28 @@ function makeFirebaseStore({ auth, db, fs, au }){
       });
       if(!changed.length) return 0;
 
-      const results=await Promise.all(changed.map(async c=>{
-        const entries=await this.getLedger(c.id);
-        return [c.id,entries,firestoreTimeMs(c.updatedAt)||Date.now()];
-      }));
+      // Read in bounded batches instead of one unbounded Promise.all. On the
+      // very first sync (empty cache) this would otherwise open hundreds of
+      // ledger subcollections at once, which is exactly the burst that makes
+      // the first dashboard load slow. Batches of 20 keep the pipe full while
+      // letting Firestore schedule reads in between.
+      const results=[];
+      const CHUNK=20;
+      for(let i=0;i<changed.length;i+=CHUNK){
+        const slice=changed.slice(i,i+CHUNK);
+        const batch=await Promise.all(slice.map(async c=>{
+          const entries=await this.getLedger(c.id);
+          return [c.id,entries,firestoreTimeMs(c.updatedAt)||Date.now()];
+        }));
+        results.push(...batch);
+      }
       const changedLedgers={};
       for(const [id,entries,syncAt] of results){
         ledgerCache.set(id,entries);
         ledgerCacheSyncAt.set(id,syncAt);
         changedLedgers[id]=entries;
       }
-      periodStatsCache=null;
+      periodStatsCache=null; invalidateStatsMemo();
       writeDashboardCache([],changedLedgers);
       return changed.length;
     },
@@ -1139,7 +1198,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
       entries.push(entry);
       entries.sort((a,b)=>(a.createdAt?.seconds ? a.createdAt.seconds*1000 : Number(a.createdAt)||0) -
                           (b.createdAt?.seconds ? b.createdAt.seconds*1000 : Number(b.createdAt)||0));
-      ledgerCache.set(id,entries); periodStatsCache=null;
+      ledgerCache.set(id,entries); periodStatsCache=null; invalidateStatsMemo();
 
       // The ledger write and the cached citizen totals are independent writes.
       // Run them in parallel so a person-view payment does not wait for two
@@ -1167,6 +1226,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         // Firestore write fails.
         ledgerCache.set(id, entries.filter(e=>e.entryId!==eRef.id));
         periodStatsCache=null;
+        invalidateStatsMemo();
         throw err;
       }
     },
@@ -1176,7 +1236,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
       const entries=ledgerCache.get(id)||[];
       const e=entries.find(x=>x.entryId===entryId);
       if(e) e.deferred=deferred;
-      ledgerCache.set(id,entries); periodStatsCache=null;
+      ledgerCache.set(id,entries); periodStatsCache=null; invalidateStatsMemo();
       const totals=recalcFromLedger(entries, id);
       await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
     },
@@ -1201,26 +1261,59 @@ function makeFirebaseStore({ auth, db, fs, au }){
       await this.addEntry(id, "payment", pp.amount, "UPI", pp.date);
     },
     async getPendingPayments(){
-      const snap=await fs.getDocs(fs.collection(db,"citizens"));
-      const ppPromises = snap.docs.map(d=>{
-        const id=d.id;
-        const c=d.data();
-        return fs.getDocs(fs.collection(db,"citizens",id,"pendingPayments"))
-          .then(ppSnap=>
-            ppSnap.docs
+      // Single collection-group read replaces the old N+1 query (one `citizens`
+      // read plus one `pendingPayments` subcollection read per household),
+      // which previously ran on every dashboard refresh. pendingPayments docs
+      // carry a `status` field; we only want the still-pending rows. If the
+      // query is rejected by Firestore rules or indexing, fall back to the
+      // per-citizen reads in bounded batches of 20.
+      let rows=[];
+      try{
+        const q=fs.query(
+          fs.collectionGroup(db,"pendingPayments"),
+          fs.where("status","==","pending")
+        );
+        const snap=await fs.getDocs(q);
+        rows=snap.docs.map(d=>({ citizenId:d.ref.parent.parent.id, id:d.id, ...d.data() }));
+      }catch(err){
+        console.warn("collectionGroup pendingPayments query failed; reading per citizen.", err);
+        const citizenSnap=await fs.getDocs(fs.collection(db,"citizens"));
+        const ids=citizenSnap.docs.map(d=>d.id);
+        for(let i=0;i<ids.length;i+=20){
+          const slice=ids.slice(i,i+20);
+          const batch=await Promise.all(slice.map(async id=>{
+            const ppSnap=await fs.getDocs(fs.collection(db,"citizens",id,"pendingPayments"));
+            return ppSnap.docs
               .filter(doc=>doc.data().status==="pending")
-              .map(doc=>({ citizenId:id, id:doc.id, ...doc.data(), name:c.name, jobCard:c.jobCard }))
-          );
+              .map(doc=>({ citizenId:id, id:doc.id, ...doc.data() }));
+          }));
+          rows.push(...batch.flat());
+        }
+      }
+      if(!rows.length) return rows;
+      // Attach the display name/jobCard. Prefer the in-memory citizen list;
+      // fetch only the citizens we do not already have, in bounded batches.
+      const byId=new Map((rawCitizens||[]).map(c=>[c.id,c]));
+      const missing=[...new Set(rows.map(r=>r.citizenId).filter(id=>!byId.has(id)))];
+      for(let i=0;i<missing.length;i+=20){
+        await Promise.all(missing.slice(i,i+20).map(async id=>{
+          try{
+            const s=await fs.getDoc(fs.doc(db,"citizens",id));
+            if(s.exists()) byId.set(id,s.data());
+          }catch(e){}
+        }));
+      }
+      return rows.map(r=>{
+        const c=byId.get(r.citizenId);
+        return c ? { ...r, name:c.name, jobCard:c.jobCard } : r;
       });
-      const allResults = await Promise.all(ppPromises);
-      return allResults.flat();
     },
     async deleteEntry(id, entryId){
       await fs.deleteDoc(fs.doc(db,"citizens",id,"ledger",entryId));
       const entries=ledgerCache.get(id)||[];
       const idx=entries.findIndex(x=>x.entryId===entryId);
       if(idx>=0) entries.splice(idx,1);
-      ledgerCache.set(id,entries); periodStatsCache=null;
+      ledgerCache.set(id,entries); periodStatsCache=null; invalidateStatsMemo();
       const totals=recalcFromLedger(entries, id);
       await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
     },
@@ -1237,7 +1330,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
       const entries=ledgerCache.get(id)||[];
       const e=entries.find(x=>x.entryId===entryId);
       if(e) Object.assign(e,updates);
-      ledgerCache.set(id,entries); periodStatsCache=null;
+      ledgerCache.set(id,entries); periodStatsCache=null; invalidateStatsMemo();
       const totals=recalcFromLedger(entries, id);
       await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
     },
@@ -1492,6 +1585,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         ledgerCache.set(id, entries);
       }
       periodStatsCache=null;
+      invalidateStatsMemo();
       // Keep the complete ledger snapshot persistent so the next dashboard
       // load can render period-aware balances before Firestore responds.
       writeDashboardCache(Object.values(out).map(()=>null), out);
@@ -1661,8 +1755,12 @@ function subscribeCitizens(){
     rawCitizens = list;
     // Persist the lightweight citizen snapshot as soon as Firestore gives us
     // authoritative data. This makes the next app start render without waiting
-    // for the network.
-    writeDashboardCache(list, Object.fromEntries(ledgerCache));
+    // for the network. Ledgers are NOT rewritten here: refreshChangedLedgers /
+    // getAllLedgers already persist only the ledgers they actually refetch, so
+    // writing the whole ledgerCache on every snapshot (which fires on each
+    // citizen write) was re-serializing every household's ledger to IndexedDB
+    // on every refresh — the dominant cache-write cost on a slow connection.
+    writeDashboardCache(list, {});
     scheduleDashboardRefresh();
   });
 }
@@ -1677,6 +1775,7 @@ function subscribeCitizens(){
 function invalidateLedgerCache(id){
   if(id) ledgerCache.delete(id); else ledgerCache.clear();
   periodStatsCache = null;
+  invalidateStatsMemo();
 }
 function recalcFromLedger(entries, citizenId){
   let grossCharges=0, totalPaid=0, totalWaived=0;
@@ -2065,7 +2164,7 @@ async function handlePeriodsSave(pendingRenames){
     const excl=[];
     document.querySelectorAll(".period-toggle").forEach(t=>{ if(!t.checked) excl.push(t.value); });
     await store.setExcludedPeriods(excl);
-    excludedPeriods=excl; periodsReady=false; unpaidCache=new Map();
+    excludedPeriods=excl; periodsReady=false; unpaidCache=new Map(); periodStatsCache=null; invalidateStatsMemo();
     if(periodFilter && excludedPeriods.includes(periodFilter)) periodFilter="";
     const renameResults = await Promise.all(
       Array.from(pendingRenames).map(([oldName,newName])=>store.renamePeriod(oldName,newName))
@@ -2097,6 +2196,7 @@ function togglePeriodDeferred(period, shouldDefer){
   periodsReady=false;
   unpaidCache=new Map();
   periodStatsCache=null;
+  invalidateStatsMemo();
   renderStats();
   renderList();
 }
@@ -2129,6 +2229,7 @@ function attachPeriodListeners(pendingRenames){
           periodsReady=false;
           unpaidCache=new Map();
           periodStatsCache=null;
+          invalidateStatsMemo();
           renderStats();
           renderList();
           btn.dataset.deferred = shouldDefer ? "0" : "1";
@@ -2980,7 +3081,7 @@ function attachHistoryListeners(id, editing){
       const previousOverrides = JSON.parse(JSON.stringify(deferredPeriodOverrides));
       const next = JSON.parse(JSON.stringify(deferredPeriodOverrides));
       setCitizenChargeOverride(next, id, entry, nowChecked);
-      deferredPeriodOverrides=next;
+      deferredPeriodOverrides=next; periodStatsCache=null; invalidateStatsMemo();
 
       // Re-render immediately from the optimistic local state. Do not wait for
       // Firestore before updating the account view.
@@ -2993,7 +3094,7 @@ function attachHistoryListeners(id, editing){
       store.setCitizenChargeDeferred(id, entryId, nowChecked)
         .then(()=>clearOperationErrors())
         .catch(e=>{
-          deferredPeriodOverrides=previousOverrides;
+          deferredPeriodOverrides=previousOverrides; periodStatsCache=null; invalidateStatsMemo();
           chk.checked=!nowChecked;
           handleOperationError("toggleDefer", e);
           renderCitizenDetail(id);
