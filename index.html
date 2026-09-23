@@ -860,25 +860,31 @@ function makeLocalStore(){
     async recordImportedPeriod(p){ if(!data.meta) data.meta={periods:[]}; if(!data.meta.periods) data.meta.periods=[];
       if(!data.meta.periods.includes(p)) data.meta.periods.push(p); persist(); },
     async recalcAll(onProgress){
-      // Refresh only ledgers whose citizen updatedAt is newer than the cached
-      // ledger. If every cached ledger is current, Recalculate performs zero
-      // ledger reads and works entirely from the local cache.
+      // Decide whether the existing ledger cache is current before doing any
+      // network work. For a small number of changed ledgers, fetch only those.
+      // If many ledgers are stale, one collection-group read is substantially
+      // faster than opening one Firestore subcollection per citizen.
       const citizens=Array.isArray(rawCitizens)?rawCitizens:[];
-      if(citizens.length && typeof this.refreshChangedLedgers==="function"){
-        await this.refreshChangedLedgers(citizens);
-      }
-
-      let ledgers={};
-      const canUseCache=citizens.length>0 && citizens.every(c=>{
+      const changed=citizens.filter(c=>{
         const entries=ledgerCache.get(c.id);
         const cachedAt=ledgerCacheSyncAt.get(c.id)||0;
         const serverAt=firestoreTimeMs(c.updatedAt);
-        return Array.isArray(entries) && cachedAt>=serverAt;
+        return !Array.isArray(entries) || serverAt>cachedAt;
       });
 
-      if(canUseCache){
+      let ledgers={};
+      let usedCache=false;
+
+      if(citizens.length && changed.length===0){
+        usedCache=true;
         for(const c of citizens) ledgers[c.id]=ledgerCache.get(c.id);
+      }else if(changed.length>0 && changed.length<=20 && typeof this.refreshChangedLedgers==="function"){
+        if(onProgress) onProgress(0,citizens.length);
+        await this.refreshChangedLedgers(changed);
+        for(const c of citizens) ledgers[c.id]=ledgerCache.get(c.id)||[];
       }else{
+        // Bulk path: collectionGroup("ledger") is a single indexed Firestore
+        // query and avoids hundreds/thousands of individual ledger reads.
         ledgers=await this.getAllLedgers();
       }
 
@@ -896,15 +902,15 @@ function makeLocalStore(){
       for(const id of citizenIds){
         const next=recalcFromLedger(ledgers[id]||[],id);
         const current=currentById.get(id);
-        const changed=!current ||
+        const changedSummary=!current ||
           Number(current.totalCharged||0)!==Number(next.totalCharged||0) ||
           Number(current.totalPaid||0)!==Number(next.totalPaid||0) ||
           Number(current.balance||0)!==Number(next.balance||0) ||
           Number(current.deferredTotal||0)!==Number(next.deferredTotal||0);
 
-        if(changed){
-          // These are derived summary fields. Do not change updatedAt here:
-          // updatedAt is the ledger-change marker used by cache synchronization.
+        if(changedSummary){
+          // Derived totals do not update updatedAt; that timestamp marks real
+          // ledger changes and drives cache synchronization.
           batch.set(fs.doc(db,"citizens",id),{
             totalCharged:next.totalCharged,
             totalPaid:next.totalPaid,
@@ -922,7 +928,13 @@ function makeLocalStore(){
       await flush();
       periodStatsCache=null;
       if(onProgress)onProgress(citizenIds.length,citizenIds.length);
-      console.log("Recalculate complete:",{citizens:citizenIds.length,writes:writeCount,usedCache:canUseCache});
+      console.log("Recalculate complete:",{
+        citizens:citizenIds.length,
+        staleLedgers:changed.length,
+        writes:writeCount,
+        usedCache,
+        bulkRead:!usedCache && changed.length>20
+      });
       return citizenIds.length;
     },
     async getAllLedgers(){
