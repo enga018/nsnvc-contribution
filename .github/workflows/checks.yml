@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       # Fails on a syntax error in index.html's inline scripts or ledger.js.
       - run: node scripts/check-scripts.mjs
       # Unit tests for the pure ledger engine (balance + deferral rules).
@@ -59,7 +59,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - run: npm ci || npm install
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test

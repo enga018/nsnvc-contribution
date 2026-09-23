@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.32.1</footer>
+<footer>New Serchhip North Village Council · v1.32.2</footer>
 
 <script>
 (function(){
@@ -1416,6 +1416,11 @@ if(!store) {
   store=makeLocalStore();
 }
 if(isLocalMode) addTestLoginHint();
+// Signal that the store exists and login can proceed. The login button is
+// bound early (so it still responds during slow startup), so anything driving
+// login programmatically — including the browser smoke test — should wait for
+// this rather than assume a click at time zero works.
+window.__nsnvcStoreReady = true;
 
 if(!isLocalMode){
   console.warn("⚠️ SECURITY CHECK: Ensure Firestore security rules are deployed. See FIRESTORE_SECURITY_RULES.md for configuration.");
