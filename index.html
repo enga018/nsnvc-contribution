@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.30.0</footer>
+<footer>New Serchhip North Village Council · v1.30.1</footer>
 
 <script>
 (function(){
@@ -136,12 +136,8 @@ const TOAST_DURATION_MS = 2200;
 const DASHBOARD_REFRESH_DEBOUNCE_MS = 250;
 const CACHE_REFRESH_DELAY_MS = 5000;
 const SHEET_CLOSE_DELAY_MS = 900;
-const PAGE_RELOAD_DELAY_MS = 1500;
 const LOGOUT_DELAY_MS = 1000;
 const FIRESTORE_BATCH_SIZE = 400;
-const BACKUP_MAX_SIZE_BYTES = 5*1024*1024;
-const BACKUP_MAX_HOUSEHOLDS = 10000;
-const MAX_FILE_SCAN_ROWS = 10000;
 
 /* ---------- persistent dashboard cache ---------- */
 // IndexedDB keeps the last known dashboard data across refreshes/restarts.
@@ -377,11 +373,6 @@ function getCitizenChargeOverride(citizenId, entry){
   }
   return getCitizenPeriodOverride(citizenId, String(entry.note||"").trim());
 }
-function hasCitizenPeriodOverrides(citizenId){
-  const raw = deferredPeriodOverrides[citizenId];
-  return !!(raw && typeof raw==="object" && Object.keys(raw).length);
-}
-
 function isPeriodDeferredForCitizen(e, citizenId){
   if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return false;
   const period=String(e.note||"").trim();
@@ -435,9 +426,9 @@ function setCitizenChargeOverride(next, citizenId, entry, value){
        periodStatsCache).
    Because the fingerprint includes c.balance, a fresh Firestore snapshot with
    a new balance is never served stale even when statsRevision has not moved.
-   In-place ledger mutations (toggleDefer/deleteEntry/editEntry) keep the same
-   array reference but bump statsRevision, so cached numbers are invalidated
-   there too. */
+   In-place ledger mutations (deleteEntry/editEntry) keep the same array
+   reference but bump statsRevision, so cached numbers are invalidated there
+   too. */
 let statsRevision=0;
 const statsMemo=new Map();
 function invalidateStatsMemo(){
@@ -581,7 +572,6 @@ function getOwedBreakdown(entries, citizenId){
 }
 const statusLabel = {paid:"Cleared", partial:"Partly paid", due:"Due"};
 function todayISO(){ return new Date().toISOString().slice(0,10); }
-function monthLabel(){ return new Date().toLocaleString("en-IN",{month:"long",year:"numeric"}); }
 const DATE_DISPLAY_CUTOFF = "2026-07-01";
 function displayDate(date){ return (date && date >= DATE_DISPLAY_CUTOFF) ? date : ""; }
 function prettyPeriod(note){
@@ -661,7 +651,6 @@ function makeLocalStore(){
   }
   return {
     isLocal:true,
-    async getCitizen(id){ const c=data.citizens[id]; return c? {...c, ledger:undefined} : null; },
     async getLedger(id){ const c=data.citizens[id]; if(!c) return [];
       return [...(c.ledger||[])].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)); },
     subscribe(cb){ listeners.add(cb); cb(sortedList()); return ()=>listeners.delete(cb); },
@@ -685,14 +674,6 @@ function makeLocalStore(){
       recalcTotals(c);
       c.updatedAt=++clock; persist(); notify(); invalidateLedgerCache(id);
     },
-    async toggleDefer(id, entryId, deferred){
-      const c=data.citizens[id]; if(!c) return;
-      const idx = c.ledger.findIndex(e => e.entryId === entryId);
-      if(idx<0 || c.ledger[idx].type!=="charge") return;
-      c.ledger[idx].deferred = deferred;
-      recalcTotals(c);
-      c.updatedAt=++clock; persist(); notify(); invalidateLedgerCache(id);
-    },
     async forgiveDebt(id, amount, note){
       const c=data.citizens[id]; if(!c) throw new Error("missing");
       const entryId = String(++clock);
@@ -700,14 +681,6 @@ function makeLocalStore(){
       c.ledger.push(entry);
       recalcTotals(c);
       c.updatedAt=++clock; persist(); notify(); invalidateLedgerCache(id);
-    },
-    async addPendingPayment(id, amount){
-      const c=data.citizens[id]; if(!c) throw new Error("missing");
-      if(!c.pendingPayments) c.pendingPayments=[];
-      const pp = { id:String(++clock), amount, date:todayISO(), status:"pending", createdAt:clock };
-      c.pendingPayments.push(pp);
-      c.updatedAt=++clock; persist(); notify();
-      return pp;
     },
     async confirmPendingPayment(id, pendingId){
       const c=data.citizens[id]; if(!c) return;
@@ -751,23 +724,6 @@ function makeLocalStore(){
       return all;
     },
     async deleteCitizen(id){ delete data.citizens[id]; persist(); notify(); invalidateLedgerCache(id); },
-    async bulkImport(rows, onProgress){
-      let n=0;
-      for(const r of rows){
-        data.citizens[r.id] = {
-          jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, phone:r.phone||"",
-          totalCharged:r.totalCharged, totalPaid:r.totalPaid, balance:r.balance, deferredTotal:0,
-          createdAt:++clock, updatedAt:++clock,
-          ledger:(r.ledger||[]).map(e=>({ entryId:e.entryId || String(++clock), type:e.type, amount:e.amount, note:e.note, date:e.date,
-                                          deferred:e.deferred||false, createdAt:e.when? e.when.getTime() : ++clock })),
-          pendingPayments:[]
-        };
-        recalcTotals(data.citizens[r.id]);
-        if((++n % 50)===0 && onProgress) onProgress(n, rows.length);
-      }
-      persist(); notify(); invalidateLedgerCache(); if(onProgress) onProgress(rows.length, rows.length);
-      return rows.length;
-    },
     async bulkAppendCharges(items, onProgress){
       let n=0;
       for(const it of items){
@@ -817,10 +773,6 @@ function makeLocalStore(){
       }
       return csv;
     },
-    async exportAll(){
-      const citizens=Object.entries(data.citizens).map(([id,c])=>({id,jobCard:c.jobCard,cardNo:c.cardNo,name:c.name,phone:c.phone||"",totalCharged:c.totalCharged||0,totalPaid:c.totalPaid||0,balance:c.balance||0,deferredTotal:c.deferredTotal||0,pendingPayments:Array.isArray(c.pendingPayments)?c.pendingPayments.map(p=>({...p})):[],ledger:(c.ledger||[]).map(e=>({entryId:e.entryId,type:e.type,amount:e.amount,note:e.note,date:e.date||"",deferred:e.deferred||false,createdAtMs:typeof e.createdAt==="number"?e.createdAt:null}))}));
-      return {app:"nsnvc-contribution",version:2,exportedAt:new Date().toISOString(),count:citizens.length,meta:{excludedPeriods:(data.meta&&data.meta.excludedPeriods)?data.meta.excludedPeriods.slice():[],deferredPeriods:(data.meta&&data.meta.deferredPeriods)?JSON.parse(JSON.stringify(data.meta.deferredPeriods)):{periods:[],updatedAt:{}},deferredPeriodOverrides:(data.meta&&data.meta.deferredPeriodOverrides)?JSON.parse(JSON.stringify(data.meta.deferredPeriodOverrides)):{},imports:(data.meta&&data.meta.periods)?data.meta.periods.slice():[]},citizens};
-    },
     async deleteAll(onProgress){data.citizens={};data.meta={periods:[],deferredUploads:[]};persist();notify();invalidateLedgerCache();if(onProgress)onProgress(1,1);},
     async renamePeriod(oldPeriod, newPeriod, onProgress){
       let count=0;
@@ -837,17 +789,6 @@ function makeLocalStore(){
       persist(); notify();
       if(onProgress) onProgress(count, count);
       return count;
-    },
-    async getAllPeriods(){
-      const periods=new Set();
-      for(const [id,c] of Object.entries(data.citizens)){
-        if(c.ledger){
-          for(const e of c.ledger){
-            if(e.type==="charge" && e.note) periods.add(e.note);
-          }
-        }
-      }
-      return Array.from(periods).sort();
     },
     async getExcludedPeriods(){
       return (data.meta && data.meta.excludedPeriods) ? data.meta.excludedPeriods.slice() : [];
@@ -895,12 +836,6 @@ function makeLocalStore(){
         at:nextDeferTimestamp(previousAt)
       };
       persist();
-    },
-    async importAll(backup,onProgress){
-      if(!backup||!Array.isArray(backup.citizens))throw new Error("Not a valid backup file");const validTypes=["charge","payment","forgive","sanitationFee"];let done=0;data.citizens={};const meta=backup.meta&&typeof backup.meta==="object"?backup.meta:{};
-      data.meta={...(data.meta||{}),excludedPeriods:Array.isArray(meta.excludedPeriods)?meta.excludedPeriods.slice():[],deferredPeriods:meta.deferredPeriods&&typeof meta.deferredPeriods==="object"?JSON.parse(JSON.stringify(meta.deferredPeriods)):{periods:[],updatedAt:{}},deferredPeriodOverrides:meta.deferredPeriodOverrides&&typeof meta.deferredPeriodOverrides==="object"?JSON.parse(JSON.stringify(meta.deferredPeriodOverrides)):{},periods:Array.isArray(meta.imports)?meta.imports.slice():[]};
-      for(const r of backup.citizens){const ledger=(r.ledger||[]).filter(e=>e&&validTypes.includes(e.type)&&e.amount).map(e=>{const amt=Number(e.amount);if(!Number.isFinite(amt)||amt<=0)return null;return {entryId:e.entryId||String(++clock),type:e.type,amount:amt,note:e.note||"",date:e.date||"",deferred:e.deferred||false,createdAt:e.createdAtMs||++clock};}).filter(Boolean);data.citizens[r.id]={jobCard:r.jobCard,cardNo:r.cardNo,name:r.name,phone:r.phone||"",totalCharged:r.totalCharged||0,totalPaid:r.totalPaid||0,balance:r.balance||0,deferredTotal:r.deferredTotal||0,createdAt:++clock,updatedAt:++clock,pendingPayments:Array.isArray(r.pendingPayments)?r.pendingPayments.map(p=>({...p})):[],ledger};recalcTotals(data.citizens[r.id]);if((++done%50)===0&&onProgress)onProgress(done,backup.citizens.length);}
-      deferredPeriodUpdatedAt=normalizeDeferredPeriodState(data.meta.deferredPeriods).updatedAt;deferredPeriodOverrides=normalizeDeferredPeriodOverrides(data.meta.deferredPeriodOverrides).overrides;persist();notify();invalidateLedgerCache();if(onProgress)onProgress(backup.citizens.length,backup.citizens.length);return backup.citizens.length;
     },
     async getImportedPeriods(){ return (data.meta && data.meta.periods) ? data.meta.periods.slice() : []; },
     async recordImportedPeriod(p){ if(!data.meta) data.meta={periods:[]}; if(!data.meta.periods) data.meta.periods=[];
@@ -1060,38 +995,8 @@ async function loadFirebase(cfg){
 }
 
 function makeFirebaseStore({ auth, db, fs, au }){
-  async function migrateEntries(){
-    const citizensSnap = await fs.getDocs(fs.collection(db,"citizens"));
-    let updated = 0;
-    for(const doc of citizensSnap.docs){
-      const citizenId = doc.id;
-      const ledgerSnap = await fs.getDocs(fs.collection(db,"citizens",citizenId,"ledger"));
-      let batch = fs.writeBatch(db);
-      let batchCount = 0;
-      for(const entryDoc of ledgerSnap.docs){
-        const data = entryDoc.data();
-        if(!data.entryId){
-          batch.update(entryDoc.ref, { entryId: entryDoc.id });
-          batchCount++;
-          updated++;
-        }
-        if(batchCount >= 400){
-          await batch.commit();
-          batch = fs.writeBatch(db);
-          batchCount = 0;
-        }
-      }
-      if(batchCount > 0){
-        await batch.commit();
-      }
-    }
-    return updated;
-  }
-
   return {
     isLocal:false,
-    migrateEntries,
-    async getCitizen(id){ const s=await fs.getDoc(fs.doc(db,"citizens",id)); return s.exists()? s.data() : null; },
     async getLedger(id){
       const q=fs.query(fs.collection(db,"citizens",id,"ledger"), fs.orderBy("createdAt","asc"));
       const snap = await fs.getDocs(q);
@@ -1230,26 +1135,8 @@ function makeFirebaseStore({ auth, db, fs, au }){
         throw err;
       }
     },
-    async toggleDefer(id, entryId, deferred){
-      const ref = fs.doc(db, "citizens", id, "ledger", entryId);
-      await fs.updateDoc(ref, { deferred });
-      const entries=ledgerCache.get(id)||[];
-      const e=entries.find(x=>x.entryId===entryId);
-      if(e) e.deferred=deferred;
-      ledgerCache.set(id,entries); periodStatsCache=null; invalidateStatsMemo();
-      const totals=recalcFromLedger(entries, id);
-      await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
-    },
     async forgiveDebt(id, amount, note){
       await this.addEntry(id, "forgive", amount, note, todayISO());
-    },
-    async addPendingPayment(id, amount){
-      const amt = Number(amount);
-      if(!Number.isFinite(amt) || amt <= 0) throw new Error("Amount must be a positive number");
-      const ppRef=fs.collection(db,"citizens",id,"pendingPayments");
-      const newRef=fs.doc(ppRef);
-      await fs.setDoc(newRef, { id:newRef.id, amount:amt, date:todayISO(), status:"pending", createdAt:fs.serverTimestamp() });
-      return { id:newRef.id, amount:amt, status:"pending" };
     },
     async confirmPendingPayment(id, pendingId){
       const ppRef=fs.doc(db,"citizens",id,"pendingPayments",pendingId);
@@ -1342,26 +1229,6 @@ function makeFirebaseStore({ auth, db, fs, au }){
       await fs.deleteDoc(fs.doc(db,"citizens",id));
       invalidateLedgerCache(id);
     },
-    async bulkImport(rows, onProgress){
-      let batch=fs.writeBatch(db), ops=0, done=0;
-      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
-      for(const r of rows){
-        const cRef=fs.doc(db,"citizens",r.id);
-        batch.set(cRef,{ jobCard:r.jobCard, cardNo:r.cardNo, name:r.name, phone:r.phone||"",
-          totalCharged:r.totalCharged||0, totalPaid:r.totalPaid||0, balance:r.balance||0, deferredTotal:0,
-          createdAt:fs.serverTimestamp(), updatedAt:fs.serverTimestamp() }); ops++;
-        for(const e of (r.ledger||[])){
-          const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));
-          batch.set(eRef,{ entryId:eRef.id, type:e.type, amount:e.amount, note:e.note, date:e.date||"",
-            deferred:e.deferred||false, createdAt: e.when? fs.Timestamp.fromDate(e.when) : fs.serverTimestamp() }); ops++;
-          if(ops>=FIRESTORE_BATCH_SIZE) await flush();
-        }
-        if(ops>=FIRESTORE_BATCH_SIZE) await flush();
-        if((++done % 50)===0 && onProgress) onProgress(done, rows.length);
-      }
-      await flush(); if(onProgress) onProgress(rows.length, rows.length);
-      return rows.length;
-    },
     async bulkAppendCharges(items, onProgress){
       let batch=fs.writeBatch(db), ops=0, done=0;
       const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
@@ -1411,12 +1278,6 @@ function makeFirebaseStore({ auth, db, fs, au }){
       }
       return csv;
     },
-    async exportAll(onProgress){
-      if(onProgress)onProgress(0,3);const cSnap=await fs.getDocs(fs.collection(db,"citizens"));const byId={};cSnap.docs.forEach(d=>{const c=d.data();byId[d.id]={id:d.id,jobCard:c.jobCard,cardNo:c.cardNo,name:c.name,phone:c.phone||"",totalCharged:c.totalCharged||0,totalPaid:c.totalPaid||0,balance:c.balance||0,deferredTotal:c.deferredTotal||0,pendingPayments:[],ledger:[]};});
-      const [excludedSnap,deferredSnap,overrideSnap,importsSnap]=await Promise.all(["excludedPeriods","deferredPeriods","deferredPeriodOverrides","imports"].map(id=>fs.getDoc(fs.doc(db,"meta",id))));if(onProgress)onProgress(1,3);
-      await Promise.all(cSnap.docs.map(async d=>{const [led,pp]=await Promise.all([fs.getDocs(fs.collection(db,"citizens",d.id,"ledger")),fs.getDocs(fs.collection(db,"citizens",d.id,"pendingPayments"))]);led.docs.forEach(x=>{const e=x.data();byId[d.id].ledger.push({entryId:e.entryId||x.id,type:e.type,amount:e.amount,note:e.note,date:e.date||"",deferred:e.deferred||false,createdAtMs:e.createdAt&&e.createdAt.toMillis?e.createdAt.toMillis():null});});pp.docs.forEach(x=>byId[d.id].pendingPayments.push({id:x.id,...x.data()}));}));
-      const citizens=Object.values(byId);citizens.forEach(c=>c.ledger.sort((a,b)=>(a.createdAtMs||0)-(b.createdAtMs||0)));const meta={excludedPeriods:excludedSnap.exists()?(excludedSnap.data().periods||[]):[],deferredPeriods:deferredSnap.exists()?deferredSnap.data():{periods:[],updatedAt:{}},deferredPeriodOverrides:overrideSnap.exists()?(overrideSnap.data().overrides||{}):{},imports:importsSnap.exists()?(importsSnap.data().periods||[]):[]};if(onProgress)onProgress(3,3);return {app:"nsnvc-contribution",version:2,exportedAt:new Date().toISOString(),count:citizens.length,meta,citizens};
-    },
     async deleteAll(onProgress){
       if(onProgress)onProgress(0,2);const cSnap=await fs.getDocs(fs.collection(db,"citizens"));let batch=fs.writeBatch(db),ops=0;const flush=async()=>{if(ops>0){await batch.commit();batch=fs.writeBatch(db);ops=0;}};
       for(const d of cSnap.docs){const [led,pp]=await Promise.all([fs.getDocs(fs.collection(db,"citizens",d.id,"ledger")),fs.getDocs(fs.collection(db,"citizens",d.id,"pendingPayments"))]);for(const x of led.docs){batch.delete(x.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}for(const x of pp.docs){batch.delete(x.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}batch.delete(d.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}
@@ -1440,18 +1301,6 @@ function makeFirebaseStore({ auth, db, fs, au }){
       invalidateLedgerCache();
       if(onProgress) onProgress(count, count);
       return count;
-    },
-    async getAllPeriods(){
-      const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
-      const periods=new Set();
-      await Promise.all(cSnap.docs.map(async d => {
-        const ledSnap=await fs.getDocs(fs.collection(db,"citizens",d.id,"ledger"));
-        ledSnap.docs.forEach(ld=>{
-          const e=ld.data();
-          if(e.type==="charge" && e.note) periods.add(e.note);
-        });
-      }));
-      return Array.from(periods).sort();
     },
     async getExcludedPeriods(){
       const doc=await fs.getDoc(fs.doc(db,"meta","excludedPeriods"));
@@ -1493,13 +1342,6 @@ function makeFirebaseStore({ auth, db, fs, au }){
       await fs.updateDoc(fs.doc(db,"meta","deferredPeriodOverrides"), {
         [field]: {value:Boolean(deferred),at}
       });
-    },
-    async importAll(backup,onProgress){
-      if(!backup||!Array.isArray(backup.citizens))throw new Error("Not a valid backup file");if(onProgress)onProgress(0,3);const old=await fs.getDocs(fs.collection(db,"citizens"));let batch=fs.writeBatch(db),ops=0;const flush=async()=>{if(ops>0){await batch.commit();batch=fs.writeBatch(db);ops=0;}};
-      for(const d of old.docs){const [led,pp]=await Promise.all([fs.getDocs(fs.collection(db,"citizens",d.id,"ledger")),fs.getDocs(fs.collection(db,"citizens",d.id,"pendingPayments"))]);for(const x of led.docs){batch.delete(x.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}for(const x of pp.docs){batch.delete(x.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}batch.delete(d.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}await flush();if(onProgress)onProgress(1,3);
-      const meta=backup.meta&&typeof backup.meta==="object"?backup.meta:{};for(const [id,value] of [["excludedPeriods",{periods:Array.isArray(meta.excludedPeriods)?meta.excludedPeriods:[]}],["deferredPeriods",meta.deferredPeriods&&typeof meta.deferredPeriods==="object"?meta.deferredPeriods:{periods:[],updatedAt:{}}],["deferredPeriodOverrides",{overrides:meta.deferredPeriodOverrides&&typeof meta.deferredPeriodOverrides==="object"?meta.deferredPeriodOverrides:{}}],["imports",{periods:Array.isArray(meta.imports)?meta.imports:[]}]]){batch.set(fs.doc(db,"meta",id),value);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}await flush();batch=fs.writeBatch(db);ops=0;let done=0;const validTypes=["charge","payment","forgive","sanitationFee"];
-      for(const r of backup.citizens){const cRef=fs.doc(db,"citizens",r.id);batch.set(cRef,{jobCard:r.jobCard,cardNo:r.cardNo,name:r.name,phone:r.phone||"",totalCharged:r.totalCharged||0,totalPaid:r.totalPaid||0,balance:r.balance||0,deferredTotal:r.deferredTotal||0,updatedAt:fs.serverTimestamp()});if(++ops>=FIRESTORE_BATCH_SIZE)await flush();for(const e of (r.ledger||[])){if(!e||!validTypes.includes(e.type)||!e.amount)continue;const amt=Number(e.amount);if(!Number.isFinite(amt)||amt<=0)continue;const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));batch.set(eRef,{entryId:e.entryId||eRef.id,type:e.type,amount:amt,note:e.note||"",date:e.date||"",deferred:e.deferred||false,createdAt:e.createdAtMs?fs.Timestamp.fromMillis(e.createdAtMs):fs.serverTimestamp()});if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}for(const p of (Array.isArray(r.pendingPayments)?r.pendingPayments:[])){if(!p||!p.id||!Number.isFinite(Number(p.amount))||Number(p.amount)<=0)continue;const pRef=fs.doc(db,"citizens",r.id,"pendingPayments",String(p.id));batch.set(pRef,{amount:Number(p.amount),date:p.date||"",status:p.status||"pending",createdAt:p.createdAt||fs.serverTimestamp()});if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}if((++done%50)===0&&onProgress)onProgress(2,3);}
-      await flush();invalidateLedgerCache();if(onProgress)onProgress(3,3);return backup.citizens.length;
     },
     async getImportedPeriods(){ const s=await fs.getDoc(fs.doc(db,"meta","imports")); return s.exists()? (s.data().periods||[]) : []; },
     async recordImportedPeriod(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { periods:fs.arrayUnion(p) }, {merge:true}); },
@@ -1907,9 +1749,6 @@ function periodKey(note){
   if(!m) return 9999;
   const idx={JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12}[m[1]];
   return idx*10 + (m[2]?parseInt(m[2],10):0);
-}
-function unpaidPeriods(entries, citizenId){
-  return getOwedBreakdown(entries, citizenId).filter(o=>o.note).map(o=>o.note);
 }
 async function loadOwedBreakdown(){
   if(loadingPeriods) return; loadingPeriods=true;
@@ -2386,7 +2225,7 @@ async function refreshPending(){
 /* ============================================================
    ADMIN — import (unchanged, but included for completeness)
    ============================================================ */
-let pendingBank = null, pendingUpload = null;
+let pendingUpload = null;
 
 function openImportExport(){
   openSheet("Import / Export", `
@@ -2462,14 +2301,7 @@ async function ensureJsPDF(){
 }
 
 const _num = v => { const n=parseFloat(v); return isNaN(n)?0:n; };
-const _norm = h => String(h||"").toUpperCase().replace(/\s+/g,"").trim();
 function _findCol(header, re){ for(let i=0;i<header.length;i++){ if(re.test(String(header[i]||"").trim())) return i; } return -1; }
-function _periodCols(header){
-  const re=/(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/i;
-  const out=[];
-  header.forEach((h,i)=>{ if(h!=null && re.test(String(h))) out.push({ label:String(h).trim(), key:_norm(h), col:i }); });
-  return out;
-}
 function openUpload(){
   openSheet("Upload charges or payments", `
     <p style="font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5">
@@ -2668,126 +2500,11 @@ async function runUpload(){
   }
 }
 
-function openBank(){
-  openSheet("Bank payment file", `
-    <p style="font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5">
-      One sheet with Job Card No., Name and amount — the list of who paid through the bank.
-      Each row is recorded as a payment ("Payment (Bank)") and lowers that person's balance.
-      People are matched by job card; rows that don't match anyone are skipped and listed.</p>
-    <div class="field"><label>Payment date</label><input id="impDate" type="date" value="${todayISO()}"></div>
-    <div class="field"><label>Excel file (.xlsx)</label>
-      <input id="impFile" type="file" accept=".xlsx,.xls"></div>
-    <div id="impMsg"></div><div id="impPreview"></div>
-  `);
-  $("impFile").addEventListener("change", handleBank);
-}
-
 function resolveCitizen(value){
   const fk=fullKey(value);
   let cand=allCitizens.filter(c=>c.id===fk);
   if(!cand.length){ const suf=suffixOf(value); cand=allCitizens.filter(c=>(c.cardNo||"")===suf); }
   return cand;
-}
-
-let bankRaw=null, bankWB=null;
-async function handleBank(e){
-  const file=e.target.files[0]; if(!file) return;
-  $("impMsg").innerHTML=`<div class="notice info">Reading…</div>`; $("impPreview").innerHTML="";
-  let XLSX; try{ XLSX=await ensureXLSX(); }catch(err){ $("impMsg").innerHTML=`<div class="notice err">Couldn't load the Excel reader. Connect to the internet and try again.</div>`; return; }
-  try{
-    bankWB=XLSX.read(await file.arrayBuffer(),{type:"array"});
-    if(bankWB.SheetNames.length>1){
-      $("impMsg").innerHTML=`<div class="notice info">This file has ${bankWB.SheetNames.length} sheets. Pick one to import.</div>`;
-      $("impPreview").innerHTML=`
-        <div class="panel" style="margin-top:12px">
-          <div class="field"><label>Select sheet</label>
-            <select id="sheetSelect" class="period-sel">${bankWB.SheetNames.map((n,i)=>`<option value="${i}"${i===0?" selected":""}>${esc(n)}</option>`).join("")}</select></div>
-        </div>
-        <button class="btn block" id="sheetContinue">Use this sheet</button>`;
-      $("sheetContinue").addEventListener("click", ()=>{
-        const idx=parseInt($("sheetSelect").value,10);
-        loadBankSheet(bankWB.Sheets[bankWB.SheetNames[idx]]);
-      });
-    } else {
-      loadBankSheet(bankWB.Sheets[bankWB.SheetNames[0]]);
-    }
-  }catch(err){ console.error(err); $("impMsg").innerHTML=`<div class="notice err">Couldn't read that file.</div>`; }
-}
-
-function loadBankSheet(ws){
-  const rows=window.XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
-  if(rows.length<2){ $("impMsg").innerHTML=`<div class="notice err">That sheet looks empty.</div>`; return; }
-  const h=rows[0]||[];
-  const guessJob=_findCol(h,/job\s*card/i);
-  const guessName=_findCol(h,/name|holder/i);
-  const guessAmt=_findCol(h,/amount|paid|payable|pay/i);
-  const sample = rows.find((r,i)=> i>0 && r && r.some(v=>v!=null)) || rows[1];
-  bankRaw={ rows };
-  $("impMsg").innerHTML=`<div class="notice info">Confirm which column is which, then Continue.</div>`;
-  $("impPreview").innerHTML=`
-    <div class="panel" style="margin-top:12px">
-      <div class="field"><label>Job card number column *</label><select id="mapJob" class="period-sel">${colOptions(h,sample,guessJob)}</select></div>
-      <div class="field"><label>Name column</label><select id="mapName" class="period-sel">${colOptions(h,sample,guessName)}</select></div>
-      <div class="field"><label>Amount column *</label><select id="mapAmt" class="period-sel">${colOptions(h,sample,guessAmt)}</select></div>
-    </div>
-    <button class="btn block" id="mapContinue">Continue</button>
-    <div id="mapMsg" style="margin-top:10px"></div>`;
-  $("mapContinue").addEventListener("click", buildBankItems);
-}
-
-function buildBankItems(){
-  if(!bankRaw) return;
-  const cFull=parseInt($("mapJob").value,10);
-  const cName=parseInt($("mapName").value,10);
-  const cAmt=parseInt($("mapAmt").value,10);
-  if(!(cFull>=0) || !(cAmt>=0)){ $("mapMsg").innerHTML=`<div class="notice err">Choose at least the Job card column and the Amount column.</div>`; return; }
-  const rows=bankRaw.rows;
-  const items=[]; const notFound=[]; const ambiguous=[];
-  let totAmt=0;
-  for(let r=1;r<rows.length;r++){ const row=rows[r]; if(!row) continue;
-    const val=String(row[cFull]||"").trim(); if(!val) continue;
-    const amt=_num(row[cAmt]); if(amt<=0) continue;
-    const nm=String(row[cName>=0?cName:1]||"").trim();
-    const cand=resolveCitizen(val);
-    if(cand.length===1){ items.push({ id:cand[0].id, amount:amt }); totAmt+=amt; }
-    else if(cand.length>1){ ambiguous.push(val+(nm?" ("+nm+")":"")); }
-    else { notFound.push(val+(nm?" ("+nm+")":"")); }
-  }
-  if(!items.length && !notFound.length && !ambiguous.length){ $("mapMsg").innerHTML=`<div class="notice err">No rows with an amount found.</div>`; return; }
-  pendingBank={items};
-  const issues = [...ambiguous.map(x=>"⚠︎ "+x+" — number matches more than one person"),
-                  ...notFound.map(x=>"• "+x+" — not found")];
-  $("impMsg").innerHTML=`<div class="notice info">Review and confirm the bank payments.</div>`;
-  $("impPreview").innerHTML=`
-    <div class="panel" style="margin-top:12px">
-      <div class="brow"><span>Payments to record</span><b>${items.length}</b></div>
-      <div class="brow"><span>Not matched (skipped)</span><b>${notFound.length}</b></div>
-      <div class="brow"><span>Ambiguous (skipped)</span><b>${ambiguous.length}</b></div>
-      <div class="brow total"><span>Total being paid</span><b class="money">${fmt(totAmt)}</b></div>
-    </div>
-    ${issues.length?`<div class="panel" style="max-height:160px;overflow:auto"><h4>Skipped rows</h4>
-      <div style="font-size:12.5px;color:var(--muted);line-height:1.7">${issues.map(esc).join("<br>")}</div></div>`:``}
-    <button class="btn block" id="impConfirm" ${items.length?"":"disabled"}>Record ${items.length} bank payments</button>
-    <div id="impProgress" style="margin-top:10px"></div>`;
-  if($("impConfirm")) $("impConfirm").addEventListener("click", runBank);
-}
-
-async function runBank(){
-  if(!pendingBank) return;
-  const dateStr=$("impDate").value || todayISO();
-  const when=new Date(dateStr+"T12:00:00");
-  const items=pendingBank.items.map(it=>({...it, note:"Bank", date:dateStr, when}));
-  const btn=$("impConfirm"); btn.disabled=true; const prog=$("impProgress");
-  prog.innerHTML=`<div class="notice info">Recording… 0 / ${items.length}</div>`;
-  try{
-    await store.bulkAppendPayments(items,(d,t)=>{ prog.innerHTML=`<div class="notice info">Recording… ${d} / ${t}</div>`; });
-    prog.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${items.length} bank payments recorded. Recalculating balances…</div>`;
-    pendingBank=null;
-    if(excludedPeriods.length || deferredPeriods.length){
-      store.recalcAll().then(()=>toast("Balances recalculated")).catch(e=>console.error("recalcAll after bank upload failed:", e));
-    }
-    setTimeout(()=>{ closeSheet(); toast("Bank payments recorded"); },SHEET_CLOSE_DELAY_MS);
-  }catch(err){ console.error(err); prog.innerHTML=`<div class="notice err">Recording failed partway. Check connection and try again.</div>`; btn.disabled=false; }
 }
 
 /* ============================================================
@@ -2826,32 +2543,6 @@ function confirmAction(message, danger=false){
     ov.querySelector('[data-a="no"]').addEventListener("click", ()=>done(false));
     ov.querySelector('[data-a="yes"]').addEventListener("click", ()=>done(true));
   });
-}
-
-function openAddCitizen(){
-  openSheet("Add citizen", `
-    <div class="field"><label>Job card number (unique)</label><input id="ncId" placeholder="e.g. MZ-07-001-005-001/3">
-      <small style="display:block;color:var(--muted);font-size:11.5px;margin-top:5px">Type the full number exactly as printed (not zero-padded). Citizens look up by the part after the slash (e.g. 3).</small></div>
-    <div class="field"><label>Name</label><input id="ncName" placeholder="Owner / household name"></div>
-    <div class="field"><label>Phone</label><input id="ncPhone" inputmode="tel" placeholder="optional"></div>
-    <div id="ncErr"></div>
-    <button class="btn block" id="ncSave" style="margin-top:6px">Save citizen</button>
-  `);
-  $("ncSave").addEventListener("click", saveNewCitizen);
-}
-async function saveNewCitizen(){
-  const jobCard=$("ncId").value.trim(), name=$("ncName").value.trim();
-  const phone=$("ncPhone").value.trim();
-  if(!jobCard || !name){ $("ncErr").innerHTML=`<div class="notice err">Job card number and name are required.</div>`; return; }
-  $("ncSave").disabled=true;
-  const id=fullKey(jobCard);
-  try{
-    if(await store.exists(id)){
-      $("ncErr").innerHTML=`<div class="notice err">Job card ${esc(jobCard)} already exists.</div>`; $("ncSave").disabled=false; return;
-    }
-    await store.addCitizen(id, { jobCard, cardNo:suffixOf(jobCard), name, phone, totalCharged:0, totalPaid:0, balance:0, deferredTotal:0 });
-    closeSheet(); toast("Citizen added");
-  }catch(err){ $("ncErr").innerHTML=`<div class="notice err">Couldn't save. Try again.</div>`; console.error(err); $("ncSave").disabled=false; }
 }
 
 /* ============================================================
@@ -3066,7 +2757,7 @@ function attachHistoryListeners(id, editing){
       // checkbox, so this click path stays entirely local.
       const entries = ledgerCache.get(id);
       if(!Array.isArray(entries)){
-        handleOperationError("toggleDefer", new Error("Person ledger cache missing"));
+        handleOperationError("deferCharge", new Error("Person ledger cache missing"));
         chk.checked=!nowChecked;
         toast("Please reopen this person and try again.");
         return;
@@ -3096,7 +2787,7 @@ function attachHistoryListeners(id, editing){
         .catch(e=>{
           deferredPeriodOverrides=previousOverrides; periodStatsCache=null; invalidateStatsMemo();
           chk.checked=!nowChecked;
-          handleOperationError("toggleDefer", e);
+          handleOperationError("deferCharge", e);
           renderCitizenDetail(id);
           toast("Failed to update deferral. Please try again.");
         });
