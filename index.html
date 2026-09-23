@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.32.8</footer>
+<footer>New Serchhip North Village Council · v1.32.9</footer>
 
 <script>
 (function(){
@@ -2527,6 +2527,10 @@ if('serviceWorker' in navigator){
     window.location.reload();
   });
 }
+// Reached only if every top-level statement above ran without throwing. The
+// module-eval CI check asserts on this (a positive signal) rather than trying to
+// classify error messages.
+window.__nsnvcBootComplete = true;
 </script>
 </body>
 </html>

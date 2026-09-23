@@ -55,21 +55,25 @@ globalThis.location = { reload: noop };
 // only care that the module's own top-level code evaluated first.
 globalThis.fetch = () => Promise.reject(new Error("no network in evaluation"));
 
-// Ignore the module's own Firestore/network work: block until first await.
+// Evaluate the module. The module sets window.__nsnvcBootComplete as its LAST
+// top-level statement, so we assert on that positive signal instead of trying to
+// classify whatever error a browser-only call happens to throw in Node.
 try {
   await import(pathToFileURL(join(dir, "module.mjs")).href);
-  console.log("module evaluated to completion");
 } catch (e) {
-  const msg = String((e && e.message) || e);
-  // Only network/browser-only failures are acceptable; a ReferenceError,
-  // TypeError or SyntaxError in the module's own code is a real problem.
-  const acceptable = /ERR_UNSUPPORTED_ESM_URL_SCHEME|Only URLs with a scheme|no network/i.test(msg);
-  if (acceptable) {
-    console.log("module evaluated past its top-level code (stopped at a browser-only call, as expected)");
-  } else {
+  // A throw is fine ONLY if the module still reached its final statement
+  // (i.e. everything above ran). Anything else is a real top-level error.
+  if (!globalThis.__nsnvcBootComplete) {
     console.error("::error::index.html module threw during evaluation:");
-    console.error(`  ${e && e.name}: ${msg}`);
+    console.error(`  ${e && e.name}: ${(e && e.message) || e}`);
     if (e && e.stack) console.error(e.stack.split("\n").slice(0, 6).join("\n"));
     process.exit(1);
   }
 }
+
+if (!globalThis.__nsnvcBootComplete) {
+  console.error("::error::index.html module did not reach its final statement");
+  console.error("  (window.__nsnvcBootComplete was never set — top-level code did not complete)");
+  process.exit(1);
+}
+console.log("module evaluated to completion (reached its final statement)");
