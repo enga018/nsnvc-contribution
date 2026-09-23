@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.30.4</footer>
+<footer>New Serchhip North Village Council · v1.30.5</footer>
 
 <script>
 (function(){
@@ -1767,6 +1767,7 @@ function renderStats(){
 }
 let adminFilter="pending", adminShown=20;
 const ADMIN_STEP=20;
+let adminFilteredList=[]; // the currently filtered citizen list, for "show more"
 let periodFilter="", unpaidCache=new Map(), periodsReady=false, loadingPeriods=false;
 
 function periodKey(note){
@@ -1874,11 +1875,35 @@ function buildCitizenCardHTML(citizen, filter){
   </div>`;
 }
 
+function bindCitizenRows(scope){
+  // Bind only rows that are not already bound, so "Show more" can append
+  // without re-binding (and without re-rendering) the whole list.
+  (scope||document).querySelectorAll(".citizen-row:not([data-bound])").forEach(b=>{
+    b.dataset.bound="1";
+    b.addEventListener("click",()=>openCitizen(b.dataset.id));
+  });
+}
+function moreButtonLabel(shown,total){
+  const remaining=total-shown;
+  return `Show ${Math.min(ADMIN_STEP,remaining)} more (${remaining} left)`;
+}
+function showMoreCitizens(){
+  const list=adminFilteredList, total=list.length;
+  if(adminShown>=total){ const mb=$("adminMore"); if(mb) mb.remove(); return; }
+  const next=Math.min(adminShown+ADMIN_STEP,total);
+  const html=list.slice(adminShown,next).map(c=>buildCitizenCardHTML(c,adminFilter)).join("");
+  const moreBtn=$("adminMore");
+  if(moreBtn) moreBtn.insertAdjacentHTML("beforebegin",html);
+  else $("adminList").insertAdjacentHTML("beforeend",html);
+  adminShown=next;
+  bindCitizenRows($("adminList"));
+  const mb=$("adminMore");
+  if(mb){ if(adminShown>=total) mb.remove(); else mb.textContent=moreButtonLabel(adminShown,total); }
+}
 function attachCitizenListListeners(){
-  document.querySelectorAll("#adminList .citizen-row").forEach(b=>
-    b.addEventListener("click",()=>openCitizen(b.dataset.id)));
+  bindCitizenRows($("adminList"));
   const moreBtn = $("adminMore");
-  if(moreBtn) moreBtn.addEventListener("click", ()=>{ adminShown+=ADMIN_STEP; renderList(); });
+  if(moreBtn) moreBtn.addEventListener("click", showMoreCitizens);
 }
 
 function renderFilterTabs(){
@@ -1906,14 +1931,16 @@ function renderList(){
   const list = filterCitizenList(allCitizens, term, adminFilter, periodFilter);
   const total = list.length;
   if(!total){
+    adminFilteredList=[];
     $("adminList").innerHTML=`<div class="empty">${allCitizens.length?"No matches.":"No citizens yet."}</div>`;
     return;
   }
 
   const shown = Math.min(adminShown, total);
+  adminFilteredList = list;
   const cards = list.slice(0, shown).map(c => buildCitizenCardHTML(c, adminFilter)).join("");
   $("adminList").innerHTML = cards +
-    (shown<total ? `<button class="btn block ghost small" id="adminMore" style="margin-top:12px">Show next ${Math.min(ADMIN_STEP, total-shown)}</button>` : ``);
+    (shown<total ? `<button class="btn block ghost small" id="adminMore" style="margin-top:12px">${moreButtonLabel(shown,total)}</button>` : ``);
 
   attachCitizenListListeners();
 }
