@@ -821,8 +821,9 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     async recordImportedPeriod(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { periods:fs.arrayUnion(p) }, {merge:true}); markSyncing(); },
     async recalcAll(onProgress){
       // Always rebuild from the complete Firestore ledgers. Do not trust cached
-      // citizen totals or a partially populated host.ledgerCache.
-      const ledgers = await this.getAllLedgers();
+      // citizen totals or a partially populated host.ledgerCache. A repair must
+      // read fresh data, so force a scan even if a snapshot is cached.
+      const ledgers = await this.getAllLedgers({force:true});
       const citizenIds = Object.keys(ledgers);
       let batch=fs.writeBatch(db), ops=0, done=0;
 
@@ -860,14 +861,36 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       if(onProgress) onProgress(citizenIds.length,citizenIds.length);
       return citizenIds.length;
     },
-    async getAllLedgers(){
+    async getAllLedgers(opts){
+      // Reuse a recent full scan. Each scan costs one read per ledger document
+      // (~=every entry in the village), which is what exhausts the free
+      // Firestore plan's daily quota when exports/backups/period actions each
+      // trigger their own scan.
+      const force = !!(opts && opts.force);
+      const ttlMs = host.fullLedgerTtlMs || 15 * 60 * 1000;
+      const age = Date.now() - (host.fullLedgerSnapshotAt || 0);
+      if(!force && host.fullLedgerSnapshotCount > 0 && age < ttlMs){
+        console.log(`Using cached full ledger snapshot (${Math.round(age/1000)}s old, ${host.fullLedgerSnapshotCount} ledgers) — no Firestore reads.`);
+        const out={};
+        for(const [id,entries] of host.ledgerCache) out[id]=entries;
+        return out;
+      }
+
       // Prefer the fast collectionGroup read. If that query is rejected by
       // Firestore rules/indexing, fall back to the same per-citizen ledger
       // read used by the account detail page. Never silently return empty
       // ledgers, because that makes every household look cleared on Pending.
-      const cSnap = await fs.getDocs(fs.collection(db,"citizens"));
+      //
+      // Seed ids from the already-subscribed citizen list (no extra read) and
+      // only fall back to reading the citizens collection if we have none.
       const out={};
-      for(const d of cSnap.docs) out[d.id]=[];
+      const known = host.rawCitizens;
+      if(Array.isArray(known) && known.length){
+        for(const c of known) out[c.id]=[];
+      }else{
+        const cSnap = await fs.getDocs(fs.collection(db,"citizens"));
+        for(const d of cSnap.docs) out[d.id]=[];
+      }
 
       try{
         const ledgerSnap = await fs.getDocs(fs.collectionGroup(db,"ledger"));
@@ -902,6 +925,9 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       }
       host.periodStatsCache=null;
       host.invalidateStatsMemo();
+      // Record the snapshot so later callers skip the scan.
+      host.fullLedgerSnapshotAt = Date.now();
+      host.fullLedgerSnapshotCount = Object.keys(out).length;
       // Keep the complete ledger snapshot persistent so the next dashboard
       // load can render period-aware balances before Firestore responds.
       host.writeDashboardCache(Object.values(out).map(()=>null), out);

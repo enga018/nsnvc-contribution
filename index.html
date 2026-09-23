@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.33.4</footer>
+<footer>New Serchhip North Village Council · v1.33.5</footer>
 
 <script>
 (function(){
@@ -206,6 +206,14 @@ const DASHBOARD_CACHE_VERSION = 1;
 const DASHBOARD_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 let dashboardCacheReady = null;
 const ledgerCacheSyncAt = new Map();
+// When the last FULL-village ledger scan ran, and how many ledgers it returned.
+// getAllLedgers() reuses the in-memory cache within FULL_LEDGER_TTL_MS instead of
+// re-scanning: each scan costs one read per ledger document, which is what
+// exhausts the free Firestore plan's daily quota. Invalidated on any write.
+const FULL_LEDGER_TTL_MS = 15 * 60 * 1000;
+let fullLedgerSnapshotAt = 0;
+let fullLedgerSnapshotCount = 0;
+function invalidateFullLedgerSnapshot(){ fullLedgerSnapshotAt = 0; fullLedgerSnapshotCount = 0; }
 function firestoreTimeMs(value){
   if(!value) return 0;
   if(typeof value==="number") return value;
@@ -514,6 +522,14 @@ const storeHost = {
   get deferredPeriodUpdatedAt(){ return deferredPeriodUpdatedAt; },
   get deferredPeriodOverrides(){ return deferredPeriodOverrides; },
   get rawCitizens(){ return rawCitizens; },
+  // Timestamp of the last FULL ledger scan (collectionGroup read). Used to avoid
+  // re-scanning the whole village for every export/backup/period action — the
+  // free Firestore plan's daily read quota is easily exhausted otherwise.
+  get fullLedgerSnapshotAt(){ return fullLedgerSnapshotAt; },
+  set fullLedgerSnapshotAt(v){ fullLedgerSnapshotAt = v; },
+  get fullLedgerSnapshotCount(){ return fullLedgerSnapshotCount; },
+  set fullLedgerSnapshotCount(v){ fullLedgerSnapshotCount = v; },
+  get fullLedgerTtlMs(){ return FULL_LEDGER_TTL_MS; },
   writeDashboardCache,
   invalidateLedgerCache,
   invalidateStatsMemo,
@@ -897,6 +913,8 @@ function invalidateLedgerCache(id){
   if(id) ledgerCache.delete(id); else ledgerCache.clear();
   periodStatsCache = null;
   invalidateStatsMemo();
+  // Any ledger change means a full snapshot is no longer trustworthy.
+  invalidateFullLedgerSnapshot();
 }
 function recalcFromLedger(entries, citizenId){
   return recalcFromLedgerEngine(entries, citizenId);
