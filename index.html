@@ -860,11 +860,71 @@ function makeLocalStore(){
     async recordImportedPeriod(p){ if(!data.meta) data.meta={periods:[]}; if(!data.meta.periods) data.meta.periods=[];
       if(!data.meta.periods.includes(p)) data.meta.periods.push(p); persist(); },
     async recalcAll(onProgress){
-      const ids=Object.keys(data.citizens); let done=0;
-      for(const id of ids){ recalcTotals(data.citizens[id]); if((++done%50)===0&&onProgress) onProgress(done, ids.length); }
-      persist(); notify(); invalidateLedgerCache(); if(onProgress) onProgress(ids.length, ids.length); return ids.length;
+      // Refresh only ledgers whose citizen updatedAt is newer than the cached
+      // ledger. If every cached ledger is current, Recalculate performs zero
+      // ledger reads and works entirely from the local cache.
+      const citizens=Array.isArray(rawCitizens)?rawCitizens:[];
+      if(citizens.length && typeof this.refreshChangedLedgers==="function"){
+        await this.refreshChangedLedgers(citizens);
+      }
+
+      let ledgers={};
+      const canUseCache=citizens.length>0 && citizens.every(c=>{
+        const entries=ledgerCache.get(c.id);
+        const cachedAt=ledgerCacheSyncAt.get(c.id)||0;
+        const serverAt=firestoreTimeMs(c.updatedAt);
+        return Array.isArray(entries) && cachedAt>=serverAt;
+      });
+
+      if(canUseCache){
+        for(const c of citizens) ledgers[c.id]=ledgerCache.get(c.id);
+      }else{
+        ledgers=await this.getAllLedgers();
+      }
+
+      const citizenIds=Object.keys(ledgers);
+      const currentById=new Map(citizens.map(c=>[c.id,c]));
+      let batch=fs.writeBatch(db),ops=0,done=0,writeCount=0;
+
+      const flush=async()=>{
+        if(ops===0)return;
+        await batch.commit();
+        batch=fs.writeBatch(db);
+        ops=0;
+      };
+
+      for(const id of citizenIds){
+        const next=recalcFromLedger(ledgers[id]||[],id);
+        const current=currentById.get(id);
+        const changed=!current ||
+          Number(current.totalCharged||0)!==Number(next.totalCharged||0) ||
+          Number(current.totalPaid||0)!==Number(next.totalPaid||0) ||
+          Number(current.balance||0)!==Number(next.balance||0) ||
+          Number(current.deferredTotal||0)!==Number(next.deferredTotal||0);
+
+        if(changed){
+          // These are derived summary fields. Do not change updatedAt here:
+          // updatedAt is the ledger-change marker used by cache synchronization.
+          batch.set(fs.doc(db,"citizens",id),{
+            totalCharged:next.totalCharged,
+            totalPaid:next.totalPaid,
+            balance:next.balance,
+            deferredTotal:next.deferredTotal
+          },{merge:true});
+          ops++;
+          writeCount++;
+          if(ops>=300)await flush();
+        }
+
+        if((++done%25)===0&&onProgress)onProgress(done,citizenIds.length);
+      }
+
+      await flush();
+      periodStatsCache=null;
+      if(onProgress)onProgress(citizenIds.length,citizenIds.length);
+      console.log("Recalculate complete:",{citizens:citizenIds.length,writes:writeCount,usedCache:canUseCache});
+      return citizenIds.length;
     },
-    async migrateEntries(){ return 0; }, // no-op for local
     async getAllLedgers(){
       const out={};
       for(const [id,c] of Object.entries(data.citizens)){ out[id]=[...(c.ledger||[])]; }
