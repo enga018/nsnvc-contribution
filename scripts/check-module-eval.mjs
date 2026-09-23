@@ -41,19 +41,25 @@ const el = () => ({
   querySelectorAll: () => [], setAttribute: noop, focus: noop,
   innerHTML: "", textContent: "", value: ""
 });
-globalThis.window = globalThis;
-globalThis.document = {
+// Node 20+ defines some of these as read-only getters (e.g. `navigator` became
+// read-only in Node 22), so use defineProperty rather than assignment.
+function define(name, value) {
+  try { Object.defineProperty(globalThis, name, { value, configurable: true, writable: true }); }
+  catch { /* already non-configurable; the check will report a real failure */ }
+}
+define("window", globalThis);
+define("document", {
   getElementById: () => el(), querySelector: () => el(),
   querySelectorAll: () => [], createElement: () => el(),
   body: el(), head: el(), addEventListener: noop
-};
-globalThis.navigator = { onLine: true };
-globalThis.localStorage = { getItem: () => null, setItem: noop, removeItem: noop };
-globalThis.addEventListener = noop;
-globalThis.location = { reload: noop };
+});
+define("navigator", { onLine: true });
+define("localStorage", { getItem: () => null, setItem: noop, removeItem: noop });
+define("addEventListener", noop);
+define("location", { reload: noop });
 // Any dynamic import of the Firebase CDN will fail in Node; that's fine — we
 // only care that the module's own top-level code evaluated first.
-globalThis.fetch = () => Promise.reject(new Error("no network in evaluation"));
+define("fetch", () => Promise.reject(new Error("no network in evaluation")));
 
 // Evaluate the module. The module sets window.__nsnvcBootComplete as its LAST
 // top-level statement, so we assert on that positive signal instead of trying to
