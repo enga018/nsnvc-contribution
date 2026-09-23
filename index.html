@@ -922,7 +922,6 @@ function makeFirebaseStore({ auth, db, fs, au }){
       const amt = Number(amount);
       if(!Number.isFinite(amt) || amt <= 0) throw new Error("Amount must be a positive number");
       const eRef=fs.doc(fs.collection(db,"citizens",id,"ledger"));
-      await fs.setDoc(eRef, { entryId:eRef.id, type, amount:amt, note:String(note||""), date:String(date||""), deferred, createdAt:fs.serverTimestamp() });
       const entry={ entryId:eRef.id, type, amount:amt, note, date, deferred, createdAt:Date.now() };
       // Never rebuild the cache from only the newly-created entry. If the
       // ledger was not already cached, load the complete history first.
@@ -938,10 +937,26 @@ function makeFirebaseStore({ auth, db, fs, au }){
       entries.sort((a,b)=>(a.createdAt?.seconds ? a.createdAt.seconds*1000 : Number(a.createdAt)||0) -
                           (b.createdAt?.seconds ? b.createdAt.seconds*1000 : Number(b.createdAt)||0));
       ledgerCache.set(id,entries); periodStatsCache=null;
-      // Recalculate from the complete ledger so payment/waiver ordering and
-      // defer/restore state use the same authoritative calculation immediately.
+
+      // The ledger write and the cached citizen totals are independent writes.
+      // Run them in parallel so a person-view payment does not wait for two
+      // sequential Firestore round trips before the UI can refresh.
       const totals=recalcFromLedger(entries, id);
-      await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
+      await Promise.all([
+        fs.setDoc(eRef, {
+          entryId:eRef.id,
+          type,
+          amount:amt,
+          note:String(note||""),
+          date:String(date||""),
+          deferred,
+          createdAt:fs.serverTimestamp()
+        }),
+        fs.updateDoc(fs.doc(db,"citizens",id),{
+          ...totals,
+          updatedAt:fs.serverTimestamp()
+        })
+      ]);
     },
     async toggleDefer(id, entryId, deferred){
       const ref = fs.doc(db, "citizens", id, "ledger", entryId);
