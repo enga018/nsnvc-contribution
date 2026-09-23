@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.33.1</footer>
+<footer>New Serchhip North Village Council · v1.33.2</footer>
 
 <script>
 (function(){
@@ -571,7 +571,18 @@ let consecutiveErrors = 0;
 let connectionWarningShown = false;
 function handleOperationError(operation, error){
   consecutiveErrors++;
-  if(consecutiveErrors > 2 && !connectionWarningShown){
+  const kind = classifyFirebaseError(error);
+  if(kind === "quota"){
+    // A usage limit is not a connection problem, and it affects every device.
+    // Say so once, clearly, instead of the generic connection banner.
+    if(!document.querySelector(".config-warn.quota")){
+      showModeBanner("⚠️ The online database has hit its usage limit. Changes can't be saved right now. This is a Firebase plan limit, not your connection — it usually resets at midnight Pacific Time.", "quota");
+    }
+  } else if(kind === "permission"){
+    if(!document.querySelector(".config-warn.permission")){
+      showModeBanner("⚠️ You don't have permission to save this change. Check you're signed in with the correct council account.", "permission");
+    }
+  } else if(consecutiveErrors > 2 && !connectionWarningShown){
     connectionWarningShown = true;
     showModeBanner("⚠️ Connection issues detected. Some changes may not be saved. Check your internet connection.");
   }
@@ -586,8 +597,40 @@ function clearOperationErrors(){
   }
 }
 
-function showModeBanner(msg){
-  document.querySelector("main").insertAdjacentHTML("afterbegin", `<div class="config-warn">${msg}</div>`);
+function showModeBanner(msg, kind){
+  const cls = kind ? `config-warn ${kind}` : "config-warn";
+  document.querySelector("main").insertAdjacentHTML("afterbegin", `<div class="${cls}">${msg}</div>`);
+}
+
+/* ---------- Error classification ---------- */
+// Firestore quota/billing problems are NOT connectivity problems, and telling a
+// user "check your internet" sends them down the wrong path. Classify so the UI
+// can say what is actually wrong.
+function classifyFirebaseError(err){
+  // A code/message can live on the error or on its `cause` (Firestore wraps
+  // server errors that way). Collect ALL candidates — using `||` would let an
+  // outer placeholder like code:"unknown" hide the real cause code.
+  const codes = [
+    err && err.code,
+    err && err.cause && err.cause.code,
+  ].filter(Boolean).map(String).map(s => s.toLowerCase());
+  const text = [
+    err && (err.message || err),
+    err && err.cause && err.cause.message,
+  ].filter(Boolean).map(String).join(" ").toLowerCase();
+
+  const isQuota = codes.some(c => c === "resource-exhausted" || c === "429") ||
+    text.includes("quota") || text.includes("resource_exhausted") || text.includes("resource-exhausted");
+  const isDenied = codes.some(c => c === "permission-denied") ||
+    text.includes("missing or insufficient permissions");
+  const isOffline = codes.some(c => c === "unavailable") ||
+    text.includes("offline") || text.includes("network") ||
+    text.includes("failed to fetch") || text.includes("timeout");
+
+  if(isQuota) return "quota";
+  if(isDenied) return "permission";
+  if(isOffline) return "offline";
+  return "unknown";
 }
 
 /* ---------- Firebase init with retry + blocking offline screen ---------- */
@@ -609,6 +652,9 @@ async function initFirebaseStoreWithRetry(){
     }catch(err){
       lastErr = err;
       console.error(`Firebase initialization attempt ${i} failed:`, err);
+      // Retrying a quota/billing error is pointless — it stays broken until the
+      // quota resets — so fail fast with an accurate message.
+      if(classifyFirebaseError(err) !== "offline") break;
       if(i < attempts){
         await new Promise(r=>setTimeout(r, 1500*i));
       }
@@ -620,28 +666,70 @@ async function initFirebaseStoreWithRetry(){
 
 // Blocking screen shown when the real data can't be loaded. The point is to make
 // it impossible to mistake this for the real app and record data into a void.
+// The message depends on WHY it failed — quota/billing is not a connection issue.
 function showOfflineBlock(err){
   try{
     const main=document.querySelector("main");
     if(!main) return;
     document.getElementById("loginCard")?.classList.add("hidden");
     document.getElementById("dashboard")?.classList.add("hidden");
-    if(document.getElementById("offlineBlock")) return;
-    const detail = err && (err.message || String(err)) ? String(err.message || err) : "unknown error";
-    main.insertAdjacentHTML("afterbegin",
-      `<div class="offline-block" id="offlineBlock">
-        <h2>Can't reach the server</h2>
-        <p>Your council records are stored online, and this device can't reach
-        them right now. <strong>Nothing you enter here would be saved</strong>,
-        so data entry is disabled to protect your records.</p>
+    const existing=document.getElementById("offlineBlock");
+    const kind=classifyFirebaseError(err);
+
+    const view={
+      quota:{
+        title:"Data limit reached",
+        lead:"The council's online database has hit its usage limit, so it is temporarily refusing all reads and writes.",
+        steps:[
+          "This is a Firebase plan/quota limit, not a problem with your phone.",
+          "It usually resets automatically at midnight Pacific Time (about midday IST).",
+          "To remove the limit permanently, the Firebase project owner can upgrade the project's billing plan.",
+        ],
+        retry:true,
+      },
+      permission:{
+        title:"Access denied",
+        lead:"Your account isn't allowed to read the council data. This is a security-rules or permissions issue.",
+        steps:[
+          "Check that you are signed in with the correct council account.",
+          "If this is unexpected, the project owner should review the Firestore security rules.",
+        ],
+        retry:false,
+      },
+      offline:{
+        title:"Can't reach the server",
+        lead:"Your council records are stored online, and this device can't reach them right now.",
+        steps:[
+          "Check your internet connection (try opening another website).",
+          "If you use an ad-blocker or privacy extension, turn it off for this site.",
+          "Then tap Try again.",
+        ],
+        retry:true,
+      },
+      unknown:{
+        title:"Can't start",
+        lead:"The app couldn't connect to the council's online records.",
+        steps:[
+          "Check your internet connection and try again.",
+          "If it keeps failing, contact whoever set up this app.",
+        ],
+        retry:true,
+      },
+    }[kind];
+
+    const detail = err && (err.message || String(err)) ? String(err.message || err) : "";
+    const html = `<div class="offline-block" id="offlineBlock">
+        <h2>${esc(view.title)}</h2>
+        <p>${view.lead} <strong>Nothing you enter here would be saved</strong>, so data entry is disabled to protect your records.</p>
         <ol style="text-align:left;font-size:13.5px;color:var(--muted);line-height:1.6;padding-left:20px;margin:0 0 14px">
-          <li>Check your internet connection (try opening another website).</li>
-          <li>If you use an ad-blocker or privacy extension, turn it off for this site.</li>
-          <li>Then tap Try again.</li>
+          ${view.steps.map(s=>`<li>${esc(s)}</li>`).join("")}
         </ol>
-        <button class="btn block" id="offlineRetry">Try again</button>
-        <p style="font-size:11.5px;color:var(--muted);margin-top:12px;text-align:left;word-break:break-word">Details: ${esc(detail)}</p>
-      </div>`);
+        ${view.retry?`<button class="btn block" id="offlineRetry">Try again</button>`:``}
+        ${detail?`<p style="font-size:11.5px;color:var(--muted);margin-top:12px;text-align:left;word-break:break-word">Details: ${esc(detail)}</p>`:``}
+      </div>`;
+
+    if(existing){ existing.outerHTML = html; }
+    else { main.insertAdjacentHTML("afterbegin", html); }
     document.getElementById("offlineRetry")?.addEventListener("click", ()=>location.reload());
   }catch(e){ console.error("Failed to show offline block:", e); }
 }

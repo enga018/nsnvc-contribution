@@ -45,10 +45,10 @@ jobs:
       # Evaluates index.html's module to catch top-level runtime errors
       # (e.g. a global that doesn't exist) that node --check cannot see.
       - run: node scripts/check-module-eval.mjs
-      # Unit tests for the pure ledger engine (balance + deferral rules).
-      # testMatch in playwright.config.js excludes .test.js, so this only
-      # picks up the node:test files.
-      - run: node --test tests/ledger.test.js
+      # Unit tests: pure ledger engine (balance + deferral rules) and the
+      # Firebase error classifier. Explicit files because tests/ also contains
+      # smoke.spec.js, which is Playwright's, not node:test's.
+      - run: node --test tests/ledger.test.js tests/errors.test.js
 
   # Browser smoke test: actually executes the app (local mode + real Firebase
   # startup), so it catches runtime wiring errors the other checks cannot.
