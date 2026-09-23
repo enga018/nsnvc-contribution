@@ -143,6 +143,111 @@ const BACKUP_MAX_SIZE_BYTES = 5*1024*1024;
 const BACKUP_MAX_HOUSEHOLDS = 10000;
 const MAX_FILE_SCAN_ROWS = 10000;
 
+/* ---------- persistent dashboard cache ---------- */
+// IndexedDB keeps the last known dashboard data across refreshes/restarts.
+// Firestore remains authoritative; this cache is only used to render quickly
+// while the live Firestore snapshot refreshes it in the background.
+const DASHBOARD_CACHE_DB = "nsnvc-dashboard-cache";
+const DASHBOARD_CACHE_VERSION = 1;
+const DASHBOARD_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+let dashboardCacheReady = null;
+
+function openDashboardCache(){
+  if(dashboardCacheReady) return dashboardCacheReady;
+  dashboardCacheReady = new Promise((resolve,reject)=>{
+    if(!("indexedDB" in window)){ resolve(null); return; }
+    const req=indexedDB.open(DASHBOARD_CACHE_DB,DASHBOARD_CACHE_VERSION);
+    req.onupgradeneeded=()=>{
+      const db=req.result;
+      if(!db.objectStoreNames.contains("citizens")) db.createObjectStore("citizens",{keyPath:"id"});
+      if(!db.objectStoreNames.contains("ledgers")) db.createObjectStore("ledgers",{keyPath:"id"});
+    };
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  }).catch(err=>{
+    console.warn("Persistent dashboard cache unavailable:",err);
+    dashboardCacheReady=null;
+    return null;
+  });
+  return dashboardCacheReady;
+}
+
+async function readDashboardCache(){
+  const db=await openDashboardCache();
+  if(!db) return null;
+  return new Promise(resolve=>{
+    const tx=db.transaction(["citizens","ledgers"],"readonly");
+    const citizensReq=tx.objectStore("citizens").getAll();
+    const ledgersReq=tx.objectStore("ledgers").getAll();
+    tx.oncomplete=()=>{
+      const now=Date.now();
+      const citizens=citizensReq.result.filter(x=>now-(x.cachedAt||0)<=DASHBOARD_CACHE_MAX_AGE_MS);
+      const ledgers=ledgersReq.result.filter(x=>now-(x.cachedAt||0)<=DASHBOARD_CACHE_MAX_AGE_MS);
+      resolve({citizens,ledgers});
+    };
+    tx.onerror=()=>resolve(null);
+  });
+}
+
+function writeDashboardCache(citizens, ledgers){
+  openDashboardCache().then(db=>{
+    if(!db) return;
+    try{
+      const tx=db.transaction(["citizens","ledgers"],"readwrite");
+      const citizenStore=tx.objectStore("citizens");
+      const ledgerStore=tx.objectStore("ledgers");
+      const cachedAt=Date.now();
+      for(const c of (citizens||[])){
+        const copy={...c};
+        delete copy.ledger;
+        citizenStore.put({...copy,cachedAt});
+      }
+      for(const [id,entries] of Object.entries(ledgers||{})){
+        ledgerStore.put({id,entries:entries||[],cachedAt});
+      }
+    }catch(err){
+      console.warn("Failed to write dashboard cache:",err);
+    }
+  }).catch(()=>{});
+}
+
+async function hydrateDashboardCache(){
+  try{
+    const cached=await readDashboardCache();
+    if(!cached) return false;
+
+    if(cached.citizens.length){
+      rawCitizens=cached.citizens.map(({cachedAt,...c})=>c);
+      allCitizens=rawCitizens.slice();
+    }
+
+    if(cached.ledgers.length){
+      for(const item of cached.ledgers) ledgerCache.set(item.id,item.entries||[]);
+      periodStatsCache=null;
+    }
+
+    const needsLedger = Boolean(
+      excludedPeriods.length ||
+      deferredPeriods.length ||
+      Object.keys(deferredPeriodOverrides).length
+    );
+    if(rawCitizens.length && needsLedger && cached.ledgers.length){
+      allCitizens=rawCitizens.map(c=>({...c,ledger:ledgerCache.get(c.id)||[]}));
+    }
+
+    if(allCitizens.length){
+      periodsReady=false;
+      unpaidCache=new Map();
+      renderStats();
+      renderList();
+      return true;
+    }
+  }catch(err){
+    console.warn("Failed to hydrate dashboard cache:",err);
+  }
+  return false;
+}
+
 /* ---------- helpers ---------- */
 const fmt = n => CURRENCY + (Number(n)||0).toLocaleString("en-IN");
 const $ = id => document.getElementById(id);
@@ -1358,6 +1463,9 @@ const validTypes = ["charge", "payment", "forgive", "sanitationFee"];
         ledgerCache.set(id, entries);
       }
       periodStatsCache=null;
+      // Keep the complete ledger snapshot persistent so the next dashboard
+      // load can render period-aware balances before Firestore responds.
+      writeDashboardCache(Object.values(out).map(()=>null), out);
       return out;
     }
   };
@@ -1500,6 +1608,9 @@ async function onAuth(isIn){
       if(normalizedOverrides.migrated){
         await store.setDeferredPeriodOverrides(deferredPeriodOverrides);
       }
+      // Restore the last dashboard snapshot immediately after login. The live
+      // Firestore subscription below will replace it with authoritative data.
+      await hydrateDashboardCache();
       subscribeCitizens();
     } catch(err){ console.error("Failed to load excluded periods:", err); }
     setTimeout(refreshPending, 0);
@@ -1519,6 +1630,10 @@ function subscribeCitizens(){
   if(citizensUnsub) return;
   citizensUnsub = store.subscribe(list=>{
     rawCitizens = list;
+    // Persist the lightweight citizen snapshot as soon as Firestore gives us
+    // authoritative data. This makes the next app start render without waiting
+    // for the network.
+    writeDashboardCache(list, Object.fromEntries(ledgerCache));
     scheduleDashboardRefresh();
   });
 }
