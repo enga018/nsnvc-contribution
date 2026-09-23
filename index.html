@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.30.3</footer>
+<footer>New Serchhip North Village Council · v1.30.4</footer>
 
 <script>
 (function(){
@@ -138,6 +138,8 @@ const CACHE_REFRESH_DELAY_MS = 5000;
 const SHEET_CLOSE_DELAY_MS = 900;
 const LOGOUT_DELAY_MS = 1000;
 const FIRESTORE_BATCH_SIZE = 400;
+const BACKUP_MAX_SIZE_BYTES = 5*1024*1024;
+const BACKUP_MAX_HOUSEHOLDS = 10000;
 
 /* ---------- persistent dashboard cache ---------- */
 // IndexedDB keeps the last known dashboard data across refreshes/restarts.
@@ -733,7 +735,7 @@ function makeLocalStore(){
                 data.citizens[it.id]=c; }
         const isDeferred = it.deferred || false;
         const entryId = String(++clock);
-        c.ledger.push({ entryId, type:"charge", amount:it.amount, note:it.note, date:"", deferred:isDeferred, deferSource:it.deferSource||null, createdAt:clock });
+        c.ledger.push({ entryId, type:"charge", amount:it.amount, note:it.note, date:"", deferred:isDeferred, createdAt:clock });
         recalcTotals(c);
         c.updatedAt=++clock;
         if((++n % 50)===0 && onProgress) onProgress(n, items.length);
@@ -773,6 +775,10 @@ function makeLocalStore(){
       }
       return csv;
     },
+    async exportAll(){
+      const citizens=Object.entries(data.citizens).map(([id,c])=>({id,jobCard:c.jobCard,cardNo:c.cardNo,name:c.name,phone:c.phone||"",totalCharged:c.totalCharged||0,totalPaid:c.totalPaid||0,balance:c.balance||0,deferredTotal:c.deferredTotal||0,pendingPayments:Array.isArray(c.pendingPayments)?c.pendingPayments.map(p=>({...p})):[],ledger:(c.ledger||[]).map(e=>({entryId:e.entryId,type:e.type,amount:e.amount,note:e.note,date:e.date||"",deferred:e.deferred||false,createdAtMs:typeof e.createdAt==="number"?e.createdAt:null}))}));
+      return {app:"nsnvc-contribution",version:2,exportedAt:new Date().toISOString(),count:citizens.length,meta:{deferredPeriods:(data.meta&&data.meta.deferredPeriods)?JSON.parse(JSON.stringify(data.meta.deferredPeriods)):{periods:[],updatedAt:{}},deferredPeriodOverrides:(data.meta&&data.meta.deferredPeriodOverrides)?JSON.parse(JSON.stringify(data.meta.deferredPeriodOverrides)):{},imports:(data.meta&&data.meta.periods)?data.meta.periods.slice():[]},citizens};
+    },
     async deleteAll(onProgress){data.citizens={};data.meta={periods:[],deferredUploads:[]};persist();notify();invalidateLedgerCache();if(onProgress)onProgress(1,1);},
     async renamePeriod(oldPeriod, newPeriod, onProgress){
       let count=0;
@@ -791,8 +797,9 @@ function makeLocalStore(){
       return count;
     },
     async getDeferredPeriods(){
-      const raw=data.meta && data.meta.deferredPeriods;
-      return normalizeDeferredPeriodState(raw);
+      // Return the raw stored shape; onAuth normalizes it and writes the
+      // normalized version back when it detects a legacy shape.
+      return (data.meta && data.meta.deferredPeriods) || {periods:[],updatedAt:{}};
     },
     async setDeferredPeriods(periods){
       if(!data.meta) data.meta={};
@@ -812,7 +819,12 @@ function makeLocalStore(){
       persist();
     },
     async getDeferredPeriodOverrides(){
-      return normalizeDeferredPeriodOverrides(data.meta && data.meta.deferredPeriodOverrides).overrides;
+      // Raw stored shape; onAuth normalizes and writes back if legacy.
+      return (data.meta && data.meta.deferredPeriodOverrides) || {};
+    },
+    async deleteMeta(name){
+      if(data.meta) delete data.meta[name];
+      persist();
     },
     async setDeferredPeriodOverrides(overrides){
       if(!data.meta) data.meta={};
@@ -831,6 +843,12 @@ function makeLocalStore(){
         at:nextDeferTimestamp(previousAt)
       };
       persist();
+    },
+    async importAll(backup,onProgress){
+      if(!backup||!Array.isArray(backup.citizens))throw new Error("Not a valid backup file");const validTypes=["charge","payment","forgive","sanitationFee"];let done=0;data.citizens={};const meta=backup.meta&&typeof backup.meta==="object"?backup.meta:{};
+      data.meta={...(data.meta||{}),deferredPeriods:meta.deferredPeriods&&typeof meta.deferredPeriods==="object"?JSON.parse(JSON.stringify(meta.deferredPeriods)):{periods:[],updatedAt:{}},deferredPeriodOverrides:meta.deferredPeriodOverrides&&typeof meta.deferredPeriodOverrides==="object"?JSON.parse(JSON.stringify(meta.deferredPeriodOverrides)):{},periods:Array.isArray(meta.imports)?meta.imports.slice():[]};
+      for(const r of backup.citizens){const ledger=(r.ledger||[]).filter(e=>e&&validTypes.includes(e.type)&&e.amount).map(e=>{const amt=Number(e.amount);if(!Number.isFinite(amt)||amt<=0)return null;return {entryId:e.entryId||String(++clock),type:e.type,amount:amt,note:e.note||"",date:e.date||"",deferred:e.deferred||false,createdAt:e.createdAtMs||++clock};}).filter(Boolean);data.citizens[r.id]={jobCard:r.jobCard,cardNo:r.cardNo,name:r.name,phone:r.phone||"",totalCharged:r.totalCharged||0,totalPaid:r.totalPaid||0,balance:r.balance||0,deferredTotal:r.deferredTotal||0,createdAt:++clock,updatedAt:++clock,pendingPayments:Array.isArray(r.pendingPayments)?r.pendingPayments.map(p=>({...p})):[],ledger};recalcTotals(data.citizens[r.id]);if((++done%50)===0&&onProgress)onProgress(done,backup.citizens.length);}
+      deferredPeriodUpdatedAt=normalizeDeferredPeriodState(data.meta.deferredPeriods).updatedAt;deferredPeriodOverrides=normalizeDeferredPeriodOverrides(data.meta.deferredPeriodOverrides).overrides;persist();notify();invalidateLedgerCache();if(onProgress)onProgress(backup.citizens.length,backup.citizens.length);return backup.citizens.length;
     },
     async getImportedPeriods(){ return (data.meta && data.meta.periods) ? data.meta.periods.slice() : []; },
     async recordImportedPeriod(p){ if(!data.meta) data.meta={periods:[]}; if(!data.meta.periods) data.meta.periods=[];
@@ -1231,7 +1249,7 @@ function makeFirebaseStore({ auth, db, fs, au }){
         const cRef=fs.doc(db,"citizens",it.id);
         const eRef=fs.doc(fs.collection(db,"citizens",it.id,"ledger"));
         const def = it.deferred||false;
-        batch.set(eRef,{ entryId:eRef.id, type:"charge", amount:it.amount, note:it.note, date:"", deferred:def, deferSource:it.deferSource||null, createdAt:fs.serverTimestamp() });
+        batch.set(eRef,{ entryId:eRef.id, type:"charge", amount:it.amount, note:it.note, date:"", deferred:def, createdAt:fs.serverTimestamp() });
         batch.set(cRef,{ jobCard:it.jobCard, cardNo:it.cardNo, name:it.name,
           totalCharged:fs.increment(it.amount), balance:fs.increment(def?0:it.amount),
           deferredTotal:fs.increment(def?it.amount:0), updatedAt:fs.serverTimestamp() }, {merge:true});
@@ -1273,6 +1291,12 @@ function makeFirebaseStore({ auth, db, fs, au }){
       }
       return csv;
     },
+    async exportAll(onProgress){
+      if(onProgress)onProgress(0,3);const cSnap=await fs.getDocs(fs.collection(db,"citizens"));const byId={};cSnap.docs.forEach(d=>{const c=d.data();byId[d.id]={id:d.id,jobCard:c.jobCard,cardNo:c.cardNo,name:c.name,phone:c.phone||"",totalCharged:c.totalCharged||0,totalPaid:c.totalPaid||0,balance:c.balance||0,deferredTotal:c.deferredTotal||0,pendingPayments:[],ledger:[]};});
+      const [deferredSnap,overrideSnap,importsSnap]=await Promise.all(["deferredPeriods","deferredPeriodOverrides","imports"].map(id=>fs.getDoc(fs.doc(db,"meta",id))));if(onProgress)onProgress(1,3);
+      await Promise.all(cSnap.docs.map(async d=>{const [led,pp]=await Promise.all([fs.getDocs(fs.collection(db,"citizens",d.id,"ledger")),fs.getDocs(fs.collection(db,"citizens",d.id,"pendingPayments"))]);led.docs.forEach(x=>{const e=x.data();byId[d.id].ledger.push({entryId:e.entryId||x.id,type:e.type,amount:e.amount,note:e.note,date:e.date||"",deferred:e.deferred||false,createdAtMs:e.createdAt&&e.createdAt.toMillis?e.createdAt.toMillis():null});});pp.docs.forEach(x=>byId[d.id].pendingPayments.push({id:x.id,...x.data()}));}));
+      const citizens=Object.values(byId);citizens.forEach(c=>c.ledger.sort((a,b)=>(a.createdAtMs||0)-(b.createdAtMs||0)));const meta={deferredPeriods:deferredSnap.exists()?deferredSnap.data():{periods:[],updatedAt:{}},deferredPeriodOverrides:overrideSnap.exists()?(overrideSnap.data().overrides||{}):{},imports:importsSnap.exists()?(importsSnap.data().periods||[]):[]};if(onProgress)onProgress(3,3);return {app:"nsnvc-contribution",version:2,exportedAt:new Date().toISOString(),count:citizens.length,meta,citizens};
+    },
     async deleteAll(onProgress){
       if(onProgress)onProgress(0,2);const cSnap=await fs.getDocs(fs.collection(db,"citizens"));let batch=fs.writeBatch(db),ops=0;const flush=async()=>{if(ops>0){await batch.commit();batch=fs.writeBatch(db);ops=0;}};
       for(const d of cSnap.docs){const [led,pp]=await Promise.all([fs.getDocs(fs.collection(db,"citizens",d.id,"ledger")),fs.getDocs(fs.collection(db,"citizens",d.id,"pendingPayments"))]);for(const x of led.docs){batch.delete(x.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}for(const x of pp.docs){batch.delete(x.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}batch.delete(d.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}
@@ -1298,9 +1322,11 @@ function makeFirebaseStore({ auth, db, fs, au }){
       return count;
     },
     async getDeferredPeriods(){
+      // Raw stored shape; onAuth normalizes it and writes the normalized version
+      // back when it detects a legacy shape.
       const doc=await fs.getDoc(fs.doc(db,"meta","deferredPeriods"));
-      if(doc.exists()) return normalizeDeferredPeriodState(doc.data());
-      return {periods:[],updatedAt:{},migrated:false};
+      if(doc.exists()) return doc.data();
+      return {periods:[],updatedAt:{}};
     },
     async setDeferredPeriods(periods){
       const next=Array.isArray(periods) ? periods.slice() : [];
@@ -1320,9 +1346,13 @@ function makeFirebaseStore({ auth, db, fs, au }){
       await fs.setDoc(fs.doc(db,"meta","deferredPeriods"), { periods:next, updatedAt }, {merge:true});
     },
     async getDeferredPeriodOverrides(){
+      // Raw stored shape; onAuth normalizes and writes back if legacy.
       const doc=await fs.getDoc(fs.doc(db,"meta","deferredPeriodOverrides"));
-      if(doc.exists()) return normalizeDeferredPeriodOverrides(doc.data().overrides||{}).overrides;
+      if(doc.exists()) return doc.data().overrides||{};
       return {};
+    },
+    async deleteMeta(name){
+      await fs.deleteDoc(fs.doc(db,"meta",name));
     },
     async setDeferredPeriodOverrides(overrides){
       await fs.setDoc(fs.doc(db,"meta","deferredPeriodOverrides"), { overrides:overrides||{} }, {merge:true});
@@ -1334,6 +1364,13 @@ function makeFirebaseStore({ auth, db, fs, au }){
       await fs.updateDoc(fs.doc(db,"meta","deferredPeriodOverrides"), {
         [field]: {value:Boolean(deferred),at}
       });
+    },
+    async importAll(backup,onProgress){
+      if(!backup||!Array.isArray(backup.citizens))throw new Error("Not a valid backup file");if(onProgress)onProgress(0,3);const old=await fs.getDocs(fs.collection(db,"citizens"));let batch=fs.writeBatch(db),ops=0;const flush=async()=>{if(ops>0){await batch.commit();batch=fs.writeBatch(db);ops=0;}};
+      for(const d of old.docs){const [led,pp]=await Promise.all([fs.getDocs(fs.collection(db,"citizens",d.id,"ledger")),fs.getDocs(fs.collection(db,"citizens",d.id,"pendingPayments"))]);for(const x of led.docs){batch.delete(x.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}for(const x of pp.docs){batch.delete(x.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}batch.delete(d.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}await flush();if(onProgress)onProgress(1,3);
+      const meta=backup.meta&&typeof backup.meta==="object"?backup.meta:{};for(const [id,value] of [["deferredPeriods",meta.deferredPeriods&&typeof meta.deferredPeriods==="object"?meta.deferredPeriods:{periods:[],updatedAt:{}}],["deferredPeriodOverrides",{overrides:meta.deferredPeriodOverrides&&typeof meta.deferredPeriodOverrides==="object"?meta.deferredPeriodOverrides:{}}],["imports",{periods:Array.isArray(meta.imports)?meta.imports:[]}]]){batch.set(fs.doc(db,"meta",id),value);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}await flush();batch=fs.writeBatch(db);ops=0;let done=0;const validTypes=["charge","payment","forgive","sanitationFee"];
+      for(const r of backup.citizens){const cRef=fs.doc(db,"citizens",r.id);batch.set(cRef,{jobCard:r.jobCard,cardNo:r.cardNo,name:r.name,phone:r.phone||"",totalCharged:r.totalCharged||0,totalPaid:r.totalPaid||0,balance:r.balance||0,deferredTotal:r.deferredTotal||0,updatedAt:fs.serverTimestamp()});if(++ops>=FIRESTORE_BATCH_SIZE)await flush();for(const e of (r.ledger||[])){if(!e||!validTypes.includes(e.type)||!e.amount)continue;const amt=Number(e.amount);if(!Number.isFinite(amt)||amt<=0)continue;const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));batch.set(eRef,{entryId:e.entryId||eRef.id,type:e.type,amount:amt,note:e.note||"",date:e.date||"",deferred:e.deferred||false,createdAt:e.createdAtMs?fs.Timestamp.fromMillis(e.createdAtMs):fs.serverTimestamp()});if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}for(const p of (Array.isArray(r.pendingPayments)?r.pendingPayments:[])){if(!p||!p.id||!Number.isFinite(Number(p.amount))||Number(p.amount)<=0)continue;const pRef=fs.doc(db,"citizens",r.id,"pendingPayments",String(p.id));batch.set(pRef,{amount:Number(p.amount),date:p.date||"",status:p.status||"pending",createdAt:p.createdAt||fs.serverTimestamp()});if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}if((++done%50)===0&&onProgress)onProgress(2,3);}
+      await flush();invalidateLedgerCache();if(onProgress)onProgress(3,3);return backup.citizens.length;
     },
     async getImportedPeriods(){ const s=await fs.getDoc(fs.doc(db,"meta","imports")); return s.exists()? (s.data().periods||[]) : []; },
     async recordImportedPeriod(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { periods:fs.arrayUnion(p) }, {merge:true}); },
@@ -1567,6 +1604,7 @@ async function onAuth(isIn){
       // Firestore subscription below will replace it with authoritative data.
       await hydrateDashboardCache();
       subscribeCitizens();
+      scheduleOneTimeMaintenance();
     } catch(err){ console.error("Failed to load period settings:", err); }
     setTimeout(refreshPending, 0);
   } else {
@@ -2249,6 +2287,182 @@ function openBackup(){
   $("restoreBtn").addEventListener("click", ()=>$("restoreFile").click());
   $("restoreFile").addEventListener("change", doRestore);
 }
+
+/* ---------- Backup / Restore ---------- */
+async function encryptBackupData(data, password){
+  if(!password) return JSON.stringify(data);
+  try{
+    const encoder = new TextEncoder();
+    const dataBytes = encoder.encode(JSON.stringify(data));
+    const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+    const pwBytes = encoder.encode(password);
+    const keyMaterial = await crypto.subtle.importKey("raw", pwBytes, {name:"PBKDF2"}, false, ["deriveBits"]);
+    const keyBits = await crypto.subtle.deriveBits({name:"PBKDF2", salt:saltBytes, iterations:100000, hash:"SHA-256"}, keyMaterial, 256);
+    const key = await crypto.subtle.importKey("raw", keyBits, {name:"AES-GCM"}, false, ["encrypt"]);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await crypto.subtle.encrypt({name:"AES-GCM", iv}, key, dataBytes);
+    const container = {v:1, salt:Array.from(saltBytes), iv:Array.from(iv), data:Array.from(new Uint8Array(encrypted))};
+    return JSON.stringify(container);
+  }catch(e){
+    console.error("Encryption failed:", e);
+    throw new Error("Backup encryption failed");
+  }
+}
+async function decryptBackupData(dataStr, password){
+  try{
+    const container = JSON.parse(dataStr);
+    if(!container.v || !container.salt || !container.iv || !container.data) throw new Error("Invalid encrypted backup format");
+    const encoder = new TextEncoder();
+    const saltBytes = new Uint8Array(container.salt);
+    const ivBytes = new Uint8Array(container.iv);
+    const encryptedBytes = new Uint8Array(container.data);
+    const keyMaterial = await crypto.subtle.importKey("raw", encoder.encode(password), {name:"PBKDF2"}, false, ["deriveBits"]);
+    const keyBits = await crypto.subtle.deriveBits({name:"PBKDF2", salt:saltBytes, iterations:100000, hash:"SHA-256"}, keyMaterial, 256);
+    const key = await crypto.subtle.importKey("raw", keyBits, {name:"AES-GCM"}, false, ["decrypt"]);
+    const decrypted = await crypto.subtle.decrypt({name:"AES-GCM", iv:ivBytes}, key, encryptedBytes);
+    return JSON.parse(new TextDecoder().decode(decrypted));
+  }catch(e){
+    console.error("Decryption failed:", e);
+    throw new Error("Decryption failed - wrong password or corrupted file");
+  }
+}
+function validateBackupSchema(backup){
+  if(!backup || typeof backup !== "object") throw new Error("Backup must be an object");
+  if(!Array.isArray(backup.citizens)) throw new Error("Backup must contain a citizens array");
+  if(backup.citizens.length > BACKUP_MAX_HOUSEHOLDS) throw new Error(`Backup too large (max ${BACKUP_MAX_HOUSEHOLDS} households)`);
+  const validTypes = ["charge","payment","forgive","sanitationFee"];
+  for(let i=0;i<backup.citizens.length;i++){
+    const c=backup.citizens[i];
+    if(typeof c.id !== "string" || !c.id) throw new Error(`Citizen ${i}: missing or invalid id`);
+    if(typeof c.name !== "string") throw new Error(`Citizen ${i}: missing or invalid name`);
+    if(!Number.isFinite(c.totalCharged) || !Number.isFinite(c.totalPaid) || !Number.isFinite(c.balance)) throw new Error(`Citizen ${i}: invalid numeric fields`);
+    if(Array.isArray(c.ledger)){
+      for(let j=0;j<c.ledger.length;j++){
+        const e=c.ledger[j];
+        if(!validTypes.includes(e.type)) throw new Error(`Citizen ${i}, entry ${j}: invalid type`);
+        if(!Number.isFinite(e.amount) || e.amount < 0) throw new Error(`Citizen ${i}, entry ${j}: invalid amount`);
+        if(typeof e.note !== "string") e.note = "";
+        if(typeof e.date !== "string") e.date = "";
+      }
+    }
+  }
+}
+let backupBusy=false;
+async function doBackup(){
+  if(backupBusy) return;
+  backupBusy=true;
+  const btn=$("backupBtn");
+  if(btn) btn.disabled=true;
+  openSheet("Download backup", `
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Backup contains all household data including names, phone numbers, and payment history. Consider encrypting it with a password.</p>
+    <div class="field"><label>Encryption password (optional)</label>
+      <input id="backupPw" type="password" placeholder="Leave empty for unencrypted backup"></div>
+    <button class="btn block" id="backupConfirm">Download backup</button>
+  `);
+  $("backupConfirm").addEventListener("click", async ()=>{
+    const pw = $("backupPw").value;
+    $("backupConfirm").disabled = true;
+    try{
+      const data = await store.exportAll();
+      const content = await encryptBackupData(data, pw);
+      const fileExt = pw ? ".nsnvc-enc" : ".json";
+      downloadBlob(content, `nsnvc-backup-${todayISO()}${fileExt}`, "application/json");
+      closeSheet();
+      toast(pw ? "Encrypted backup downloaded" : "Backup downloaded - data is NOT encrypted");
+    }catch(err){
+      handleOperationError("backup", err);
+      toast("Backup failed");
+    }finally{
+      $("backupConfirm").disabled = false;
+      backupBusy=false;
+      if(btn) btn.disabled=false;
+    }
+  });
+}
+async function performRestore(backup, msgElement){
+  try{
+    validateBackupSchema(backup);
+    const ok = await confirmAction(`Restore ${backup.citizens.length} households? It overwrites current records.`, true);
+    if(!ok) return false;
+    msgElement.innerHTML=`<div class="notice info">Restoring…</div>`;
+    await store.importAll(backup, (d,t)=>{ msgElement.innerHTML=`<div class="notice info">Restoring… ${d} / ${t}</div>`; });
+    msgElement.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Restored ${backup.citizens.length} households.</div>`;
+    toast("Restore complete");
+    // Period/deferral state lives in memory as well as Firestore; reload so the
+    // restored meta is picked up cleanly for both local and Firebase modes.
+    setTimeout(()=>location.reload(), 1500);
+    return true;
+  }catch(err){
+    handleOperationError("restoreBackup", err);
+    msgElement.innerHTML=`<div class="notice err">${esc(err.message)}</div>`;
+    return false;
+  }
+}
+async function doRestore(e){
+  const file=e.target.files[0]; if(!file) return;
+  if(file.size > BACKUP_MAX_SIZE_BYTES){
+    $("backupMsg").innerHTML=`<div class="notice err">Backup file too large (max 5 MB).</div>`;
+    e.target.value="";
+    return;
+  }
+  const fileContent = await file.text();
+  const isEncrypted = file.name.endsWith(".nsnvc-enc");
+  if(isEncrypted){
+    openSheet("Restore encrypted backup", `
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px">This backup is encrypted. Enter the password to decrypt it.</p>
+      <div class="field"><label>Password</label>
+        <input id="restorePw" type="password" placeholder="Enter backup password"></div>
+      <button class="btn block" id="restoreConfirm">Decrypt and restore</button>
+      <div id="restoreMsg" style="margin-top:10px"></div>
+    `);
+    $("restoreConfirm").addEventListener("click", async ()=>{
+      const pw = $("restorePw").value;
+      if(!pw){ $("restoreMsg").innerHTML=`<div class="notice err">Password required</div>`; return; }
+      try{
+        const backup = await decryptBackupData(fileContent, pw);
+        const success = await performRestore(backup, $("restoreMsg"));
+        if(success) closeSheet();
+      }finally{
+        e.target.value="";
+      }
+    });
+  } else {
+    const msg = $("backupMsg");
+    try{
+      let backup;
+      try{ backup = JSON.parse(fileContent); }catch(err){ msg.innerHTML=`<div class="notice err">Invalid JSON in backup file.</div>`; e.target.value=""; return; }
+      await performRestore(backup, msg);
+    }finally{
+      e.target.value="";
+    }
+  }
+}
+
+/* ---------- one-time maintenance ---------- */
+// After the period-exclusion feature was removed, stored citizen balances may
+// still reflect excluded periods. Recalculate once from the ledgers under the
+// new rules, and delete the now-unused meta/excludedPeriods document. Guarded
+// by a device flag so it runs at most once (retries next login on failure).
+const MAINTENANCE_KEY = "nsnvc_maintenance_2026_exclusion_removed";
+let maintenanceScheduled = false;
+function scheduleOneTimeMaintenance(){
+  if(maintenanceScheduled) return;
+  try{ if(localStorage.getItem(MAINTENANCE_KEY)) return; }catch(e){ return; }
+  maintenanceScheduled = true;
+  setTimeout(async ()=>{
+    try{
+      if(typeof store.deleteMeta === "function"){ try{ await store.deleteMeta("excludedPeriods"); }catch(e){} }
+      if(typeof store.recalcAll === "function"){ await store.recalcAll(); }
+      try{ localStorage.setItem(MAINTENANCE_KEY, "1"); }catch(e){}
+      await refreshDashboard();
+      console.log("One-time maintenance complete: balances recalculated after exclusion removal.");
+    }catch(err){
+      maintenanceScheduled = false; // allow a retry on the next login
+      console.warn("One-time maintenance failed; will retry next login.", err);
+    }
+  }, 5000);
+}
+
 async function ensureXLSX(){
   if(window.XLSX) return window.XLSX;
   try {
