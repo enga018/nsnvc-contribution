@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.32.0</footer>
+<footer>New Serchhip North Village Council · v1.32.1</footer>
 
 <script>
 (function(){
@@ -1420,6 +1420,39 @@ if(isLocalMode) addTestLoginHint();
 if(!isLocalMode){
   console.warn("⚠️ SECURITY CHECK: Ensure Firestore security rules are deployed. See FIRESTORE_SECURITY_RULES.md for configuration.");
 }
+/* ---------- Offline / sync indicator ---------- */
+// Shows a small pill when the device is offline, or when Firestore still has
+// local writes waiting to reach the server. Local test mode has nothing to
+// sync, so the indicator stays off there.
+// NOTE: this block must be defined before any code that calls it (onAuth,
+// markSyncing, store init) — reading a `let` before its declaration throws a
+// temporal-dead-zone ReferenceError that would abort the whole module.
+let syncPendingWrites=false;
+function setSyncPending(pending){
+  const next=Boolean(pending);
+  if(next===syncPendingWrites) return;
+  syncPendingWrites=next;
+  renderSyncIndicator();
+}
+function renderSyncIndicator(){
+  const existing=document.getElementById("syncStatus");
+  if(isLocalMode){ if(existing) existing.remove(); return; }
+  let cls="", msg="";
+  if(!navigator.onLine){
+    cls="offline";
+    msg="Offline — changes are saved on this device and will sync when you reconnect.";
+  } else if(syncPendingWrites){
+    cls="syncing";
+    msg="Syncing changes…";
+  }
+  if(!msg){ if(existing) existing.remove(); return; }
+  const el=existing || document.body.appendChild(Object.assign(document.createElement("div"),{id:"syncStatus"}));
+  el.className="sync-status "+cls;
+  el.textContent=msg;
+}
+window.addEventListener("online", renderSyncIndicator);
+window.addEventListener("offline", renderSyncIndicator);
+
 store.onAuth(onAuth);
 renderSyncIndicator(); // show "offline" immediately if we start without a connection
 
@@ -1448,36 +1481,6 @@ function clearOperationErrors(){
 function showModeBanner(msg){
   document.querySelector("main").insertAdjacentHTML("afterbegin", `<div class="config-warn">${msg}</div>`);
 }
-
-/* ---------- Offline / sync indicator ---------- */
-// Shows a small pill when the device is offline, or when Firestore still has
-// local writes waiting to reach the server. Local test mode has nothing to
-// sync, so the indicator stays off there.
-let syncPendingWrites=false;
-function setSyncPending(pending){
-  const next=Boolean(pending);
-  if(next===syncPendingWrites) return;
-  syncPendingWrites=next;
-  renderSyncIndicator();
-}
-function renderSyncIndicator(){
-  const existing=document.getElementById("syncStatus");
-  if(isLocalMode){ if(existing) existing.remove(); return; }
-  let cls="", msg="";
-  if(!navigator.onLine){
-    cls="offline";
-    msg="Offline — changes are saved on this device and will sync when you reconnect.";
-  } else if(syncPendingWrites){
-    cls="syncing";
-    msg="Syncing changes…";
-  }
-  if(!msg){ if(existing) existing.remove(); return; }
-  const el=existing || document.body.appendChild(Object.assign(document.createElement("div"),{id:"syncStatus"}));
-  el.className="sync-status "+cls;
-  el.textContent=msg;
-}
-window.addEventListener("online", renderSyncIndicator);
-window.addEventListener("offline", renderSyncIndicator);
 function addTestLoginHint(){
   const btn=document.getElementById("loginBtn");
   if(!btn || document.getElementById("testHint")) return;
