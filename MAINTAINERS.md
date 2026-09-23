@@ -18,9 +18,11 @@ maintained and (later) refactored safely.
 | `ledger.js` | **Pure ledger engine** (money + deferral rules). DOM-free, state-injected, unit-tested. |
 | `store.js` | **Data stores** (`makeLocalStore` / `makeFirebaseStore`), extracted in stage 2b. Handed a `host` object; identical `store.*` interface. |
 | `tests/ledger.test.js` | Node unit tests for `ledger.js` (`npm run test:unit`). |
+| `tests/errors.test.js` | Node unit tests for the Firebase error classifier. |
 | `tests/smoke.spec.js` | Playwright browser smoke test (boots the app in local test mode). |
 | `playwright.config.js` | Playwright config (starts `scripts/serve-for-tests.mjs`). |
 | `scripts/serve-for-tests.mjs` | Dependency-free static server used by the smoke test. |
+| `scripts/check-module-eval.mjs` | CI: executes the module's top-level code; fails on any runtime error it logs. |
 | `package.json` | Marks `.js` as ES modules, defines the test scripts, pins Playwright. |
 | `sw.js` | Service worker. Precache list + stale-while-revalidate strategy. |
 | `manifest.json` | PWA manifest (name, icons, colours). |
@@ -28,7 +30,7 @@ maintained and (later) refactored safely.
 | `icon-192.png`, `icon-512.png` | PWA icons, referenced by `manifest.json`. |
 | `scripts/sync-version.sh` | Writes the `VERSION` value into the footer and `sw.js`. |
 | `scripts/check-version-sync.sh` | CI check that the three version strings match. |
-| `.github/workflows/checks.yml` | CI: version sync + script parse check + ledger tests. |
+| `.github/workflows/checks.yml` | CI: version sync, script parse, module eval, unit tests, browser smoke. |
 | `.githooks/pre-commit` | Runs `sync-version.sh` before each commit. |
 | `.githooks/post-commit` | Prompts for a version bump (interactive only). |
 | `FIRESTORE_SECURITY_RULES.md` | The Firestore rules that should be deployed. |
@@ -332,56 +334,124 @@ to Firebase once real config is pasted in.
 - CI runs, in order of how much of the app they exercise:
   1. `scripts/check-scripts.mjs` — the inline scripts parse.
   2. `scripts/check-module-eval.mjs` — the module's top-level code actually
-     executes (catches a missing global, use-before-define, etc.).
-  3. `node --test tests/ledger.test.js` — the ledger engine's maths.
-  4. `tests/smoke.spec.js` (Playwright) — boots the app in local mode and on
-     the Firebase path, and drives a login. This is the only one that can catch
-     errors on code paths that only run in a real browser.
-  The 2a refactor shipped a `markSyncing is not defined` bug that (1) and (3)
-  missed and (4) caught; (2) now catches that class earlier and faster.
+     executes, **and fails on any `ReferenceError` / "is not defined" logged
+     during evaluation even if the app caught it** (this caught neither of the
+     stage-2 bugs at the time; it does now).
+  3. `node --test tests/ledger.test.js tests/errors.test.js` — ledger maths and
+     the Firebase error classifier.
+  4. `tests/smoke.spec.js` (Playwright) — boots the app in local mode and on the
+     Firebase path and drives a login. Required check.
 - `deferSource` on ledger entries is read but never written (always `null`).
+- **Free-plan read quota.** The Firebase project is on the free (Spark) plan and
+  has hit its daily limit more than once. The app now avoids needless full
+  scans — `getAllLedgers()` caches a snapshot for `FULL_LEDGER_TTL_MS`, and
+  `recalcAll()` only writes households whose totals changed. If the dashboard
+  ever shows all zeros, suspect quota first: a raw
+  `GET https://firestore.googleapis.com/v1/projects/nsnvc-contribution/databases/(default)/documents/citizens?pageSize=1`
+  returning `429 RESOURCE_EXHAUSTED` confirms it. It resets at midnight Pacific
+  Time. The app shows a "Data limit reached" screen in that case (see §7).
+  Heavy actions to use sparingly: **Recalculate all balances** (always a full
+  read scan), **backup/export**, and **bulk import**.
+
 
 ### Refactoring roadmap (splitting `index.html`)
 
-Done:
+Goal: shrink `index.html` so it is easier to maintain. Done so far:
 
-1. **`MAINTAINERS.md`** — this map.
-2. **`ledger.js`** — the pure ledger engine (money + deferral rules), with
-   `tests/ledger.test.js`.
+| Stage | What moved | File(s) | Status |
+| --- | --- | --- | --- |
+| 0 | a map of the codebase | `MAINTAINERS.md` | ✅ |
+| 1 | pure ledger engine (`calculateLedgerState`, defer resolution, normalizers, `periodKey`) | `ledger.js` + `tests/ledger.test.js` | ✅ |
+| 2 | the two store factories (`makeLocalStore`, `makeFirebaseStore`) | `store.js` | ✅ done, but see the incident notes below |
 
-Next — **Stage 2: extract the store layer.** Move `makeLocalStore()` and
-`makeFirebaseStore()` into `store.js`. This is *not* a plain file move: both
-factories close over ~20 app-scope identifiers and must be given a **host
-object** instead. The hooks they use:
+Progress: `index.html` went from ~172 KB to ~125 KB. Stage 3 (UI/rendering)
+is still outstanding — see the end of this section.
+
+#### Stage 2 in detail (done)
+
+The factories could not simply be moved: they closed over ~20 app-scope
+identifiers, so they were first given a **host object** (stage 2a), then moved
+(stage 2b). The signature is `makeLocalStore(host)` /
+`makeFirebaseStore(fb, host)`, and `index.html` builds one `storeHost` and passes
+it in.
+
+Host contents (state is exposed as **getters** because the app *reassigns* it —
+a plain snapshot would go stale):
 
 ```
 ledgerCache, ledgerCacheSyncAt, periodStatsCache,
 deferredPeriods, deferredPeriodUpdatedAt, deferredPeriodOverrides,
 rawCitizens,
-writeDashboardCache,
-invalidateLedgerCache, invalidateStatsMemo,
+fullLedgerSnapshotAt, fullLedgerSnapshotCount, fullLedgerTtlMs,
+writeDashboardCache, invalidateLedgerCache, invalidateStatsMemo,
 nextDeferTimestamp, firestoreTimeMs,
 recalcFromLedger, allocateLedgerPayments, getEffectiveBalance,
 todayISO, entryLabel, esc, fmt
 ```
 
-So the signature is `makeLocalStore(host)` / `makeFirebaseStore(fb, host)`, and
-`index.html` builds one `host` object (`storeHost`) and passes it in. Firestore's
-`fs` module is already injected, so that part is unchanged.
+**Deliberate boundary — do not blur it:** `loadFirebase()` stays in
+`index.html`. It loads the Firebase SDK and is app *startup glue*, not store
+logic. It was accidentally moved into `store.js` during 2b (and left unexported),
+which broke the whole app — see the incident notes.
 
-**Status: done** (`store.js`, stage 2b). Two things to know if you edit it:
+#### Incidents caused by this refactor (read before doing stage 3)
 
-- `storeHost` uses **getters** for state the app reassigns (`deferredPeriods`,
-  `deferredPeriodOverrides`, `rawCitizens`, …). A plain snapshot would go stale.
-- `markSyncing` is defined *inside* `makeFirebaseStore`, not on the host. It was
-  briefly listed on the host and that (a non-existent global) aborted the module
-  — see the `markSyncing is not defined` note above.
-- When moving code into a module, remember `sw.js`'s `urlsToCache` needs the new
-  file, or offline breaks.
+Both of these reached production and took real debugging time. They are the
+reason to move slowly, in small steps, with checks between each.
 
-Then:
+1. **`markSyncing is not defined`** (stage 2a). `markSyncing` is defined *inside*
+   `makeFirebaseStore`, but it was briefly listed on `storeHost` as if it were a
+   global. Evaluating `storeHost` threw and aborted the module. → `loadFirebase`
+   and `markSyncing` are not host properties.
+2. **`loadFirebase is not defined`** (stage 2b). It was moved into `store.js`
+   **without an export**, so `index.html`'s call was `undefined`; Firebase never
+   initialised and the app showed an error screen. The app's own try/catch hid
+   it, and the module-eval check's output *contained the error* but was misread
+   as sandbox noise.
 
-3. **Stage 3: UI/rendering** — highest risk, do last and incrementally.
+Both are now covered by CI: `check-module-eval.mjs` fails on any
+`ReferenceError` / `is not defined` / `is not a function` / `Cannot read propert`
+message logged during evaluation, even when the app swallows it.
+
+#### How to do the next extraction safely
+
+1. **Move one coherent thing at a time** (one module per commit).
+2. **Prefer pure code.** Anything that only transforms data (no DOM, no globals)
+   can be tested in Node — that is why `ledger.js` was low-risk.
+3. If it touches app state, **inject a host object** rather than reaching into
+   globals; expose reassigned state as getters.
+4. **Export everything you move.** Then grep `index.html` for the old name to
+   confirm nothing still calls a bare identifier.
+5. **Add the new file to `sw.js`'s `urlsToCache`**, or offline mode breaks.
+6. Run the checks in order, and **do not skip the smoke test**:
+   - `node scripts/check-scripts.mjs`
+   - `node scripts/check-module-eval.mjs`
+   - `node --test tests/ledger.test.js tests/errors.test.js`
+   - `npx playwright test` (or let CI run it — it is a required check)
+7. **Verify on a real browser against real data** before trusting it.
+
+#### Stage 3: UI / rendering (outstanding)
+
+Still in `index.html`: ~36 `render*` / `build*` / `attach*` / `open*` functions
+plus the event wiring. This is the highest-risk part because it is tightly
+coupled to the DOM and to element ids that only exist in the HTML at the top of
+the file.
+
+Suggested slicing, lowest risk first:
+
+1. **Pure formatters** that take data and return strings
+   (`buildCitizenCardHTML`, `renderEntryRow`, `renderHistoryRows`,
+   `buildPeriodRowHTML`) — no DOM reads, easy to move and even unit-test.
+2. **Sheet HTML builders** (`buildCitizenDetailHTML`, the `open*Sheet`
+   helpers) — still string-building, but reference element ids.
+3. **Event wiring / DOM mutation** last (`renderList`, `attach*Listeners`,
+   `openCitizen`, `renderCitizenDetail`) — these read the DOM and are the most
+   likely to break silently.
+
+Anything that renders must keep working when a `store.*` call fails; the app
+already has a blocking-failure screen for that (see §7) — reuse it rather than
+inventing another.
+
 
 
 ---
