@@ -400,37 +400,6 @@ function seedData(){
   }};
 }
 
-async function loadFirebase(cfg){
-  // Fetched in parallel rather than one-after-another — on the patchy
-  // connectivity this app is built for (see README), three sequential CDN
-  // round-trips could burn through more of the 15s init timeout than
-  // necessary and fall back to local test mode on a connection that would
-  // have been fine given all three requests at once.
-  const [appMod, authMod, fsMod] = await Promise.all([
-    import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
-    import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
-    import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
-  ]);
-  const app  = appMod.initializeApp(cfg);
-  const auth = authMod.getAuth(app);
-  // Firestore offline persistence: keeps the dashboard usable and queues writes
-  // on the patchy connections this app is built for, then syncs automatically.
-  // The multi-tab manager lets a PWA opened in several tabs share the cache
-  // instead of fighting over it. If persistence can't start (IndexedDB blocked,
-  // private mode, old browser), fall back to the in-memory cache so the app
-  // still runs.
-  let db;
-  try{
-    db = fsMod.initializeFirestore(app, {
-      localCache: fsMod.persistentLocalCache({ tabManager: fsMod.persistentMultipleTabManager() })
-    });
-  }catch(err){
-    console.warn("Firestore offline persistence unavailable; using in-memory cache.", err);
-    db = fsMod.getFirestore(app);
-  }
-  return { auth, db, fs:fsMod, au:authMod };
-}
-
 export function makeFirebaseStore({ auth, db, fs, au }, host){
   // Ask Firestore to tell us when its queue of local writes has drained, so the
   // sync pill can show "Syncing changes…" and then disappear. waitForPendingWrites

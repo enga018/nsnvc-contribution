@@ -61,6 +61,22 @@ define("location", { reload: noop });
 // only care that the module's own top-level code evaluated first.
 define("fetch", () => Promise.reject(new Error("no network in evaluation")));
 
+// Capture console output. A ReferenceError/TypeError ("X is not defined") that
+// the app's own try/catch swallows is still a real bug — that is exactly how the
+// stage-2b extraction shipped "loadFirebase is not defined" and showed users an
+// error screen. Fail on any such message even if evaluation completes.
+const suspicious = [];
+for (const level of ["error", "warn", "log"]) {
+  const original = console[level].bind(console);
+  console[level] = (...args) => {
+    const text = args.map(a => (a && a.stack) ? a.stack : (a && a.message) ? a.message : String(a)).join(" ");
+    if (/is not defined|ReferenceError|is not a function|Cannot read propert/i.test(text)) {
+      suspicious.push(text.split("\n")[0].slice(0, 200));
+    }
+    original(...args);
+  };
+}
+
 // Evaluate the module. The module sets window.__nsnvcBootComplete as its LAST
 // top-level statement, so we assert on that positive signal instead of trying to
 // classify whatever error a browser-only call happens to throw in Node.
@@ -75,6 +91,13 @@ try {
     if (e && e.stack) console.error(e.stack.split("\n").slice(0, 6).join("\n"));
     process.exit(1);
   }
+}
+
+if (suspicious.length) {
+  console.error("::error::the module logged a runtime error while evaluating:");
+  for (const s of [...new Set(suspicious)]) console.error("  " + s);
+  console.error("  (these are real bugs even though the app caught them)");
+  process.exit(1);
 }
 
 if (!globalThis.__nsnvcBootComplete) {
