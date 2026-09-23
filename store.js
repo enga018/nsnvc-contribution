@@ -826,6 +826,12 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       const ledgers = await this.getAllLedgers({force:true});
       const citizenIds = Object.keys(ledgers);
       let batch=fs.writeBatch(db), ops=0, done=0;
+      // Map current cached citizen docs by id so we can skip unchanged ones.
+      // Writing every household unconditionally burned the free write quota and
+      // set updatedAt on all of them, which then made refreshChangedLedgers
+      // re-read every ledger too.
+      const known = new Map();
+      for(const c of (host.rawCitizens || [])) known.set(c.id, c);
 
       const flush=async()=>{
         if(ops===0) return;
@@ -836,6 +842,17 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
 
       for(const id of citizenIds){
         const {totalCharged,totalPaid,balance,deferredTotal}=host.recalcFromLedger(ledgers[id]||[],id);
+
+        // Skip households whose cached totals already match — avoids needless
+        // writes (and the updatedAt bump that would trigger ledger re-reads).
+        const cur = known.get(id);
+        const unchanged = cur &&
+          Number(cur.totalCharged||0)===Number(totalCharged||0) &&
+          Number(cur.totalPaid||0)===Number(totalPaid||0) &&
+          Number(cur.balance||0)===Number(balance||0) &&
+          Number(cur.deferredTotal||0)===Number(deferredTotal||0);
+        if(unchanged){ if((++done%25)===0&&onProgress) onProgress(done,citizenIds.length); continue; }
+
         // merge:true makes the repair tolerant of a document whose cached
         // summary fields are missing, while preserving all other citizen data.
         batch.set(fs.doc(db,"citizens",id),{
