@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.30.1</footer>
+<footer>New Serchhip North Village Council · v1.30.2</footer>
 
 <script>
 (function(){
@@ -294,8 +294,15 @@ let deferredPeriods=[];
 let deferredPeriodUpdatedAt={};
 let deferredPeriodOverrides={};
 
+// Monotonic defer clock. Every defer action (bulk period or per-charge) gets a
+// value strictly greater than any earlier action, so "latest wins" comparisons
+// are never decided by a same-millisecond tie. The previous expression
+// `Number(previous)||0 + 1` actually evaluated as `Number(previous) || 1`, so
+// it never incremented and two actions in the same millisecond tied.
+let deferClock=0;
 function nextDeferTimestamp(previous=0){
-  return Math.max(Date.now(), Number(previous)||0 + 1);
+  deferClock=Math.max(Date.now(), deferClock+1, (Number(previous)||0)+1);
+  return deferClock;
 }
 
 function normalizeDeferredPeriodState(raw){
@@ -380,7 +387,9 @@ function isPeriodDeferredForCitizen(e, citizenId){
   const bulkAt=deferredPeriodUpdatedAt[period] || 0;
   const overrideAt=override ? override.at : -1;
 
-  if(override && overrideAt > bulkAt) return override.value;
+  // >= so an explicit per-charge/period override wins on a tie — e.g. legacy
+  // overrides stored with at:0, or two actions in the same millisecond.
+  if(override && overrideAt >= bulkAt) return override.value;
   if(period && deferredPeriods.includes(period)) return true;
   if(override) return override.value;
   return Boolean(e.deferred);
@@ -805,9 +814,12 @@ function makeLocalStore(){
     async setDeferredPeriods(periods){
       if(!data.meta) data.meta={};
       const next=Array.isArray(periods) ? periods.slice() : [];
-      const updatedAt={...(data.meta.deferredPeriods && data.meta.deferredPeriods.updatedAt || {})};
+      // Use the in-memory clock so a rename can carry a period's old timestamp
+      // over, and preserve a timestampless period as 0 instead of stamping
+      // "now" (see the Firebase store for why).
+      const updatedAt={...deferredPeriodUpdatedAt};
       for(const p of next){
-        if(!updatedAt[p]) updatedAt[p]=nextDeferTimestamp();
+        if(!Object.prototype.hasOwnProperty.call(updatedAt,p)) updatedAt[p]=0;
       }
       for(const p of Object.keys(updatedAt)){
         if(!next.includes(p)) delete updatedAt[p];
@@ -1318,8 +1330,13 @@ function makeFirebaseStore({ auth, db, fs, au }){
     async setDeferredPeriods(periods){
       const next=Array.isArray(periods) ? periods.slice() : [];
       const updatedAt={...deferredPeriodUpdatedAt};
+      // Preserve a period that has no timestamp as 0 instead of stamping it
+      // "now". Stamping here made a rename (or a legacy load) look like a fresh
+      // defer, which silently overrode per-person restores under that period.
+      // A genuine defer/redefer sets the timestamp first (togglePeriodDeferred),
+      // and a rename carries the old value over.
       for(const p of next){
-        if(!updatedAt[p]) updatedAt[p]=nextDeferTimestamp();
+        if(!Object.prototype.hasOwnProperty.call(updatedAt,p)) updatedAt[p]=0;
       }
       for(const p of Object.keys(updatedAt)){
         if(!next.includes(p)) delete updatedAt[p];
@@ -1924,7 +1941,11 @@ async function openSettings(){
 
 function buildPeriodRowHTML(period, stats, isExcluded, isDeferred){
   return `<div class="period-row" data-original="${esc(period)}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-    <label class="switch" style="flex:none"><input type="checkbox" class="period-toggle" value="${esc(period)}" ${!isExcluded?"checked":""}><span class="switch-track"><span class="switch-thumb"></span></span></label>
+    <label class="switch" style="flex:none" title="${isExcluded?"Excluded from balances — turn on to count this period":"Counted in balances — turn off to exclude this whole period"}">
+      <input type="checkbox" class="period-toggle" value="${esc(period)}" ${!isExcluded?"checked":""}>
+      <span class="switch-track"><span class="switch-thumb"></span></span>
+      <span class="switch-label period-toggle-label"${isExcluded?' style="color:var(--partial)"':''}>${isExcluded?"Excluded":""}</span>
+    </label>
     <div style="flex:1;min-width:0"><span class="period-name"><b style="font-size:14px">${esc(prettyPeriod(period))}</b></span><br><small style="font-size:12px;color:var(--muted)">${stats.count} charge${stats.count===1?"":"s"} · ${fmt(stats.amount)}</small></div>
     <button class="period-defer-btn btn small ghost" data-period="${esc(period)}" data-deferred="${isDeferred?"1":"0"}" style="padding:6px 9px;font-size:12px;color:var(--partial);border-color:var(--partial)">${isDeferred?"Restore":"Defer"}</button>
     <button class="period-rename-btn" data-period="${esc(period)}" style="background:transparent;border:none;cursor:pointer;font-size:14px;padding:4px;color:var(--muted)" title="Rename">✏️</button>
@@ -2011,6 +2032,14 @@ async function handlePeriodsSave(pendingRenames){
     if(pendingRenames.size){
       const renamedDeferred = deferredPeriods.map(p=>pendingRenames.get(p) || p);
       if(JSON.stringify(renamedDeferred)!==JSON.stringify(deferredPeriods)){
+        // A rename is not a new defer. Carry the renamed period's original
+        // timestamp onto its new name; otherwise it would look freshly deferred
+        // and override per-person restores in that period.
+        for(const [oldName,newName] of pendingRenames){
+          if(Object.prototype.hasOwnProperty.call(deferredPeriodUpdatedAt, oldName)){
+            deferredPeriodUpdatedAt[newName]=deferredPeriodUpdatedAt[oldName];
+          }
+        }
         await store.setDeferredPeriods(renamedDeferred);
         deferredPeriods=renamedDeferred;
       }
@@ -2041,6 +2070,16 @@ function togglePeriodDeferred(period, shouldDefer){
 }
 
 function attachPeriodListeners(pendingRenames){
+  // Keep the exclude switch's caption in sync with the checkbox (exclusion is
+  // only persisted when Save is pressed).
+  document.querySelectorAll(".period-toggle").forEach(t=>{
+    t.addEventListener("change", ()=>{
+      const lbl=t.closest("label")?.querySelector(".period-toggle-label");
+      if(!lbl) return;
+      lbl.textContent = t.checked ? "" : "Excluded";
+      lbl.style.color = t.checked ? "" : "var(--partial)";
+    });
+  });
   document.querySelectorAll(".period-defer-btn").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       const period=btn.dataset.period;
@@ -2106,7 +2145,7 @@ async function openManagePeriods(){
   const rows = renderPeriodsList(periods, stats, excluded);
 
   openSheet("Manage Periods", `
-    <p style="font-size:13px;color:var(--muted);margin:0 0 14px">Use <b>Defer</b> to temporarily move a whole period out of current collection. Deferred periods remain recorded and appear under <b>Deferred</b>. Use <b>Restore</b> when you want to collect them.</p>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 14px">Use <b>Defer</b> to temporarily move a whole period out of current collection. Deferred periods remain recorded and appear under <b>Deferred</b>. Use <b>Restore</b> when you want to collect them. Defer/Restore applies immediately.<br><br>The toggle on the left <b>excludes</b> a period completely: it stops counting toward any balance and is not tracked as Deferred. Exclusions are saved only when you press <b>Save</b>.</p>
     ${rows}
     <button class="btn block" id="savePeriodsBtn" disabled style="margin-top:14px">Save</button>
     <div id="periodsMsg" style="margin-top:12px"></div>
