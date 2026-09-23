@@ -328,13 +328,45 @@ to Firebase once real config is pasted in.
 
 ### Known gaps / next steps
 
-- CI runs `scripts/check-scripts.mjs` (parse check) and `node --test tests/`
-  (ledger engine). These catch syntax and maths regressions, but **not** runtime
-  wiring errors (e.g. use-before-define in its temporal dead zone) — those still
-  need a real-browser smoke test. A headless browser test would close that gap.
+- CI runs `scripts/check-scripts.mjs` (parse check), `node --test` (ledger
+  engine) and a Playwright **browser smoke test** (`tests/smoke.spec.js`), which
+  actually executes the app and so catches runtime wiring errors the other two
+  cannot (e.g. use-before-define in its temporal dead zone).
 - `deferSource` on ledger entries is read but never written (always `null`).
-- Remaining extraction candidates: the store layer and the UI/rendering code.
-  Do those incrementally, with a real-browser smoke test between each.
+
+### Refactoring roadmap (splitting `index.html`)
+
+Done:
+
+1. **`MAINTAINERS.md`** — this map.
+2. **`ledger.js`** — the pure ledger engine (money + deferral rules), with
+   `tests/ledger.test.js`.
+
+Next — **Stage 2: extract the store layer.** Move `makeLocalStore()` and
+`makeFirebaseStore()` into `store.js`. This is *not* a plain file move: both
+factories close over ~20 app-scope identifiers and must be given a **host
+object** instead. The hooks they use (verify with `grep` before starting):
+
+```
+ledgerCache, ledgerCacheSyncAt, periodStatsCache,
+deferredPeriods, deferredPeriodUpdatedAt, deferredPeriodOverrides,
+rawCitizens,
+writeDashboardCache,
+invalidateLedgerCache, invalidateStatsMemo, markSyncing,
+nextDeferTimestamp, firestoreTimeMs,
+recalcFromLedger, allocateLedgerPayments, getEffectiveBalance,
+todayISO, entryLabel, esc, fmt
+```
+
+So the signature becomes `makeLocalStore(host)` / `makeFirebaseStore(fb, host)`,
+and `index.html` builds one `host` object and passes it in. Firestore's `fs`
+module is already injected, so that part is unchanged.
+
+Do this **only with the smoke test green**, and keep the exported `store.*`
+interface identical so callers don't change. Then:
+
+3. **Stage 3: UI/rendering** — highest risk, do last and incrementally.
+
 
 ---
 

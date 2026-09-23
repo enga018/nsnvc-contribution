@@ -14,6 +14,10 @@ const DEV_PASSWORD = "dev-mode-only";
 // waits for the dashboard. Clicking before the store exists is a no-op (the
 // login button is bound early by design), so we gate on the readiness flag.
 async function login(page) {
+  // Force local test mode so we never touch the real Firebase project: this
+  // sets the flag before any page script runs (addInitScript runs first).
+  await page.addInitScript(() => { window.__nsnvcForceLocalMode = true; });
+
   await page.goto("/index.html");
   await expect.poll(() => page.evaluate(() => window.__nsnvcModuleStarted), {
     message: "module did not start",

@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.32.2</footer>
+<footer>New Serchhip North Village Council · v1.32.3</footer>
 
 <script>
 (function(){
@@ -144,6 +144,10 @@ const firebaseConfig = {
   messagingSenderId: "686034384332",
   appId: "1:686034384332:web:06e629117b63ba615c5969"
 };
+// Escape hatch for automated tests: the browser smoke test sets this flag so
+// the app runs in local test mode without touching the real Firebase config
+// above. Never set in normal use.
+if(window.__nsnvcForceLocalMode){ for(const k of Object.keys(firebaseConfig)) firebaseConfig[k]="PASTE_HERE"; }
 
 /* ---------- constants ---------- */
 const CURRENCY = "₹";
