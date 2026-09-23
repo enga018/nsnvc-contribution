@@ -16,6 +16,7 @@ maintained and (later) refactored safely.
 | --- | --- |
 | `index.html` | The app: styles, markup, and all UI/state/store/main-thread JavaScript. |
 | `ledger.js` | **Pure ledger engine** (money + deferral rules). DOM-free, state-injected, unit-tested. |
+| `store.js` | **Data stores** (`makeLocalStore` / `makeFirebaseStore`), extracted in stage 2b. Handed a `host` object; identical `store.*` interface. |
 | `tests/ledger.test.js` | Node unit tests for `ledger.js` (`npm run test:unit`). |
 | `tests/smoke.spec.js` | Playwright browser smoke test (boots the app in local test mode). |
 | `playwright.config.js` | Playwright config (starts `scripts/serve-for-tests.mjs`). |
@@ -351,25 +352,34 @@ Done:
 Next — **Stage 2: extract the store layer.** Move `makeLocalStore()` and
 `makeFirebaseStore()` into `store.js`. This is *not* a plain file move: both
 factories close over ~20 app-scope identifiers and must be given a **host
-object** instead. The hooks they use (verify with `grep` before starting):
+object** instead. The hooks they use:
 
 ```
 ledgerCache, ledgerCacheSyncAt, periodStatsCache,
 deferredPeriods, deferredPeriodUpdatedAt, deferredPeriodOverrides,
 rawCitizens,
 writeDashboardCache,
-invalidateLedgerCache, invalidateStatsMemo, markSyncing,
+invalidateLedgerCache, invalidateStatsMemo,
 nextDeferTimestamp, firestoreTimeMs,
 recalcFromLedger, allocateLedgerPayments, getEffectiveBalance,
 todayISO, entryLabel, esc, fmt
 ```
 
-So the signature becomes `makeLocalStore(host)` / `makeFirebaseStore(fb, host)`,
-and `index.html` builds one `host` object and passes it in. Firestore's `fs`
-module is already injected, so that part is unchanged.
+So the signature is `makeLocalStore(host)` / `makeFirebaseStore(fb, host)`, and
+`index.html` builds one `host` object (`storeHost`) and passes it in. Firestore's
+`fs` module is already injected, so that part is unchanged.
 
-Do this **only with the smoke test green**, and keep the exported `store.*`
-interface identical so callers don't change. Then:
+**Status: done** (`store.js`, stage 2b). Two things to know if you edit it:
+
+- `storeHost` uses **getters** for state the app reassigns (`deferredPeriods`,
+  `deferredPeriodOverrides`, `rawCitizens`, …). A plain snapshot would go stale.
+- `markSyncing` is defined *inside* `makeFirebaseStore`, not on the host. It was
+  briefly listed on the host and that (a non-existent global) aborted the module
+  — see the `markSyncing is not defined` note above.
+- When moving code into a module, remember `sw.js`'s `urlsToCache` needs the new
+  file, or offline breaks.
+
+Then:
 
 3. **Stage 3: UI/rendering** — highest risk, do last and incrementally.
 
