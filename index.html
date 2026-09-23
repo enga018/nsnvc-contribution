@@ -942,21 +942,30 @@ function makeFirebaseStore({ auth, db, fs, au }){
       // Run them in parallel so a person-view payment does not wait for two
       // sequential Firestore round trips before the UI can refresh.
       const totals=recalcFromLedger(entries, id);
-      await Promise.all([
-        fs.setDoc(eRef, {
-          entryId:eRef.id,
-          type,
-          amount:amt,
-          note:String(note||""),
-          date:String(date||""),
-          deferred,
-          createdAt:fs.serverTimestamp()
-        }),
-        fs.updateDoc(fs.doc(db,"citizens",id),{
-          ...totals,
-          updatedAt:fs.serverTimestamp()
-        })
-      ]);
+      try{
+        await Promise.all([
+          fs.setDoc(eRef, {
+            entryId:eRef.id,
+            type,
+            amount:amt,
+            note:String(note||""),
+            date:String(date||""),
+            deferred,
+            createdAt:fs.serverTimestamp()
+          }),
+          fs.updateDoc(fs.doc(db,"citizens",id),{
+            ...totals,
+            updatedAt:fs.serverTimestamp()
+          })
+        ]);
+      }catch(err){
+        // addEntry updates ledgerCache before the network write so the person
+        // view can render optimistically. Restore the previous cache if either
+        // Firestore write fails.
+        ledgerCache.set(id, entries.filter(e=>e.entryId!==eRef.id));
+        periodStatsCache=null;
+        throw err;
+      }
     },
     async toggleDefer(id, entryId, deferred){
       const ref = fs.doc(db, "citizens", id, "ledger", entryId);
@@ -3028,12 +3037,16 @@ function attachHistoryListeners(id, editing){
 async function markFullyPaid(id, bal){
   if(!(bal>0)) return;
   try{
-    await store.addEntry(id, "payment", bal, "Cash", todayISO());
+    // addEntry places the new payment in ledgerCache before awaiting Firestore.
+    // Render that cached state immediately so the account feels instant.
+    const savePromise=store.addEntry(id, "payment", bal, "Cash", todayISO());
+    await renderCitizenDetail(id);
+    await savePromise;
     clearOperationErrors();
     toast("Marked fully paid");
-    await renderCitizenDetail(id);
   }catch(err){
     handleOperationError("markFullyPaid", err);
+    await renderCitizenDetail(id);
     toast("Couldn't save. Try again.");
   }
 }
@@ -3046,15 +3059,18 @@ async function handlePaymentSubmit(id){
   const date = $("payDate").value || todayISO();
   $("paySubmit").disabled=true;
   try{
-    await store.addEntry(id, "payment", amount, mode, date);
-    clearOperationErrors();
-    toast("Payment recorded");
+    // Start the write, then immediately redraw from the optimistic ledgerCache
+    // rather than making the user wait for the Firestore round trip.
+    const savePromise=store.addEntry(id, "payment", amount, mode, date);
     closeSheet();
     await renderCitizenDetail(id);
+    await savePromise;
+    clearOperationErrors();
+    toast("Payment recorded");
   }catch(err){
     handleOperationError("recordPayment", err);
+    await renderCitizenDetail(id);
     toast("Couldn't save. Try again.");
-    $("paySubmit").disabled=false;
   }
 }
 
