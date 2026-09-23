@@ -14,7 +14,10 @@ maintained and (later) refactored safely.
 
 | File | Purpose |
 | --- | --- |
-| `index.html` | **The entire app.** Styles, markup, and all JavaScript live here. |
+| `index.html` | The app: styles, markup, and all UI/state/store/main-thread JavaScript. |
+| `ledger.js` | **Pure ledger engine** (money + deferral rules). DOM-free, state-injected, unit-tested. |
+| `tests/ledger.test.js` | Node unit tests for `ledger.js` (`npm test`). |
+| `package.json` | Marks `.js` as ES modules (so Node can test `ledger.js`) and defines `npm test`. |
 | `sw.js` | Service worker. Precache list + stale-while-revalidate strategy. |
 | `manifest.json` | PWA manifest (name, icons, colours). |
 | `VERSION` | The current version string. |
@@ -138,11 +141,18 @@ Local (test) mode mirrors all of this under `localStorage["nsn_contrib_v1"]`.
 
 ---
 
-## 4. The ledger engine (the important rules)
+## 4. The ledger engine (`ledger.js`) — the important rules
 
-These functions are pure given the ledger + defer state and are the heart of
-the app. If they are ever extracted to their own module, keep them free of DOM
-and global state.
+The money and deferral logic lives in **`ledger.js`**, a pure ES module with no
+DOM or app-state dependency. `index.html` imports it at the top of its module
+script. Every function that needs deferral state takes it from the injected
+state object (see `setDeferralState`); `index.html` calls
+`syncDeferralStateToEngine()` after updating its own `deferredPeriods` /
+`deferredPeriodUpdatedAt` / `deferredPeriodOverrides` variables, so the engine
+always resolves against the current state.
+
+If you change these functions, run `npm test` first — `tests/ledger.test.js`
+covers the rules below.
 
 - `calculateLedgerState(entries, citizenId)` — the single source of truth for
   a household's money. Iterates entries; **payments and waivers are summed
@@ -153,12 +163,16 @@ and global state.
   `balance = activeRemaining − totalPaid`.
 - `allocateLedgerPayments` / `getOwedBreakdown` — FIFO allocation of payments
   to charges; exposes only active owed items.
-- `getEffectiveBalance(c)` — authoritative balance; uses `c.ledger` when
-  attached, else the cached `c.balance`. Memoised (see §6).
-- `getDeferredAmount(c)` — informational deferred total, not part of balance.
 - `recalcFromLedger(entries, citizenId)` — the cached summary
   (`totalCharged`, `totalPaid`, `balance`, `deferredTotal`) written back to the
   citizen doc after every change.
+- `normalizeDeferredPeriodState` / `normalizeDeferredPeriodOverrides` — accept
+  legacy shapes and flag migration.
+- `periodKey` — rough month ordering for period labels.
+
+`getEffectiveBalance` / `getDeferredAmount` / `statusOf` and the memoisation
+stay in `index.html` (they read `c.ledger` and the stats cache), but they call
+into the engine.
 
 ### 4.1 Defer resolution — "latest wins"
 
@@ -301,19 +315,21 @@ to Firebase once real config is pasted in.
 
 1. `node --check` the extracted module (it uses top-level `await`, so treat it
    as an ES module).
-2. If you touch the ledger math, re-check the defer rules in §4.1.
-3. If you add a new asset, add it to `sw.js`'s `urlsToCache` (or the fetch
-   strategy), or offline mode breaks.
-4. Bump `VERSION` and run `scripts/sync-version.sh` so all three strings match.
-5. Smoke-test on a real browser: dashboard, person account, defer, export
+2. If you touch `ledger.js`, run `npm test`.
+3. If you touch the defer rules, re-check §4.1.
+4. If you add a new asset, add it to `sw.js`'s `urlsToCache` (or the fetch
+   strategy), or offline mode breaks (this includes any new `.js` module).
+5. Bump `VERSION` and run `scripts/sync-version.sh` so all three strings match.
+6. Smoke-test on a real browser: dashboard, person account, defer, export
    (CSV/PDF), backup/restore, and an offline reload.
 
 ### Known gaps / next steps
 
-- No automated tests yet (CI only checks version sync). Extracting the ledger
-  engine + adding `node --test` cases is the recommended next step.
+- CI only checks version sync. Adding a `node --test` step (the ledger tests
+  already exist) is the next improvement.
 - `deferSource` on ledger entries is read but never written (always `null`).
-- The single-file layout is the main long-term maintenance risk.
+- Remaining extraction candidates: the store layer and the UI/rendering code.
+  Do those incrementally, with a real-browser smoke test between each.
 
 ---
 
