@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.30.6</footer>
+<footer>New Serchhip North Village Council · v1.31.0</footer>
 
 <script>
 (function(){
@@ -1003,7 +1003,21 @@ async function loadFirebase(cfg){
   ]);
   const app  = appMod.initializeApp(cfg);
   const auth = authMod.getAuth(app);
-  const db   = fsMod.getFirestore(app);
+  // Firestore offline persistence: keeps the dashboard usable and queues writes
+  // on the patchy connections this app is built for, then syncs automatically.
+  // The multi-tab manager lets a PWA opened in several tabs share the cache
+  // instead of fighting over it. If persistence can't start (IndexedDB blocked,
+  // private mode, old browser), fall back to the in-memory cache so the app
+  // still runs.
+  let db;
+  try{
+    db = fsMod.initializeFirestore(app, {
+      localCache: fsMod.persistentLocalCache({ tabManager: fsMod.persistentMultipleTabManager() })
+    });
+  }catch(err){
+    console.warn("Firestore offline persistence unavailable; using in-memory cache.", err);
+    db = fsMod.getFirestore(app);
+  }
   return { auth, db, fs:fsMod, au:authMod };
 }
 
