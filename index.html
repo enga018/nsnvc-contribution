@@ -2949,6 +2949,16 @@ async function openCitizen(id){
   const c = allCitizens.find(x=>x.id===id); if(!c) return;
   $("dashboard").classList.add("hidden");
   $("adminDetail").classList.remove("hidden");
+
+  // Person detail is cache-first too. If this citizen's ledger is already
+  // cached in memory, render it immediately. IndexedDB hydration normally
+  // populated this cache during login, so opening a previously visited citizen
+  // should not trigger another Firestore read.
+  if(Array.isArray(ledgerCache.get(id))){
+    await renderCitizenDetail(id);
+    return;
+  }
+
   $("adminDetail").innerHTML = `<div class="notice info">Loading…</div>`;
   await renderCitizenDetail(id);
 }
