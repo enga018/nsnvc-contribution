@@ -1,0 +1,4 @@
+# Dependencies and test artifacts — never commit these.
+node_modules/
+test-results/
+playwright-report/

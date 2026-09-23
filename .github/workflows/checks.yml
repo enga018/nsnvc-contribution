@@ -43,4 +43,23 @@ jobs:
       # Fails on a syntax error in index.html's inline scripts or ledger.js.
       - run: node scripts/check-scripts.mjs
       # Unit tests for the pure ledger engine (balance + deferral rules).
-      - run: node --test tests/
+      # testMatch in playwright.config.js excludes .test.js, so this only
+      # picks up the node:test files.
+      - run: node --test tests/ledger.test.js
+
+  # Browser smoke test: actually executes the app in local test mode, so it
+  # catches runtime wiring errors the checks above cannot (e.g. a global read
+  # before its declaration). Marked continue-on-error until it has been seen
+  # green in CI once, so it can't block deploys while we validate the harness.
+  smoke:
+    name: Browser smoke test
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci || npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test

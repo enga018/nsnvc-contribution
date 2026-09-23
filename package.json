@@ -4,6 +4,11 @@
   "type": "module",
   "description": "NSNVC Contribution Tracker — the app is a static PWA (index.html). This package.json only tells Node that .js files are ES modules (needed to test ledger.js) and provides a test script.",
   "scripts": {
-    "test": "node --test tests/"
+    "test": "node --test tests/",
+    "test:unit": "node --test tests/",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
   }
 }

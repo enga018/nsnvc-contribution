@@ -16,8 +16,11 @@ maintained and (later) refactored safely.
 | --- | --- |
 | `index.html` | The app: styles, markup, and all UI/state/store/main-thread JavaScript. |
 | `ledger.js` | **Pure ledger engine** (money + deferral rules). DOM-free, state-injected, unit-tested. |
-| `tests/ledger.test.js` | Node unit tests for `ledger.js` (`npm test`). |
-| `package.json` | Marks `.js` as ES modules (so Node can test `ledger.js`) and defines `npm test`. |
+| `tests/ledger.test.js` | Node unit tests for `ledger.js` (`npm run test:unit`). |
+| `tests/smoke.spec.js` | Playwright browser smoke test (boots the app in local test mode). |
+| `playwright.config.js` | Playwright config (starts `scripts/serve-for-tests.mjs`). |
+| `scripts/serve-for-tests.mjs` | Dependency-free static server used by the smoke test. |
+| `package.json` | Marks `.js` as ES modules, defines the test scripts, pins Playwright. |
 | `sw.js` | Service worker. Precache list + stale-while-revalidate strategy. |
 | `manifest.json` | PWA manifest (name, icons, colours). |
 | `VERSION` | The current version string. |
