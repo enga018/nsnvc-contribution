@@ -151,6 +151,14 @@ const DASHBOARD_CACHE_DB = "nsnvc-dashboard-cache";
 const DASHBOARD_CACHE_VERSION = 1;
 const DASHBOARD_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 let dashboardCacheReady = null;
+const ledgerCacheSyncAt = new Map();
+function firestoreTimeMs(value){
+  if(!value) return 0;
+  if(typeof value==="number") return value;
+  if(typeof value.toMillis==="function") return value.toMillis();
+  if(typeof value.seconds==="number") return value.seconds*1000;
+  return 0;
+}
 
 function openDashboardCache(){
   if(dashboardCacheReady) return dashboardCacheReady;
@@ -203,7 +211,7 @@ function writeDashboardCache(citizens, ledgers){
         citizenStore.put({...copy,cachedAt});
       }
       for(const [id,entries] of Object.entries(ledgers||{})){
-        ledgerStore.put({id,entries:entries||[],cachedAt});
+        ledgerStore.put({id,entries:entries||[],cachedAt,syncAt:firestoreTimeMs((citizens||[]).find(c=>c.id===id)?.updatedAt)||cachedAt});
       }
     }catch(err){
       console.warn("Failed to write dashboard cache:",err);
@@ -222,7 +230,10 @@ async function hydrateDashboardCache(){
     }
 
     if(cached.ledgers.length){
-      for(const item of cached.ledgers) ledgerCache.set(item.id,item.entries||[]);
+      for(const item of cached.ledgers){
+      ledgerCache.set(item.id,item.entries||[]);
+      ledgerCacheSyncAt.set(item.id,Number(item.syncAt||item.cachedAt||0));
+    }
       periodStatsCache=null;
     }
 
@@ -978,6 +989,29 @@ function makeFirebaseStore({ auth, db, fs, au }){
         return data;
       });
     },
+    async refreshChangedLedgers(citizens){
+      const list=Array.isArray(citizens) ? citizens : [];
+      const changed=list.filter(c=>{
+        const serverAt=firestoreTimeMs(c.updatedAt);
+        const cachedAt=ledgerCacheSyncAt.get(c.id)||0;
+        return !Array.isArray(ledgerCache.get(c.id)) || serverAt>cachedAt;
+      });
+      if(!changed.length) return 0;
+
+      const results=await Promise.all(changed.map(async c=>{
+        const entries=await this.getLedger(c.id);
+        return [c.id,entries,firestoreTimeMs(c.updatedAt)||Date.now()];
+      }));
+      const changedLedgers={};
+      for(const [id,entries,syncAt] of results){
+        ledgerCache.set(id,entries);
+        ledgerCacheSyncAt.set(id,syncAt);
+        changedLedgers[id]=entries;
+      }
+      periodStatsCache=null;
+      writeDashboardCache([],changedLedgers);
+      return changed.length;
+    },
     subscribe(cb){
       const q=fs.query(fs.collection(db,"citizens"), fs.orderBy("name"));
       return fs.onSnapshot(q,
@@ -1690,9 +1724,12 @@ function scheduleDashboardRefresh(){
   dashboardRefreshTimer = setTimeout(refreshDashboard, DASHBOARD_REFRESH_DEBOUNCE_MS);
   clearTimeout(cacheRefreshTimer);
   cacheRefreshTimer = setTimeout(()=>{
-    if(excludedPeriods.length || deferredPeriods.length) store.getAllLedgers().catch(e=>{
-      console.warn("Background ledger cache refresh failed:", e);
-    });
+    if(excludedPeriods.length || deferredPeriods.length){
+      const refresh = typeof store.refreshChangedLedgers==="function"
+        ? store.refreshChangedLedgers(rawCitizens || [])
+        : store.getAllLedgers();
+      refresh.catch(e=>console.warn("Background ledger cache refresh failed:",e));
+    }
   }, CACHE_REFRESH_DELAY_MS);
 }
 async function refreshDashboard(){
@@ -1722,9 +1759,13 @@ async function refreshDashboard(){
 
   if(needsLedger){
     try{
-      await store.getAllLedgers();
+      if(typeof store.refreshChangedLedgers==="function"){
+        await store.refreshChangedLedgers(list);
+      }else{
+        await store.getAllLedgers();
+      }
     }catch(e){
-      console.error("Failed to load ledgers for dashboard:", e);
+      console.error("Failed to refresh dashboard ledgers:", e);
     }
 
     if(list.length > 0){
