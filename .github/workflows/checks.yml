@@ -42,6 +42,9 @@ jobs:
           node-version: "22"
       # Fails on a syntax error in index.html's inline scripts or ledger.js.
       - run: node scripts/check-scripts.mjs
+      # Evaluates index.html's module to catch top-level runtime errors
+      # (e.g. a global that doesn't exist) that node --check cannot see.
+      - run: node scripts/check-module-eval.mjs
       # Unit tests for the pure ledger engine (balance + deferral rules).
       # testMatch in playwright.config.js excludes .test.js, so this only
       # picks up the node:test files.

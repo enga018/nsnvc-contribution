@@ -328,10 +328,16 @@ to Firebase once real config is pasted in.
 
 ### Known gaps / next steps
 
-- CI runs `scripts/check-scripts.mjs` (parse check), `node --test` (ledger
-  engine) and a Playwright **browser smoke test** (`tests/smoke.spec.js`), which
-  actually executes the app and so catches runtime wiring errors the other two
-  cannot (e.g. use-before-define in its temporal dead zone).
+- CI runs, in order of how much of the app they exercise:
+  1. `scripts/check-scripts.mjs` — the inline scripts parse.
+  2. `scripts/check-module-eval.mjs` — the module's top-level code actually
+     executes (catches a missing global, use-before-define, etc.).
+  3. `node --test tests/ledger.test.js` — the ledger engine's maths.
+  4. `tests/smoke.spec.js` (Playwright) — boots the app in local mode and on
+     the Firebase path, and drives a login. This is the only one that can catch
+     errors on code paths that only run in a real browser.
+  The 2a refactor shipped a `markSyncing is not defined` bug that (1) and (3)
+  missed and (4) caught; (2) now catches that class earlier and faster.
 - `deferSource` on ledger entries is read but never written (always `null`).
 
 ### Refactoring roadmap (splitting `index.html`)
