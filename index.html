@@ -2116,7 +2116,19 @@ function attachPeriodListeners(pendingRenames){
 }
 
 async function openManagePeriods(){
-  if(ledgerCache.size===0) await store.getAllLedgers();
+  // Prefer the hydrated memory/IndexedDB ledger cache. Refresh only ledgers
+  // whose citizen updatedAt is newer; do a full read only for an incomplete cache.
+  const citizens=Array.isArray(rawCitizens)?rawCitizens:[];
+  if(citizens.length && typeof store.refreshChangedLedgers==="function"){
+    await store.refreshChangedLedgers(citizens);
+  }
+
+  const cacheComplete=citizens.length>0 && citizens.every(c=>Array.isArray(ledgerCache.get(c.id)));
+  if(!cacheComplete){
+    // Correctness fallback for a partial/empty cache (for example first use).
+    await store.getAllLedgers();
+  }
+
   const { periods, stats } = getPeriodStats();
   const excluded = await store.getExcludedPeriods();
   const pendingRenames = new Map();
@@ -2131,7 +2143,6 @@ async function openManagePeriods(){
 
   attachPeriodListeners(pendingRenames);
 }
-
 function closeSettings(){
   $("adminDetail").classList.add("hidden");
   $("adminDetail").innerHTML = "";
