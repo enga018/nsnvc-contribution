@@ -24,7 +24,7 @@ maintained and (later) refactored safely.
 | `icon-192.png`, `icon-512.png` | PWA icons, referenced by `manifest.json`. |
 | `scripts/sync-version.sh` | Writes the `VERSION` value into the footer and `sw.js`. |
 | `scripts/check-version-sync.sh` | CI check that the three version strings match. |
-| `.github/workflows/version-check.yml` | Runs the check on pushes/PRs touching `VERSION`/`index.html`/`sw.js`. |
+| `.github/workflows/checks.yml` | CI: version sync + script parse check + ledger tests. |
 | `.githooks/pre-commit` | Runs `sync-version.sh` before each commit. |
 | `.githooks/post-commit` | Prompts for a version bump (interactive only). |
 | `FIRESTORE_SECURITY_RULES.md` | The Firestore rules that should be deployed. |
@@ -325,8 +325,10 @@ to Firebase once real config is pasted in.
 
 ### Known gaps / next steps
 
-- CI only checks version sync. Adding a `node --test` step (the ledger tests
-  already exist) is the next improvement.
+- CI runs `scripts/check-scripts.mjs` (parse check) and `node --test tests/`
+  (ledger engine). These catch syntax and maths regressions, but **not** runtime
+  wiring errors (e.g. use-before-define in its temporal dead zone) — those still
+  need a real-browser smoke test. A headless browser test would close that gap.
 - `deferSource` on ledger entries is read but never written (always `null`).
 - Remaining extraction candidates: the store layer and the UI/rendering code.
   Do those incrementally, with a real-browser smoke test between each.

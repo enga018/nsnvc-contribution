@@ -1,0 +1,46 @@
+name: Checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - VERSION
+      - index.html
+      - sw.js
+      - ledger.js
+      - tests/**
+      - scripts/**
+      - package.json
+      - .github/workflows/**
+  push:
+    branches: [main]
+    paths:
+      - VERSION
+      - index.html
+      - sw.js
+      - ledger.js
+      - tests/**
+      - scripts/**
+      - package.json
+      - .github/workflows/**
+
+jobs:
+  version-sync:
+    name: Version sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check-version-sync.sh
+
+  tests:
+    name: Scripts parse + ledger tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # Fails on a syntax error in index.html's inline scripts or ledger.js.
+      - run: node scripts/check-scripts.mjs
+      # Unit tests for the pure ledger engine (balance + deferral rules).
+      - run: node --test tests/
