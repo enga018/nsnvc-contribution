@@ -458,7 +458,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       host.writeDashboardCache([],changedLedgers);
       return changed.length;
     },
-    subscribe(cb){
+    subscribe(cb, onError){
       const q=fs.query(fs.collection(db,"citizens"), fs.orderBy("name"));
       return fs.onSnapshot(q,
         snap=>{
@@ -472,7 +472,10 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
           }
         },
         error=>{
+          // Surface this to the UI: a read failure (quota, rules, offline) must
+          // not silently render an empty dashboard that looks like lost data.
           console.error("Firestore subscribe error:", error);
+          if(typeof onError === "function"){ try{ onError(error); }catch(e){ console.error(e); } }
         }
       );
     },

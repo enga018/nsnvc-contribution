@@ -57,6 +57,7 @@ define("navigator", { onLine: true });
 define("localStorage", { getItem: () => null, setItem: noop, removeItem: noop });
 define("addEventListener", noop);
 define("location", { reload: noop });
+define("scrollTo", noop);
 // Any dynamic import of the Firebase CDN will fail in Node; that's fine — we
 // only care that the module's own top-level code evaluated first.
 define("fetch", () => Promise.reject(new Error("no network in evaluation")));

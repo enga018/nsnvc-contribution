@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.33.3</footer>
+<footer>New Serchhip North Village Council · v1.33.4</footer>
 
 <script>
 (function(){
@@ -767,6 +767,7 @@ function showOfflineBlock(err){
     if(existing){ existing.outerHTML = html; }
     else { main.insertAdjacentHTML("afterbegin", html); }
     document.getElementById("offlineRetry")?.addEventListener("click", ()=>location.reload());
+    try{ window.scrollTo(0,0); }catch(e){}
   }catch(e){ console.error("Failed to show offline block:", e); }
 }
 
@@ -877,6 +878,12 @@ function subscribeCitizens(){
     // on every refresh — the dominant cache-write cost on a slow connection.
     writeDashboardCache(list, {});
     scheduleDashboardRefresh();
+  }, error=>{
+    // Reads are failing (quota / rules / connectivity). Showing an empty
+    // dashboard would look like the council's records were lost, so show the
+    // accurate blocking screen instead.
+    console.error("Citizen subscription failed:", error);
+    showOfflineBlock(error);
   });
 }
 // The live citizen list from subscribe() only carries cached totals, not each
