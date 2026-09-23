@@ -49,13 +49,13 @@ function collectErrors(page) {
   return errors;
 }
 
-// The app normally runs against Firebase. We can't log into the real project
-// from CI, but we CAN boot the real (non-local) code path and assert the module
-// survives startup — which is exactly where the syncPendingWrites temporal-dead
-// -zone crash happened. Requires network access to load the Firebase SDK; if
-// that fails the app falls back to local mode, so we only assert "no crash".
-test("boots in Firebase mode without a startup crash", async ({ page }) => {
-  const errors = collectErrors(page);
+// The app normally runs against Firebase. CI has no Firebase credentials (and
+// may have no network to load the SDK), so this test does NOT assert on console
+// output — the app legitimately logs "Firebase initialization failed" and falls
+// back to local mode. Instead it asserts the module reached its final statement
+// (window.__nsnvcBootComplete), which only happens if no top-level statement
+// threw. That is exactly the class of bug (storeHost/markSyncing) this guards.
+test("boots on the real (Firebase) path without a startup crash", async ({ page }) => {
   // NOTE: deliberately do NOT set __nsnvcForceLocalMode here.
   await page.goto("/index.html");
 
@@ -64,14 +64,17 @@ test("boots in Firebase mode without a startup crash", async ({ page }) => {
     timeout: 15_000
   }).toBe(true);
 
-  // The store is created on both paths (Firebase or local fallback); if a
-  // startup wiring error aborted the module, this never becomes true.
-  await expect.poll(() => page.evaluate(() => window.__nsnvcStoreReady), {
-    message: "store never became ready — startup likely threw",
-    timeout: 20_000
+  // Reached only if every top-level statement ran without throwing.
+  await expect.poll(() => page.evaluate(() => window.__nsnvcBootComplete), {
+    message: "module did not reach its final statement — startup threw",
+    timeout: 25_000
   }).toBe(true);
 
-  expect(errors, `page errors: ${errors.join(" | ")}`).toEqual([]);
+  // And the store exists (Firebase or local fallback).
+  await expect.poll(() => page.evaluate(() => window.__nsnvcStoreReady), {
+    message: "store never became ready",
+    timeout: 10_000
+  }).toBe(true);
 });
 
 test("app boots, logs in, and renders the dashboard", async ({ page }) => {
