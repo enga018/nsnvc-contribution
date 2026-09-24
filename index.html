@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.33.15<span id="accEmail"></span></footer>
+<footer>New Serchhip North Village Council · v1.33.16<span id="accEmail"></span></footer>
 
 <script>
 (function(){
@@ -2120,9 +2120,9 @@ function renderEntryRow(entry, editing, citizenId){
   </span>` : '';
 
   let deferToggle = '';
-  // Defer / restore switch is shown on the account view only — in edit mode
-  // it is hidden so the row shows just the ✏️ / 🗑️ actions without the clutter.
-  if(entry.type==="charge" && !editing){
+  // Defer / restore switch appears only in edit mode — the normal account view
+  // stays clean, and the row's edit actions and the switch share the editing UI.
+  if(entry.type==="charge" && editing){
     const checked = isDeferred ? 'checked' : '';
     const labelText = isDeferred ? "Restore" : "Defer";
     deferToggle = `<label class="switch" data-id="${entry.entryId}" style="margin-left:8px">
