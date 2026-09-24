@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.33.11</footer>
+<footer>New Serchhip North Village Council · v1.33.12<span id="accEmail"></span></footer>
 
 <script>
 (function(){
@@ -131,7 +131,8 @@ import {
   allocateLedgerPayments,
   getOwedBreakdown,
   recalcFromLedger as recalcFromLedgerEngine,
-  periodKey
+  periodKey,
+  sortLedgerEntries
 } from "./ledger.js";
 import { makeLocalStore, makeFirebaseStore } from "./store.js";
 
@@ -650,6 +651,23 @@ function handleOperationError(operation, error){
     showModeBanner("⚠️ Connection issues detected. Some changes may not be saved. Check your internet connection.");
   }
   console.error(`Operation "${operation}" failed:`, error);
+  // Persistent diagnostic strip: always shows the raw code + message so a
+  // failing write can be diagnosed without DevTools, even if the toast fades.
+  const detail = [error && error.code, error && error.message].filter(Boolean).join(" — ") || String(error || "unknown error");
+  showOpError(`${operation}: ${detail}`);
+}
+function showOpError(msg){
+  try{
+    let el = document.getElementById("opError");
+    if(!el){
+      el = Object.assign(document.createElement("div"), { id:"opError",
+        onclick:()=>el.remove()
+      });
+      el.style.cssText = "position:fixed;left:12px;right:12px;bottom:12px;z-index:70;background:#7a1d1d;color:#fff;padding:10px 14px;border-radius:10px;font-size:12.5px;box-shadow:0 6px 20px rgba(0,0,0,.28);word-break:break-word";
+      document.body.appendChild(el);
+    }
+    el.textContent = `⚠ ${msg}  (tap to dismiss)`;
+  }catch(e){}
 }
 function clearOperationErrors(){
   consecutiveErrors = 0;
@@ -658,6 +676,8 @@ function clearOperationErrors(){
     const banner = document.querySelector(".config-warn");
     if(banner && banner.textContent.includes("Connection issues")) banner.remove();
   }
+  const el = document.getElementById("opError");
+  if(el) el.remove();
 }
 
 function showModeBanner(msg, kind){
@@ -848,8 +868,10 @@ async function login(){
   }
 }
 
-async function onAuth(isIn){
+async function onAuth(isIn, userEmail){
   loggedIn = isIn;
+  const acc=$("accEmail");
+  if(acc) acc.textContent = (isIn && userEmail) ? " · " + userEmail : "";
   if(isIn){
     $("loginCard").classList.add("hidden");
     $("dashboard").classList.remove("hidden");
@@ -2163,7 +2185,7 @@ async function renderCitizenDetail(id){
     // This is the actual remaining balance: active charges minus all
     // payments and waivers. Deferred charges are excluded by the engine.
     const bal = state.balance;
-    const allSorted = [...entries].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    const allSorted = sortLedgerEntries(entries, true);
     const INITIAL_HISTORY = 3;
 
     const viewState = { historyExpanded: false, historyEditing: false };

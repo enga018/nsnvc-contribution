@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   setDeferralState, normalizeDeferredPeriodState, normalizeDeferredPeriodOverrides,
   isPeriodDeferredForCitizen, calculateLedgerState, allocateLedgerPayments,
-  getOwedBreakdown, recalcFromLedger, periodKey
+  getOwedBreakdown, recalcFromLedger, periodKey, entryTimeMs, sortLedgerEntries
 } from "../ledger.js";
 
 const charge = (id, note, amount) => ({ entryId:id, type:"charge", note, amount });
@@ -90,4 +90,35 @@ test("periodKey sorts month buckets correctly", () => {
   assert.ok(periodKey("MAY2") < periodKey("JUN"));
   assert.equal(periodKey("MAY"), 50);
   assert.ok(periodKey("APRIL 2026") > periodKey("DEC"));
+});
+
+test("entryTimeMs accepts numbers, Firestore timestamps and missing values", () => {
+  assert.equal(entryTimeMs({ createdAt: Date.now() }) > 0, true);
+  // Firestore serverTimestamp comes back as { seconds, nanoseconds }.
+  assert.equal(entryTimeMs({ createdAt: { seconds: 1700000000, nanoseconds: 500000000 } }), 1700000000500);
+  assert.equal(entryTimeMs({ createdAt: 42 }), 42);
+  assert.equal(entryTimeMs({}), 0);
+  assert.equal(entryTimeMs(null), 0);
+});
+
+test("sortLedgerEntries handles mixed Firestore timestamps and numbers (newest first)", () => {
+  // Firestore serverTimestamps come back as { seconds, nanoseconds } on the
+  // epoch-seconds scale; freshly-created in-memory entries carry Date.now()
+  // (epoch millis). Both scales are epoch-aligned, so seconds*1000 is
+  // comparable with plain millis — that is exactly the mix that used to make
+  // the sort a NaN no-op in the UI.
+  const firebaseOld = { entryId:"a", createdAt:{ seconds:100, nanoseconds:500000000 } }; // 100500ms
+  const localNew    = { entryId:"b", createdAt:200000 };                                 // 200000ms
+  const missing     = { entryId:"c" };                                                   // 0
+  const firebaseNew = { entryId:"d", createdAt:{ seconds:300, nanoseconds:0 } };         // 300000ms
+  const sorted = sortLedgerEntries([firebaseOld, localNew, missing, firebaseNew]);
+  // newest-first: d (300000) → b (200000) → a (100500) → c (0)
+  assert.deepEqual(sorted.map(e=>e.entryId), ["d","b","a","c"]);
+});
+
+test("sortLedgerEntries can return oldest-first", () => {
+  const a = { entryId:"a", createdAt:{ seconds:2, nanoseconds:0 } };
+  const b = { entryId:"b", createdAt:{ seconds:1, nanoseconds:0 } };
+  const sorted = sortLedgerEntries([a, b], false);
+  assert.deepEqual(sorted.map(e=>e.entryId), ["b","a"]);
 });

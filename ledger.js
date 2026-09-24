@@ -248,3 +248,23 @@ export function periodKey(note){
   const idx={JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12}[m[1]];
   return idx*10 + (m[2]?parseInt(m[2],10):0);
 }
+
+/* ---------- entry sorting ---------- */
+// createdAt may be a number (Date.now()), a Firestore serverTimestamp read
+// back as a Timestamp-like object ({seconds, nanoseconds}), or missing on
+// old imported entries. Plain `a-b` subtraction on Timestamps is NaN, which
+// silently disables the sort. These helpers normalise all three shapes so
+// the ledger always renders newest-first consistently.
+export function entryTimeMs(e){
+  const c = e && e.createdAt;
+  if(c && typeof c === "object" && !Array.isArray(c) && typeof c.seconds === "number"){
+    return c.seconds * 1000 + (typeof c.nanoseconds === "number" ? c.nanoseconds / 1e6 : 0);
+  }
+  return Number(c) || 0;
+}
+export function sortLedgerEntries(entries, newestFirst = true){
+  return [...entries].sort((a,b)=>{
+    const diff = entryTimeMs(b) - entryTimeMs(a);
+    return newestFirst ? diff : -diff;
+  });
+}

@@ -170,11 +170,11 @@ export function makeLocalStore(host){
     async signIn(email, pass){
       if(pass !== "dev-mode-only") throw new Error("Invalid credentials for test mode. Use password: dev-mode-only");
       loggedIn=true;
-      authCbs.forEach(cb=>cb(true));
+      authCbs.forEach(cb=>cb(true, "test-mode@local"));
       console.warn("⚠️ Test mode login - for development only. This app should run against Firebase in production.");
     },
-    signOut(){ loggedIn=false; authCbs.forEach(cb=>cb(false)); },
-    onAuth(cb){ authCbs.add(cb); cb(loggedIn); },
+    signOut(){ loggedIn=false; authCbs.forEach(cb=>cb(false, null)); },
+    onAuth(cb){ authCbs.add(cb); cb(loggedIn, loggedIn ? "test-mode@local" : null); },
     async exportOwingCsv(){
       const owing = await this.listOwing();
       let csv = "Name,Job Card,Outstanding (₹),Payment History\n";
@@ -689,7 +689,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     },
     async signIn(email, pass){ await au.signInWithEmailAndPassword(auth, email, pass); },
     signOut(){ au.signOut(auth); },
-    onAuth(cb){ au.onAuthStateChanged(auth, u=>cb(!!u)); },
+    onAuth(cb){ au.onAuthStateChanged(auth, u=>cb(!!u, u ? u.email : null)); },
     async exportOwingCsv(){
       const owing = await this.listOwing();
       // listOwing() just populated the in-memory ledger cache via a single

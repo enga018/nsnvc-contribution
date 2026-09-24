@@ -428,6 +428,18 @@ reason to move slowly, in small steps, with checks between each.
    `meta/deferredPeriodOverrides` doc had never been created (reads tolerate a
    missing doc and return `{}`, so the app loaded, but the write failed). Fix:
    `setDoc` with an explicit `mergeFields` path creates the doc on first use.
+7. **History order flipped between newest-first and oldest-first** (1.33.12,
+    not from this refactor but a related data-shape bug). `renderCitizenDetail`
+    sorted with `(b.createdAt||0)-(a.createdAt||0)`. Firestore returns
+    `createdAt` as a `Timestamp` OBJECT from `serverTimestamp()`, so the
+    subtraction is `NaN` and the sort silently no-ops: the list kept the
+    ascending (oldest-first) order `getLedger` returns. Right after recording
+    an entry in-session the in-memory copy had a numeric `createdAt`, so the
+    sort worked and re-rendered newest-first — hence "sometimes top, sometimes
+    bottom". Fix: `ledger.js` now exports `entryTimeMs` (normalises number /
+    Timestamp / missing) and `sortLedgerEntries(entries, newestFirst)`; the
+    detail view uses it. Keep using these two helpers anywhere a ledger list
+    is sorted — never raw `a-b` on `createdAt`.
 
 All are now covered by CI where possible: `check-module-eval.mjs` fails on any
 `ReferenceError` / `is not defined` / `is not a function` / `Cannot read propert`
