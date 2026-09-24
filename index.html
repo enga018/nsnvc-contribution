@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.33.12<span id="accEmail"></span></footer>
+<footer>New Serchhip North Village Council · v1.33.13<span id="accEmail"></span></footer>
 
 <script>
 (function(){
@@ -525,12 +525,19 @@ try {
 // factories still live here; only their interface changed.
 const storeHost = {
   get ledgerCache(){ return ledgerCache; },
+  set ledgerCache(v){ ledgerCache = v; },
   get ledgerCacheSyncAt(){ return ledgerCacheSyncAt; },
+  set ledgerCacheSyncAt(v){ ledgerCacheSyncAt = v; },
   get periodStatsCache(){ return periodStatsCache; },
+  set periodStatsCache(v){ periodStatsCache = v; },
   get deferredPeriods(){ return deferredPeriods; },
+  set deferredPeriods(v){ deferredPeriods = v; },
   get deferredPeriodUpdatedAt(){ return deferredPeriodUpdatedAt; },
+  set deferredPeriodUpdatedAt(v){ deferredPeriodUpdatedAt = v; },
   get deferredPeriodOverrides(){ return deferredPeriodOverrides; },
+  set deferredPeriodOverrides(v){ deferredPeriodOverrides = v; },
   get rawCitizens(){ return rawCitizens; },
+  set rawCitizens(v){ rawCitizens = v; },
   // Timestamp of the last FULL ledger scan (collectionGroup read). Used to avoid
   // re-scanning the whole village for every export/backup/period action — the
   // free Firestore plan's daily read quota is easily exhausted otherwise.

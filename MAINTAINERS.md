@@ -440,6 +440,20 @@ reason to move slowly, in small steps, with checks between each.
     Timestamp / missing) and `sortLedgerEntries(entries, newestFirst)`; the
     detail view uses it. Keep using these two helpers anywhere a ledger list
     is sorted — never raw `a-b` on `createdAt`.
+8. **Get-only `storeHost` accessors broke EVERY write** (1.33.12 — the root
+    cause of the persistent "Couldn't save" reports). `storeHost` exposed
+    `periodStatsCache` (and `deferredPeriodUpdatedAt`, `deferredPeriodOverrides`)
+    as getter-only accessors, but `store.js` ASSIGNS `host.periodStatsCache=null`
+    (8 sites) and `host.deferredPeriodUpdatedAt=...` (3 sites). In strict mode
+    (ES modules are always strict), assigning to a getter-only accessor throws
+    `Cannot set property ... which has only a getter` **before the Firestore
+    write**, so the toast showed no error code and the security rules were
+    never the problem. Diagnosed from the on-device error strip in v1.33.12.
+    Fix: added `set` accessors for every state property on `storeHost`, and
+    `check-scripts.mjs` now fails CI if store.js writes to any storeHost
+    property that lacks a setter. Symptom pattern to remember: a write failure
+    toast with NO `(code)` usually means a client-side throw before Firestore —
+    report the red strip text.
 
 All are now covered by CI where possible: `check-module-eval.mjs` fails on any
 `ReferenceError` / `is not defined` / `is not a function` / `Cannot read propert`

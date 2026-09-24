@@ -52,5 +52,31 @@ classicMatches.forEach((_, i) => syntaxCheck(join(dir, `classic${i}.js`), `class
 
 // Also verify the engine module parses.
 syntaxCheck(join(root, "ledger.js"), "ledger.js");
+syntaxCheck(join(root, "store.js"), "store.js");
+
+/* ---------- storeHost assignment safety ----------
+   Store factories are handed `storeHost`, whose reassignable state is exposed
+   as accessors. If a property has only a `get` and store.js assigns to it
+   (`host.<prop> = ...`), the assignment throws in strict mode:
+   "Cannot set property <prop> of #<Object> which has only a getter".
+   That silently broke every payment write once (v1.33.12 incident #8) before
+   any Firestore call, with no error code on screen. Enforce that every
+   property store.js writes to has a setter. */
+const storeBlockMatch = html.match(/const storeHost\s*=\s*\{([\s\S]*?)\n\};/);
+if (!storeBlockMatch) {
+  console.error("::error::Could not locate the storeHost object in index.html");
+  process.exit(1);
+}
+const storeBlock = storeBlockMatch[1];
+const hostSetters = new Set([...storeBlock.matchAll(/set (\w+)\(/g)].map(m => m[1]));
+const storeJs = readFileSync(join(root, "store.js"), "utf8");
+const hostWrites = [...storeJs.matchAll(/host\.(\w+)\s*=/g)].map(m => m[1]);
+const missing = [...new Set(hostWrites)].filter(p => !hostSetters.has(p));
+if (missing.length) {
+  console.error(`::error::store.js assigns to storeHost property${missing.length > 1 ? "ies" : ""} with no setter: ${missing.join(", ")}`);
+  console.error("Add a matching `set` accessor to storeHost in index.html (see MAINTAINERS.md incident #8).");
+  process.exit(1);
+}
+console.log(`  ok  storeHost setter check (${hostWrites.length} store.js writes, ${hostSetters.size} setters)`);
 
 console.log("All inline scripts parse.");
