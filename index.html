@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.33.10</footer>
+<footer>New Serchhip North Village Council · v1.33.11</footer>
 
 <script>
 (function(){
@@ -2326,7 +2326,7 @@ async function markFullyPaid(id, bal){
   }catch(err){
     handleOperationError("markFullyPaid", err);
     await renderCitizenDetail(id);
-    toast("Couldn't save. Try again.");
+    toast("Couldn't save. Try again." + (err&&err.code?` (${err.code})`:""));
   }
 }
 
@@ -2349,7 +2349,7 @@ async function handlePaymentSubmit(id){
   }catch(err){
     handleOperationError("recordPayment", err);
     await renderCitizenDetail(id);
-    toast("Couldn't save. Try again.");
+    toast("Couldn't save. Try again." + (err&&err.code?` (${err.code})`:""));
   }
 }
 

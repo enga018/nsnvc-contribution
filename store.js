@@ -803,16 +803,16 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     },
     async setCitizenChargeDeferred(citizenId, entryId, deferred){
       // Update the value and timestamp together so a later action can supersede an earlier one.
-      // setDoc with an explicit mergeFields path creates the document on first
-      // use. updateDoc here threw NOT_FOUND whenever meta/deferredPeriodOverrides
-      // had never been created (the doc was also never written while the v1.33.9
-      // 'host.'-prefix bug redirected writes to a different id) — that's why
-      // Settings (period) defers worked but per-charge toggles failed.
+      // setDoc + mergeFields creates the document on first use (updateDoc threw
+      // NOT_FOUND when meta/deferredPeriodOverrides had never been created).
+      // FieldPath segments — not dotted strings — for cid/eid: citizen ids can
+      // contain dots (fullKey keeps them), and a dotted string path would either
+      // mis-nest the write or fail SDK validation with a code-less error.
       const cid=String(citizenId), eid=String(entryId), at=host.nextDeferTimestamp();
       const ref=fs.doc(db,"meta","deferredPeriodOverrides");
       await fs.setDoc(ref,
         { overrides: { [cid]: { [eid]: { value:Boolean(deferred), at } } } },
-        { mergeFields: [`overrides.${cid}.${eid}`] });
+        { mergeFields: [new fs.FieldPath("overrides", cid, eid)] });
       markSyncing();
     },
     async importAll(backup,onProgress){
