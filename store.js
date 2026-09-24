@@ -705,7 +705,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     },
     async exportAll(onProgress){
       if(onProgress)onProgress(0,3);const cSnap=await fs.getDocs(fs.collection(db,"citizens"));const byId={};cSnap.docs.forEach(d=>{const c=d.data();byId[d.id]={id:d.id,jobCard:c.jobCard,cardNo:c.cardNo,name:c.name,phone:c.phone||"",totalCharged:c.totalCharged||0,totalPaid:c.totalPaid||0,balance:c.balance||0,deferredTotal:c.deferredTotal||0,pendingPayments:[],ledger:[]};});
-      const [deferredSnap,overrideSnap,importsSnap]=await Promise.all(["host.deferredPeriods","host.deferredPeriodOverrides","imports"].map(id=>fs.getDoc(fs.doc(db,"meta",id))));if(onProgress)onProgress(1,3);
+      const [deferredSnap,overrideSnap,importsSnap]=await Promise.all(["deferredPeriods","deferredPeriodOverrides","imports"].map(id=>fs.getDoc(fs.doc(db,"meta",id))));if(onProgress)onProgress(1,3);
       // One collection-group read each for all ledgers and all pending payments,
       // instead of two subcollection reads per household. If either query is
       // rejected, fall back to bounded per-citizen batches of 20.
@@ -729,7 +729,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     async deleteAll(onProgress){
       if(onProgress)onProgress(0,2);const cSnap=await fs.getDocs(fs.collection(db,"citizens"));let batch=fs.writeBatch(db),ops=0;const flush=async()=>{if(ops>0){await batch.commit();batch=fs.writeBatch(db);ops=0;}};
       for(const d of cSnap.docs){const [led,pp]=await Promise.all([fs.getDocs(fs.collection(db,"citizens",d.id,"ledger")),fs.getDocs(fs.collection(db,"citizens",d.id,"pendingPayments"))]);for(const x of led.docs){batch.delete(x.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}for(const x of pp.docs){batch.delete(x.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}batch.delete(d.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}
-      await flush();batch=fs.writeBatch(db);ops=0;for(const id of ["host.deferredPeriods","host.deferredPeriodOverrides","imports"]){batch.delete(fs.doc(db,"meta",id));if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}await flush();host.invalidateLedgerCache();markSyncing();
+      await flush();batch=fs.writeBatch(db);ops=0;for(const id of ["deferredPeriods","deferredPeriodOverrides","imports"]){batch.delete(fs.doc(db,"meta",id));if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}await flush();host.invalidateLedgerCache();markSyncing();
     },
     async renamePeriod(oldPeriod, newPeriod, onProgress){
       const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
@@ -765,7 +765,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     async getDeferredPeriods(){
       // Raw stored shape; onAuth normalizes it and writes the normalized version
       // back when it detects a legacy shape.
-      const doc=await fs.getDoc(fs.doc(db,"meta","host.deferredPeriods"));
+      const doc=await fs.getDoc(fs.doc(db,"meta","deferredPeriods"));
       if(doc.exists()) return doc.data();
       return {periods:[],updatedAt:{}};
     },
@@ -784,12 +784,12 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
         if(!next.includes(p)) delete updatedAt[p];
       }
       host.deferredPeriodUpdatedAt={...updatedAt};
-      await fs.setDoc(fs.doc(db,"meta","host.deferredPeriods"), { periods:next, updatedAt }, {merge:true});
+      await fs.setDoc(fs.doc(db,"meta","deferredPeriods"), { periods:next, updatedAt }, {merge:true});
       markSyncing();
     },
     async getDeferredPeriodOverrides(){
       // Raw stored shape; onAuth normalizes and writes back if legacy.
-      const doc=await fs.getDoc(fs.doc(db,"meta","host.deferredPeriodOverrides"));
+      const doc=await fs.getDoc(fs.doc(db,"meta","deferredPeriodOverrides"));
       if(doc.exists()) return doc.data().overrides||{};
       return {};
     },
@@ -798,14 +798,14 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       markSyncing();
     },
     async setDeferredPeriodOverrides(overrides){
-      await fs.setDoc(fs.doc(db,"meta","host.deferredPeriodOverrides"), { overrides:overrides||{} }, {merge:true});
+      await fs.setDoc(fs.doc(db,"meta","deferredPeriodOverrides"), { overrides:overrides||{} }, {merge:true});
       markSyncing();
     },
     async setCitizenChargeDeferred(citizenId, entryId, deferred){
       // Update the value and timestamp together so a later action can supersede an earlier one.
       const field = `overrides.${String(citizenId)}.${String(entryId)}`;
       const at=host.nextDeferTimestamp();
-      await fs.updateDoc(fs.doc(db,"meta","host.deferredPeriodOverrides"), {
+      await fs.updateDoc(fs.doc(db,"meta","deferredPeriodOverrides"), {
         [field]: {value:Boolean(deferred),at}
       });
       markSyncing();
@@ -813,7 +813,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     async importAll(backup,onProgress){
       if(!backup||!Array.isArray(backup.citizens))throw new Error("Not a valid backup file");if(onProgress)onProgress(0,3);const old=await fs.getDocs(fs.collection(db,"citizens"));let batch=fs.writeBatch(db),ops=0;const flush=async()=>{if(ops>0){await batch.commit();batch=fs.writeBatch(db);ops=0;}};
       for(const d of old.docs){const [led,pp]=await Promise.all([fs.getDocs(fs.collection(db,"citizens",d.id,"ledger")),fs.getDocs(fs.collection(db,"citizens",d.id,"pendingPayments"))]);for(const x of led.docs){batch.delete(x.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}for(const x of pp.docs){batch.delete(x.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}batch.delete(d.ref);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}await flush();if(onProgress)onProgress(1,3);
-      const meta=backup.meta&&typeof backup.meta==="object"?backup.meta:{};for(const [id,value] of [["host.deferredPeriods",meta.deferredPeriods&&typeof meta.deferredPeriods==="object"?meta.deferredPeriods:{periods:[],updatedAt:{}}],["host.deferredPeriodOverrides",{overrides:meta.deferredPeriodOverrides&&typeof meta.deferredPeriodOverrides==="object"?meta.deferredPeriodOverrides:{}}],["imports",{periods:Array.isArray(meta.imports)?meta.imports:[]}]]){batch.set(fs.doc(db,"meta",id),value);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}await flush();batch=fs.writeBatch(db);ops=0;let done=0;const validTypes=["charge","payment","forgive","sanitationFee"];
+      const meta=backup.meta&&typeof backup.meta==="object"?backup.meta:{};for(const [id,value] of [["deferredPeriods",meta.deferredPeriods&&typeof meta.deferredPeriods==="object"?meta.deferredPeriods:{periods:[],updatedAt:{}}],["deferredPeriodOverrides",{overrides:meta.deferredPeriodOverrides&&typeof meta.deferredPeriodOverrides==="object"?meta.deferredPeriodOverrides:{}}],["imports",{periods:Array.isArray(meta.imports)?meta.imports:[]}]]){batch.set(fs.doc(db,"meta",id),value);if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}await flush();batch=fs.writeBatch(db);ops=0;let done=0;const validTypes=["charge","payment","forgive","sanitationFee"];
       for(const r of backup.citizens){const cRef=fs.doc(db,"citizens",r.id);batch.set(cRef,{jobCard:r.jobCard,cardNo:r.cardNo,name:r.name,phone:r.phone||"",totalCharged:r.totalCharged||0,totalPaid:r.totalPaid||0,balance:r.balance||0,deferredTotal:r.deferredTotal||0,updatedAt:fs.serverTimestamp()});if(++ops>=FIRESTORE_BATCH_SIZE)await flush();for(const e of (r.ledger||[])){if(!e||!validTypes.includes(e.type)||!e.amount)continue;const amt=Number(e.amount);if(!Number.isFinite(amt)||amt<=0)continue;const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));batch.set(eRef,{entryId:e.entryId||eRef.id,type:e.type,amount:amt,note:e.note||"",date:e.date||"",deferred:e.deferred||false,createdAt:e.createdAtMs?fs.Timestamp.fromMillis(e.createdAtMs):fs.serverTimestamp()});if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}for(const p of (Array.isArray(r.pendingPayments)?r.pendingPayments:[])){if(!p||!p.id||!Number.isFinite(Number(p.amount))||Number(p.amount)<=0)continue;const pRef=fs.doc(db,"citizens",r.id,"pendingPayments",String(p.id));batch.set(pRef,{amount:Number(p.amount),date:p.date||"",status:p.status||"pending",createdAt:p.createdAt||fs.serverTimestamp()});if(++ops>=FIRESTORE_BATCH_SIZE)await flush();}if((++done%50)===0&&onProgress)onProgress(2,3);}
       await flush();host.invalidateLedgerCache();markSyncing();if(onProgress)onProgress(3,3);return backup.citizens.length;
     },
