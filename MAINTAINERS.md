@@ -454,6 +454,19 @@ reason to move slowly, in small steps, with checks between each.
     property that lacks a setter. Symptom pattern to remember: a write failure
     toast with NO `(code)` usually means a client-side throw before Firestore —
     report the red strip text.
+9. **Leaked index.html-only identifiers into `store.js` broke every sync
+    operation** (1.33.13). `makeFirebaseStore`'s internal `markSyncing()` called
+    bare `setSyncPending(true)` / `setSyncPending(false)`, and `deleteAll` /
+    `importAll` used bare `FIRESTORE_BATCH_SIZE`. Both live only in index.html's
+    module scope — an ES module cannot see them, so the calls threw
+    `ReferenceError: setSyncPending is not defined` AT RUNTIME (e.g. the defer
+    flow: `deferCharge: setSyncPending is not defined`), never at load time, so
+    all checks stayed green. The user hit it on the per-charge defer after
+    payments were fixed. Fix: expose `setSyncPending` and `FIRESTORE_BATCH_SIZE`
+    on `storeHost`, and `check-scripts.mjs` now also fails if store.js READS a
+    host member that doesn't exist on `storeHost`. Rule to remember: `store.js`
+    may only touch app state through `host.*`, never through a bare name that
+    happened to be in the index.html module scope.
 
 All are now covered by CI where possible: `check-module-eval.mjs` fails on any
 `ReferenceError` / `is not defined` / `is not a function` / `Cannot read propert`

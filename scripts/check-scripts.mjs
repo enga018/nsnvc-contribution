@@ -79,4 +79,25 @@ if (missing.length) {
 }
 console.log(`  ok  storeHost setter check (${hostWrites.length} store.js writes, ${hostSetters.size} setters)`);
 
+/* ---------- storeHost member presence ----------
+   Same family as above, flipped: store.js READS `host.<name>` (host.setSyncPending,
+   host.FIRESTORE_BATCH_SIZE, ...). If the name never existed on storeHost the
+   call/read throws `X is not defined` / `Cannot read properties of undefined`
+   at runtime, again before any Firestore work. Incident #9 — deferCharge died
+   on `host.setSyncPending` missing until it was added. Every name store.js
+   reads from host must be present on storeHost (as getter, setter or plain
+   member). */
+const hostMembers = new Set([
+  ...[...storeBlock.matchAll(/(?:get|set)\s+(\w+)\(/g)].map(m => m[1]),
+  ...[...storeBlock.matchAll(/^\s*([A-Za-z_$][\w$]*)\s*,?\s*$/gm)].map(m => m[1]),
+]);
+const hostReads = [...storeJs.matchAll(/host\.([A-Za-z_$][\w$]*)/g)].map(m => m[1]);
+const unknown = [...new Set(hostReads)].filter(p => !hostMembers.has(p));
+if (unknown.length) {
+  console.error(`::error::store.js reads storeHost member${unknown.length > 1 ? "s" : ""} that do not exist on storeHost: ${unknown.join(", ")}`);
+  console.error("Add each name to storeHost in index.html (getter, setter or plain member). See MAINTAINERS.md incident #9.");
+  process.exit(1);
+}
+console.log(`  ok  storeHost member check (${hostReads.length} store.js reads, ${hostMembers.size} members)`);
+
 console.log("All inline scripts parse.");

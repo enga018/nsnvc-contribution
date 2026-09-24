@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.33.13<span id="accEmail"></span></footer>
+<footer>New Serchhip North Village Council · v1.33.14<span id="accEmail"></span></footer>
 
 <script>
 (function(){
@@ -546,6 +546,11 @@ const storeHost = {
   get fullLedgerSnapshotCount(){ return fullLedgerSnapshotCount; },
   set fullLedgerSnapshotCount(v){ fullLedgerSnapshotCount = v; },
   get fullLedgerTtlMs(){ return FULL_LEDGER_TTL_MS; },
+  get FIRESTORE_BATCH_SIZE(){ return FIRESTORE_BATCH_SIZE; },
+  // Lets the store tell the UI that local writes are still draining to the
+  // server (the sync pill). Lives on host — NOT leaned on the bare name —
+  // because store.js is its own module and cannot see this module scope.
+  setSyncPending,
   writeDashboardCache,
   invalidateLedgerCache,
   invalidateStatsMemo,
