@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.33.6</footer>
+<footer>New Serchhip North Village Council · v1.33.7</footer>
 
 <script>
 (function(){
@@ -502,6 +502,14 @@ let allCitizens=[], rawCitizens=[];
 // Caching & Performance
 let ledgerCache=new Map(), periodStatsCache=null;
 let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null;
+// Dashboard list / filter state. Declared here (top-level, before the functions
+// that mutate it) so login-time code paths can't hit a temporal-dead-zone error,
+// which happened when these lived further down the file (see the period
+// dropdown fields below).
+let periodFilter="", unpaidCache=new Map(), periodsReady=false, loadingPeriods=false;
+let adminFilter="pending", adminShown=20;
+const ADMIN_STEP=20;
+let adminFilteredList=[]; // the currently filtered citizen list, for "show more"
 // Configuration
 
 try {
@@ -1021,11 +1029,6 @@ function renderStats(){
   $("stOverpaid").textContent = fmt(overpaidOut);
   $("stOverpaidCount").textContent = `${overpaid.length} household${overpaid.length===1?"":"s"} overpaid`;
 }
-let adminFilter="pending", adminShown=20;
-const ADMIN_STEP=20;
-let adminFilteredList=[]; // the currently filtered citizen list, for "show more"
-let periodFilter="", unpaidCache=new Map(), periodsReady=false, loadingPeriods=false;
-
 async function loadOwedBreakdown(){
   if(loadingPeriods) return; loadingPeriods=true;
   const pend=allCitizens.filter(c=>getEffectiveBalance(c)>0);
