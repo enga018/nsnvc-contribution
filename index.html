@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.33.7</footer>
+<footer>New Serchhip North Village Council · v1.33.8</footer>
 
 <script>
 (function(){
@@ -576,31 +576,15 @@ if(isLocalMode) addTestLoginHint();
 // login programmatically — including the browser smoke test — should wait for
 // this rather than assume a click at time zero works.
 window.__nsnvcStoreReady = !!store;
-if(!store){
-  // No store means Firebase is configured but unreachable (the blocking screen
-  // is already shown). Skip the rest of the boot sequence rather than throwing
-  // on a null store — but let execution continue so the module still reaches
-  // its final statement (window.__nsnvcBootComplete).
-  console.warn("Boot sequence skipped: no store available (offline block shown).");
-} else {
-  bootWithStore();
-}
-function bootWithStore(){
-  if(!isLocalMode){
-    console.warn("⚠️ SECURITY CHECK: Ensure Firestore security rules are deployed. See FIRESTORE_SECURITY_RULES.md for configuration.");
-  }
-  store.onAuth(onAuth);
-  renderSyncIndicator(); // show "offline" immediately if we start without a connection
-  // Preload PDF library in the background so export is instant when clicked.
-  setTimeout(()=>{ ensureJsPDF().catch(()=>{}); }, 4000);
-}
 
 /* ---------- Offline / sync indicator ---------- */
 // Shows a small pill when the device is offline, or when Firestore still has
 // local writes waiting to reach the server. Local test mode has nothing to
 // sync, so the indicator stays off there.
-// NOTE: declaration order matters — reading a `let` before its declaration
-// throws a temporal-dead-zone ReferenceError that would abort the module.
+// NOTE: this block MUST come before bootWithStore() (and any other top-level
+// code that runs immediately), because renderSyncIndicator reads
+// syncPendingWrites — a `let` read before its declaration throws a
+// temporal-dead-zone ReferenceError that aborts the module.
 let syncPendingWrites=false;
 function setSyncPending(pending){
   const next=Boolean(pending);
@@ -626,6 +610,25 @@ function renderSyncIndicator(){
 }
 window.addEventListener("online", renderSyncIndicator);
 window.addEventListener("offline", renderSyncIndicator);
+
+if(!store){
+  // No store means Firebase is configured but unreachable (the blocking screen
+  // is already shown). Skip the rest of the boot sequence rather than throwing
+  // on a null store — but let execution continue so the module still reaches
+  // its final statement (window.__nsnvcBootComplete).
+  console.warn("Boot sequence skipped: no store available (offline block shown).");
+} else {
+  bootWithStore();
+}
+function bootWithStore(){
+  if(!isLocalMode){
+    console.warn("⚠️ SECURITY CHECK: Ensure Firestore security rules are deployed. See FIRESTORE_SECURITY_RULES.md for configuration.");
+  }
+  store.onAuth(onAuth);
+  renderSyncIndicator(); // show "offline" immediately if we start without a connection
+  // Preload PDF library in the background so export is instant when clicked.
+  setTimeout(()=>{ ensureJsPDF().catch(()=>{}); }, 4000);
+}
 
 let consecutiveErrors = 0;
 let connectionWarningShown = false;
