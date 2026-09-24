@@ -363,9 +363,11 @@ Goal: shrink `index.html` so it is easier to maintain. Done so far:
 | 0 | a map of the codebase | `MAINTAINERS.md` | ✅ |
 | 1 | pure ledger engine (`calculateLedgerState`, defer resolution, normalizers, `periodKey`) | `ledger.js` + `tests/ledger.test.js` | ✅ |
 | 2 | the two store factories (`makeLocalStore`, `makeFirebaseStore`) | `store.js` | ✅ done, but see the incident notes below |
+| 3 | module split: `state.js` / `util.js` / `cache.js` / `firebase.js`, then delete `storeHost` | see "Stage 3" section below | 📋 planned — do **not** start until the user gives the go-ahead |
 
-Progress: `index.html` went from ~172 KB to ~125 KB. Stage 3 (UI/rendering)
-is still outstanding — see the end of this section.
+Progress: `index.html` is ~135 KB after stage 2 (some of the 125 KB reflected
+back as diagnostics added while chasing the write bugs). Stage 3 is planned and
+locked — the full plan is at the end of this section.
 
 #### Stage 2 in detail (done)
 
@@ -492,27 +494,96 @@ should eventually exercise a small Firestore write.
    - `npx playwright test` (or let CI run it — it is a required check)
 7. **Verify on a real browser against real data** before trusting it.
 
-#### Stage 3: UI / rendering (outstanding)
+#### Stage 3: module split that kills `storeHost` (planned)
 
-Still in `index.html`: ~36 `render*` / `build*` / `attach*` / `open*` functions
-plus the event wiring. This is the highest-risk part because it is tightly
-coupled to the DOM and to element ids that only exist in the HTML at the top of
-the file.
+**Status: agreed, reviewed, NOT started.** The write bugs are fixed and verified
+(mark-paid + defer work against real Firebase data), so the original gate for
+stage 3 is open. Start only on the user's go-ahead, one module per commit, the
+checks listed above green between every step — incidents #1, #8 and #9 are all
+boundary bugs that only show up at runtime, and they are the reason this is
+done slowly.
 
-Suggested slicing, lowest risk first:
+**Target topology** (reviewed against a 6-module proposal; corrections recorded):
 
-1. **Pure formatters** that take data and return strings
-   (`buildCitizenCardHTML`, `renderEntryRow`, `renderHistoryRows`,
-   `buildPeriodRowHTML`) — no DOM reads, easy to move and even unit-test.
-2. **Sheet HTML builders** (`buildCitizenDetailHTML`, the `open*Sheet`
-   helpers) — still string-building, but reference element ids.
-3. **Event wiring / DOM mutation** last (`renderList`, `attach*Listeners`,
-   `openCitizen`, `renderCitizenDetail`) — these read the DOM and are the most
-   likely to break silently.
+| File | Role | Status |
+| --- | --- | --- |
+| `index.html` | app shell + DOM wiring + UI rendering (`render*`/`build*`/`open*` ~36 fns + event wiring stay here) | stays, shrinks |
+| `state.js` | shared mutable state + small helpers that read/write it | **new** |
+| `ledger.js` | pure ledger math — money & deferral rules only | stays, unchanged |
+| `util.js` | pure helpers: `fmt`, `esc`, `todayISO`, `entryLabel`, `suffixOf`, `fullKey`, `seqNum`, `byCardNo`, `firestoreTimeMs` | **new** |
+| `store.js` | data layer — same exports; imports state directly | stays, refactored |
+| `firebase.js` | bootstrap only: `firebaseConfig`, `loadFirebase`, `initFirebaseStoreWithRetry` | **new** |
+| `cache.js` | IndexedDB persistence (all four cache functions + the three `DASHBOARD_CACHE_*` constants) | **new** |
+| `sw.js` | precache + fetch — gains every module in `urlsToCache` | stays, edited |
 
-Anything that renders must keep working when a `store.*` call fails; the app
-already has a blocking-failure screen for that (see §7) — reuse it rather than
-inventing another.
+**Locked decisions:**
+
+1. **cache.js owns all four** `openDashboardCache` / `readDashboardCache` /
+   `writeDashboardCache` / `hydrateDashboardCache` **plus**
+   `DASHBOARD_CACHE_DB/VERSION/MAX_AGE`, and imports state from `state.js`.
+   **Contract change:** `hydrateDashboardCache` currently calls `renderStats()`
+   and `renderList()` (DOM). It must be changed to *fill state and return a
+   boolean*; the login flow renders after the await. This is the one-line
+   price of keeping cache.js DOM-free — do not let DOM back into cache.js.
+2. **state.js owns the sync indicator:** `syncPendingWrites` + `setSyncPending`
+   move there. `renderSyncIndicator` stays in index.html (DOM) and is
+   registered at startup: `state.onSyncIndicatorRender(renderSyncIndicator)`.
+   `store.js` calls `state.setSyncPending(true)` — never a bare `setSyncPending`
+   and never a host member (kills the incident #9 class for good).
+3. **Delete `storeHost`:** `store.js` converts all `host.*` references
+   (114 reads / 14 writes) to direct imports from `state.js`/`ledger.js`/`util.js`.
+   The in-memory maps/setters from the storeHost dance are replaced by the ES
+   module singleton. Then delete the storeHost object and the two CI guards
+   (`storeHost setter check`, `storeHost member check`) from
+   `scripts/check-scripts.mjs`, and add a static "every free identifier used in
+   store.js is defined in store.js or imported" check (module-eval cannot see
+   runtime-only paths like `markSyncing`).
+4. **Fix the two latent local-store bugs found during plan review** (they are
+   test-mode-only landmines, same "leaked/bare identifier" family, and this
+   stage cures them structurally):
+   - `makeLocalStore.importAll` (~`store.js:261`) calls
+     `normalizeDeferredPeriodState` / `normalizeDeferredPeriodOverrides` bare;
+     store.js has zero imports → `ReferenceError` on backup restore in test mode.
+   - `makeLocalStore.recalcAll` (~`store.js:266`) is pasted Firebase code: it
+     references `fs.writeBatch(db)` (the local store has no `fs`) and bare
+     `rawCitizens` (should be `host.rawCitizens`). Rewrite against local state.
+   - Add a unit test that calls `importAll` / `recalcAll` against a host mock so
+     this can never regress silently again.
+   - (A review claim that `sortLedgerEntries` "must be added" to `ledger.js` was
+     checked and is stale: it shipped in 1.33.12, is deployed, and is covered by
+     the ledger tests. `todayISO` and the other date/format helpers move to
+     `util.js`; keep `ledger.js` purely about money and deferral rules.)
+5. **Deploy mechanics (last step):** add every new module to `sw.js`
+   `urlsToCache`, then bump `CACHE_NAME` and the footer version together.
+   Without the bump the browser keeps serving the old build and it looks like
+   nothing changed.
+
+**Deviations from the reviewed 6-module proposal (recorded so nobody "fixes" it back):**
+- `showOfflineBlock` and `classifyFirebaseError` stay in `index.html` (UI). The
+  proposal put `showOfflineBlock` in `firebase.js`; firebase.js must be
+  bootstrap-only (config/SDK loading/retry). At most it takes callbacks.
+- `hydrateDashboardCache` lives in cache.js only with the contract change in
+  decision 1. The proposal treated it as if it were pure, which it is not.
+- `state.js` also owns `statsMemo` / `statsRevision` (with
+  `invalidateStatsMemo`) and the account helpers `getEffectiveBalance`,
+  `getDeferredAmount`, `statusOf`, `invalidateLedgerCache`, `nextDeferTimestamp`
+  — these all read/write the shared state and are called from store.js, so they
+  move with it. Not advertised in the proposal table, but required.
+
+**Build order (one commit each, checks + tests green between):**
+1. `util.js` — pure, DOM-free, gains unit tests.
+2. `cache.js` — IndexedDB I/O + constants; hydrate contract change; caller renders.
+3. `state.js` — state + stats helpers + account helpers + sync indicator.
+4. Delete `storeHost` — rewrite store.js to direct imports; swap CI guards;
+   fix the two local-store bugs; add `importAll`/`recalcAll` unit tests.
+5. `firebase.js` — bootstrap only.
+6. Final: sw precache + CACHE_NAME + footer bump, full check suite, on-device verify.
+
+**Later (separate, not part of this stage):** the ~36 `render*`/`build*`/
+`attach*`/`open*` functions + event wiring still live in `index.html`, sliced
+lowest-risk-first (pure formatters → sheet HTML builders → DOM mutation). Keep
+any render path working when a `store.*` call fails — reuse the blocking
+failure screen (§7) rather than inventing another.
 
 
 
