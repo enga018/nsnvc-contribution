@@ -396,7 +396,7 @@ which broke the whole app — see the incident notes.
 
 #### Incidents caused by this refactor (read before doing stage 3)
 
-Both of these reached production and took real debugging time. They are the
+Six of these reached production and took real debugging time. They are the
 reason to move slowly, in small steps, with checks between each.
 
 1. **`markSyncing is not defined`** (stage 2a). `markSyncing` is defined *inside*
@@ -408,10 +408,33 @@ reason to move slowly, in small steps, with checks between each.
    initialised and the app showed an error screen. The app's own try/catch hid
    it, and the module-eval check's output *contained the error* but was misread
    as sandbox noise.
+3. **`Cannot access 'periodsReady' before initialization`** (1.33.7). A `let`
+   was declared below a top-level read of it (dashboard cache-hydration path).
+4. **`Cannot access 'syncPendingWrites' before initialization`** (1.33.8).
+   `bootWithStore()` runs at top level and calls `renderSyncIndicator()`, which
+   reads `syncPendingWrites` — but that `let` was declared *after* the call. The
+   throw aborted the module mid-evaluation, so **everything** wired below it
+   never ran: settings button listener, filter/search/period listeners, and the
+   deferral-state sync. Symptoms looked unrelated (dead settings button,
+   "deferred reversed", logout error) but all were one abort.
+5. **`host.` prefix leaked into string literals** (1.33.9). Stage 2b's blanket
+   `name → host.name` replace also rewrote **string literals**: `meta` doc ids
+   became `"meta/host.deferredPeriods"` and `"meta/host.deferredPeriodOverrides"`.
+   Defer writes, `deleteAll` and `importAll` then targeted documents nothing
+   reads. Quoted `"host.x"` forms are unambiguous to find and fix.
+6. **`updateDoc` NOT_FOUND on a never-created `meta` doc** (1.33.10). The firebase
+   store wrote per-charge deferrals with `updateDoc`, which throws `NOT_FOUND`
+   if the document doesn't exist. Because of incident 5, the real
+   `meta/deferredPeriodOverrides` doc had never been created (reads tolerate a
+   missing doc and return `{}`, so the app loaded, but the write failed). Fix:
+   `setDoc` with an explicit `mergeFields` path creates the doc on first use.
 
-Both are now covered by CI: `check-module-eval.mjs` fails on any
+All are now covered by CI where possible: `check-module-eval.mjs` fails on any
 `ReferenceError` / `is not defined` / `is not a function` / `Cannot read propert`
-message logged during evaluation, even when the app swallows it.
+/ `before initialization` / `Cannot access` message logged during evaluation,
+even when the app swallows it. Incidents 5–6 were string/data bugs that
+module-eval cannot catch — they need a real write test, so the smoke test
+should eventually exercise a small Firestore write.
 
 #### How to do the next extraction safely
 

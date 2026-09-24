@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.33.9</footer>
+<footer>New Serchhip North Village Council · v1.33.10</footer>
 
 <script>
 (function(){
@@ -2284,7 +2284,7 @@ function attachHistoryListeners(id, editing){
           chk.checked=!nowChecked;
           handleOperationError("deferCharge", e);
           renderCitizenDetail(id);
-          toast("Failed to update deferral. Please try again.");
+          toast("Failed to update deferral. Please try again." + (e&&e.code?` (${e.code})`:""));
         });
     });
   });

@@ -803,11 +803,16 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     },
     async setCitizenChargeDeferred(citizenId, entryId, deferred){
       // Update the value and timestamp together so a later action can supersede an earlier one.
-      const field = `overrides.${String(citizenId)}.${String(entryId)}`;
-      const at=host.nextDeferTimestamp();
-      await fs.updateDoc(fs.doc(db,"meta","deferredPeriodOverrides"), {
-        [field]: {value:Boolean(deferred),at}
-      });
+      // setDoc with an explicit mergeFields path creates the document on first
+      // use. updateDoc here threw NOT_FOUND whenever meta/deferredPeriodOverrides
+      // had never been created (the doc was also never written while the v1.33.9
+      // 'host.'-prefix bug redirected writes to a different id) — that's why
+      // Settings (period) defers worked but per-charge toggles failed.
+      const cid=String(citizenId), eid=String(entryId), at=host.nextDeferTimestamp();
+      const ref=fs.doc(db,"meta","deferredPeriodOverrides");
+      await fs.setDoc(ref,
+        { overrides: { [cid]: { [eid]: { value:Boolean(deferred), at } } } },
+        { mergeFields: [`overrides.${cid}.${eid}`] });
       markSyncing();
     },
     async importAll(backup,onProgress){
