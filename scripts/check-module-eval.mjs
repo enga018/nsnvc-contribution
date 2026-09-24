@@ -71,7 +71,7 @@ for (const level of ["error", "warn", "log"]) {
   const original = console[level].bind(console);
   console[level] = (...args) => {
     const text = args.map(a => (a && a.stack) ? a.stack : (a && a.message) ? a.message : String(a)).join(" ");
-    if (/is not defined|ReferenceError|is not a function|Cannot read propert/i.test(text)) {
+    if (/is not defined|ReferenceError|is not a function|Cannot read propert|before initialization|Cannot access/i.test(text)) {
       suspicious.push(text.split("\n")[0].slice(0, 200));
     }
     original(...args);
