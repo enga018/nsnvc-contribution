@@ -355,6 +355,41 @@ function downloadBlob(content, filename, mimeType="application/octet-stream"){
     if(url) URL.revokeObjectURL(url);
   }
 }
+
+// Prefer an explicit Save dialog on Chromium desktop. The old hidden-anchor
+// download can be blocked by the browser's automatic-download permission,
+// especially after the export has awaited Firestore work.
+function beginTextFileSave(filename, mimeType="text/csv"){
+  if(typeof window.showSaveFilePicker !== "function") return null;
+  return window.showSaveFilePicker({
+    suggestedName: filename,
+    types: [{
+      description: "CSV file",
+      accept: {[mimeType]: [".csv"]}
+    }]
+  });
+}
+async function finishTextFileSave(handlePromise, content){
+  if(!handlePromise) return false;
+  const handle = await handlePromise;
+  const writable = await handle.createWritable();
+  try{
+    await writable.write(content);
+    await writable.close();
+  }catch(err){
+    try{ await writable.abort(); }catch(_){}
+    throw err;
+  }
+  return true;
+}
+async function saveCsvFile(content, filename){
+  const picker = beginTextFileSave(filename, "text/csv");
+  if(picker){
+    await finishTextFileSave(picker, content);
+    return;
+  }
+  downloadBlob(content, filename, "text/csv");
+}
 let deferredPeriods=[];
 let deferredPeriodUpdatedAt={};
 let deferredPeriodOverrides={};
@@ -2590,9 +2625,17 @@ async function withExportUI(buttonId, originalText, exportFn){
 
 async function doExportCsv(){
   await withExportUI("exportCsvBtn2", "Export owing list (CSV)", async ()=>{
+    const filename = `owing_${todayISO()}.csv`;
+    // Open the Save dialog while the click still has browser user activation.
+    // Firestore work can then happen without losing the save permission.
+    const picker = beginTextFileSave(filename, "text/csv");
     const csv = await store.exportOwingCsv();
-    downloadBlob(csv, `owing_${todayISO()}.csv`, "text/csv");
-    toast("CSV exported");
+    if(picker){
+      await finishTextFileSave(picker, csv);
+    }else{
+      downloadBlob(csv, filename, "text/csv");
+    }
+    toast("CSV saved");
   });
 }
 
