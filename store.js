@@ -176,11 +176,22 @@ export function makeLocalStore(host){
     signOut(){ loggedIn=false; authCbs.forEach(cb=>cb(false, null)); },
     onAuth(cb){ authCbs.add(cb); cb(loggedIn, loggedIn ? "test-mode@local" : null); },
     async exportOwingCsv(){
-      const owing = await this.listOwing();
+      // Do not call listOwing() here: on Firebase that can trigger a full
+      // citizen read plus a full ledger read before the export even starts.
+      // Reuse the dashboard's citizen/ledger cache whenever it is complete;
+      // otherwise load all ledgers once.
+      const citizens = Array.isArray(host.rawCitizens) ? host.rawCitizens : Object.entries(data.citizens).map(([id,c])=>({id,...c}));
+      let ledgers;
+      const cacheComplete = citizens.length > 0 && citizens.every(c=>Array.isArray(host.ledgerCache.get(c.id)));
+      if(cacheComplete){
+        ledgers = Object.fromEntries(citizens.map(c=>[c.id, host.ledgerCache.get(c.id)]));
+      }else{
+        ledgers = await this.getAllLedgers();
+      }
+
       let csv = "Name, Job Card, Outstanding (₹), Payment History\n";
-      for(const c of owing){
-        const entries = host.ledgerCache.get(c.id) || ((data.citizens[c.id] && data.citizens[c.id].ledger) || []);
-        // Always export the authoritative live-ledger balance, never cached c.balance.
+      for(const c of citizens){
+        const entries = ledgers[c.id] || [];
         const balance = host.allocateLedgerPayments(entries, c.id).balance;
         if(!(balance > 0)) continue;
         const payments = entries.filter(e=>e.type==="payment").map(e=>`${host.entryLabel(e)} ${host.fmt(e.amount)}`).join("; ");
@@ -694,11 +705,21 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     signOut(){ au.signOut(auth); },
     onAuth(cb){ au.onAuthStateChanged(auth, u=>cb(!!u, u ? u.email : null)); },
     async exportOwingCsv(){
-      const owing = await this.listOwing();
-      // Recalculate from the cached full ledger so CSV cannot disagree with the account view or PDF.
+      // Reuse the dashboard cache when it is complete. This avoids the extra
+      // citizens + ledger read caused by listOwing() and keeps CSV export
+      // comparable in speed to the PDF export.
+      const citizens = Array.isArray(host.rawCitizens) ? host.rawCitizens : [];
+      let ledgers;
+      const cacheComplete = citizens.length > 0 && citizens.every(c=>Array.isArray(host.ledgerCache.get(c.id)));
+      if(cacheComplete){
+        ledgers = Object.fromEntries(citizens.map(c=>[c.id, host.ledgerCache.get(c.id)]));
+      }else{
+        ledgers = await this.getAllLedgers();
+      }
+
       let csv = "Name, Job Card, Outstanding (₹), Payment History\n";
-      for(const c of owing){
-        const entries = host.ledgerCache.get(c.id) || [];
+      for(const c of citizens){
+        const entries = ledgers[c.id] || [];
         const balance = host.allocateLedgerPayments(entries, c.id).balance;
         if(!(balance > 0)) continue;
         const payments = entries.filter(e=>e.type==="payment").map(e=>`${host.entryLabel(e)} ${host.fmt(e.amount)}`).join("; ");
