@@ -2711,14 +2711,17 @@ async function doExportAll(){
   await withExportUI("exportAllBtn", "Export all households (CSV)", async ()=>{
     const citizens = allCitizens;
     const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
-    let csv = "Name,Job Card,Total Charged (₹),Total Paid (₹),Balance (₹),Status,Payment History\n";
+    let csv = "Name, Job Card, Total Charged (₹), Total Paid (₹), Balance (₹), Status, Payment History\n";
     for(const c of citizens){
       const entries = ledgers[c.id] || [];
-      const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
-      const status = statusOf(c);
-      csv += `"${esc(c.name)}","${esc(c.jobCard)}",${c.totalCharged||0},${c.totalPaid||0},${c.balance||0},"${statusLabel[status]}","${esc(payments)}"\n`;
+      // Use the same live ledger calculation as the account view/PDF.
+      const state = calculateLedgerState(entries, c.id);
+      const balance = state.balance;
+      const payments = entries.filter(e=>e.type==="payment").map(e=>\`\${entryLabel(e)} \${fmt(e.amount)}\`).join("; ");
+      const status = balance<=0 ? "paid" : ((state.totalPaid||0)>0 ? "partial" : "due");
+      csv += \`"\${esc(c.name)}","\${esc(c.jobCard)}",\${c.totalCharged||0},\${state.totalPaid||0},\${balance},"\${statusLabel[status]}","\${esc(payments)}"\\n\`;
     }
-    downloadBlob(csv, `all_households_${todayISO()}.csv`, "text/csv");
+    downloadBlob(csv, \`all_households_\${todayISO()}.csv\`, "text/csv");
     toast("CSV exported");
   });
 }
@@ -2748,17 +2751,21 @@ async function doExportPeriod(period){
   if(exportBusy) return; exportBusy=true;
   try{
     const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
-    let csv = "Name,Job Card,Amount (₹),Status,Payment History\n";
+    let csv = "Name, Job Card, Amount (₹), Status, Payment History\n";
     for(const c of allCitizens){
       const entries = ledgers[c.id] || [];
-      const charge = entries.find(e => e.type==="charge" && e.note===period);
-      if(charge){
-        const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
-        const status = charge.deferred ? "Deferred" : "Active";
-        csv += `"${esc(c.name)}","${esc(c.jobCard)}",${charge.amount},"${status}","${esc(payments)}"\n`;
-      }
+      // A period can have more than one charge entry. Sum all matching
+      // contribution charges and resolve deferral through the same override
+      // rules used everywhere else (not just entry.deferred).
+      const charges = entries.filter(e => e.type==="charge" && String(e.note||"").trim()===String(period).trim());
+      if(!charges.length) continue;
+      const amount = charges.reduce((sum,e)=>sum + Math.max(0,Number(e.amount)||0),0);
+      const deferredFlags = charges.map(e=>isPeriodDeferredForCitizen(e,c.id));
+      const status = deferredFlags.every(Boolean) ? "Deferred" : "Active";
+      const payments = entries.filter(e=>e.type==="payment").map(e=>\`\${entryLabel(e)} \${fmt(e.amount)}\`).join("; ");
+      csv += \`"\${esc(c.name)}","\${esc(c.jobCard)}",\${amount},"\${status}","\${esc(payments)}"\\n\`;
     }
-    downloadBlob(csv, `period_${esc(period).replace(/\s+/g,'_')}_${todayISO()}.csv`, "text/csv");
+    downloadBlob(csv, \`period_\${esc(period).replace(/\\s+/g,'_')}_\${todayISO()}.csv\`, "text/csv");
     toast("CSV exported");
   }catch(err){
     handleOperationError("exportPeriod", err);
