@@ -177,11 +177,14 @@ export function makeLocalStore(host){
     onAuth(cb){ authCbs.add(cb); cb(loggedIn, loggedIn ? "test-mode@local" : null); },
     async exportOwingCsv(){
       const owing = await this.listOwing();
-      let csv = "Name,Job Card,Outstanding (₹),Payment History\n";
+      let csv = "Name, Job Card, Outstanding (₹), Payment History\n";
       for(const c of owing){
         const entries = host.ledgerCache.get(c.id) || ((data.citizens[c.id] && data.citizens[c.id].ledger) || []);
+        // Always export the authoritative live-ledger balance, never cached c.balance.
+        const balance = host.allocateLedgerPayments(entries, c.id).balance;
+        if(!(balance > 0)) continue;
         const payments = entries.filter(e=>e.type==="payment").map(e=>`${host.entryLabel(e)} ${host.fmt(e.amount)}`).join("; ");
-        csv += `"${host.esc(c.name)}","${host.esc(c.jobCard)}",${c.balance},"${host.esc(payments)}"\n`;
+        csv += `"${host.esc(c.name)}","${host.esc(c.jobCard)}",${balance},"${host.esc(payments)}"\n`;
       }
       return csv;
     },
@@ -692,14 +695,14 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     onAuth(cb){ au.onAuthStateChanged(auth, u=>cb(!!u, u ? u.email : null)); },
     async exportOwingCsv(){
       const owing = await this.listOwing();
-      // listOwing() just populated the in-memory ledger cache via a single
-      // collection-group read, so read payment history from there instead of
-      // fetching each household's ledger again.
-      let csv = "Name,Job Card,Outstanding (₹),Payment History\n";
+      // Recalculate from the cached full ledger so CSV cannot disagree with the account view or PDF.
+      let csv = "Name, Job Card, Outstanding (₹), Payment History\n";
       for(const c of owing){
         const entries = host.ledgerCache.get(c.id) || [];
+        const balance = host.allocateLedgerPayments(entries, c.id).balance;
+        if(!(balance > 0)) continue;
         const payments = entries.filter(e=>e.type==="payment").map(e=>`${host.entryLabel(e)} ${host.fmt(e.amount)}`).join("; ");
-        csv += `"${host.esc(c.name)}","${host.esc(c.jobCard)}",${c.balance},"${host.esc(payments)}"\n`;
+        csv += `"${host.esc(c.name)}","${host.esc(c.jobCard)}",${balance},"${host.esc(payments)}"\n`;
       }
       return csv;
     },
