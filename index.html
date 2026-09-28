@@ -367,6 +367,9 @@ function beginTextFileSave(filename, mimeType="text/csv"){
       description: "CSV file",
       accept: {[mimeType]: [".csv"]}
     }]
+  }).catch(err=>{
+    if(err && err.name==="AbortError") return null;
+    throw err;
   });
 }
 async function finishTextFileSave(handlePromise, content){
