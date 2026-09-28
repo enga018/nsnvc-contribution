@@ -2717,11 +2717,11 @@ async function doExportAll(){
       // Use the same live ledger calculation as the account view/PDF.
       const state = calculateLedgerState(entries, c.id);
       const balance = state.balance;
-      const payments = entries.filter(e=>e.type==="payment").map(e=>\`\${entryLabel(e)} \${fmt(e.amount)}\`).join("; ");
+      const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
       const status = balance<=0 ? "paid" : ((state.totalPaid||0)>0 ? "partial" : "due");
-      csv += \`"\${esc(c.name)}","\${esc(c.jobCard)}",\${c.totalCharged||0},\${state.totalPaid||0},\${balance},"\${statusLabel[status]}","\${esc(payments)}"\\n\`;
+      csv += `"${esc(c.name)}","${esc(c.jobCard)}",${c.totalCharged||0},${state.totalPaid||0},${balance},"${statusLabel[status]}","${esc(payments)}"\\n`;
     }
-    downloadBlob(csv, \`all_households_\${todayISO()}.csv\`, "text/csv");
+    downloadBlob(csv, `all_households_${todayISO()}.csv`, "text/csv");
     toast("CSV exported");
   });
 }
@@ -2762,10 +2762,10 @@ async function doExportPeriod(period){
       const amount = charges.reduce((sum,e)=>sum + Math.max(0,Number(e.amount)||0),0);
       const deferredFlags = charges.map(e=>isPeriodDeferredForCitizen(e,c.id));
       const status = deferredFlags.every(Boolean) ? "Deferred" : "Active";
-      const payments = entries.filter(e=>e.type==="payment").map(e=>\`\${entryLabel(e)} \${fmt(e.amount)}\`).join("; ");
-      csv += \`"\${esc(c.name)}","\${esc(c.jobCard)}",\${amount},"\${status}","\${esc(payments)}"\\n\`;
+      const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
+      csv += `"${esc(c.name)}","${esc(c.jobCard)}",${amount},"${status}","${esc(payments)}"\\n`;
     }
-    downloadBlob(csv, \`period_\${esc(period).replace(/\\s+/g,'_')}_\${todayISO()}.csv\`, "text/csv");
+    downloadBlob(csv, `period_${esc(period).replace(/\\s+/g,'_')}_${todayISO()}.csv`, "text/csv");
     toast("CSV exported");
   }catch(err){
     handleOperationError("exportPeriod", err);
