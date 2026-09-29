@@ -758,34 +758,60 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       await flush();batch=fs.writeBatch(db);ops=0;for(const id of ["deferredPeriods","deferredPeriodOverrides","imports"]){batch.delete(fs.doc(db,"meta",id));if(++ops>=host.FIRESTORE_BATCH_SIZE)await flush();}await flush();host.invalidateLedgerCache();markSyncing();
     },
     async renamePeriod(oldPeriod, newPeriod, onProgress){
-      const cSnap=await fs.getDocs(fs.collection(db,"citizens"));
-      // One collection-group read for all ledgers rather than a subcollection
-      // per household. Falls back to bounded per-citizen batches if needed.
-      const docs=[];
+      // Query only the charge entries belonging to this period. The previous
+      // implementation scanned every household's entire ledger before finding
+      // the matching entries, which made a simple rename unnecessarily slow.
+      let docs=[];
       try{
-        const ledgerSnap=await fs.getDocs(fs.collectionGroup(db,"ledger"));
-        docs.push(...ledgerSnap.docs);
+        const snap=await fs.getDocs(
+          fs.query(
+            fs.collectionGroup(db,"ledger"),
+            fs.where("type","==","charge"),
+            fs.where("note","==",oldPeriod)
+          )
+        );
+        docs=snap.docs;
       }catch(err){
-        console.warn("Collection-group ledger read failed for rename; reading per citizen.", err);
-        const ids=cSnap.docs.map(d=>d.id);
-        for(let i=0;i<ids.length;i+=20){
-          const chunks=await Promise.all(ids.slice(i,i+20).map(id=>fs.getDocs(fs.collection(db,"citizens",id,"ledger"))));
-          for(const s of chunks) docs.push(...s.docs);
+        // Fallback for older/rules configurations where the compound query is
+        // rejected: use the in-memory ledger cache when complete, otherwise
+        // read ledgers in bounded parallel batches.
+        console.warn("Indexed period rename query failed; using fallback.", err);
+        const citizens=Array.isArray(host.rawCitizens)?host.rawCitizens:[];
+        const cacheComplete=citizens.length>0 && citizens.every(c=>Array.isArray(host.ledgerCache.get(c.id)));
+        if(cacheComplete){
+          for(const c of citizens){
+            for(const entry of host.ledgerCache.get(c.id)||[]){
+              if(entry.type==="charge" && entry.note===oldPeriod){
+                docs.push({
+                  ref:fs.doc(db,"citizens",c.id,"ledger",entry.entryId),
+                  data:()=>entry
+                });
+              }
+            }
+          }
+        }else{
+          for(let i=0;i<citizens.length;i+=20){
+            const chunks=await Promise.all(citizens.slice(i,i+20).map(c=>fs.getDocs(fs.collection(db,"citizens",c.id,"ledger"))));
+            for(const snap of chunks){
+              for(const ld of snap.docs){
+                if(ld.data().type==="charge" && ld.data().note===oldPeriod) docs.push(ld);
+              }
+            }
+          }
         }
       }
+
       let batch=fs.writeBatch(db), ops=0, count=0;
       const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
       for(const ld of docs){
-        if(ld.data().type==="charge" && ld.data().note===oldPeriod){
-          batch.update(ld.ref, { note:newPeriod });
-          if(++ops>=400) await flush();
-          count++;
-        }
+        batch.update(ld.ref,{note:newPeriod});
+        if(++ops>=400) await flush();
+        count++;
       }
       await flush();
       host.invalidateLedgerCache();
       markSyncing();
-      if(onProgress) onProgress(count, count);
+      if(onProgress) onProgress(count,count);
       return count;
     },
     async getDeferredPeriods(){
