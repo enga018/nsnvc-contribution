@@ -994,6 +994,7 @@ function invalidateLedgerCache(id){
   if(id) ledgerCache.delete(id); else ledgerCache.clear();
   periodStatsCache = null;
   invalidateStatsMemo();
+  invalidateExportSnapshot();
   // Any ledger change means a full snapshot is no longer trustworthy.
   invalidateFullLedgerSnapshot();
 }
@@ -2570,9 +2571,19 @@ async function doExportCsv(){
   await withExportUI("exportCsvBtn2", "Export owing list (CSV)", async ()=>{
     const filename = `owing_${todayISO()}.csv`;
     // Open the Save dialog while the click still has browser user activation.
-    // Firestore work can then happen without losing the save permission.
+    // Build the export snapshot from the already-loaded dashboard cache so
+    // Firestore is not queried again when the ledger cache is complete.
     const picker = beginTextFileSave(filename, "text/csv");
-    const csv = await store.exportOwingCsv();
+    const data = await getExportData();
+    let csv = "Name, Job Card, Outstanding (₹), Payment History\\n";
+    for(const c of data.citizens){
+      const entries = data.ledgers[c.id] || [];
+      const balance = calculateLedgerState(entries, c.id).balance;
+      if(!(balance > 0)) continue;
+      const payments = entries.filter(e=>e.type==="payment")
+        .map(e=>entryLabel(e)+" "+fmt(e.amount)).join("; ");
+      csv += [csvCell(c.name),csvCell(c.jobCard),csvNumber(balance),csvCell(payments)].join(",")+"\\n";
+    }
     if(picker){
       await finishTextFileSave(picker, csv);
     }else{
@@ -2586,19 +2597,36 @@ async function doExportPdf(){
   await withExportUI("exportPdfBtn", "Export owing list (PDF)", async ()=>{
     const jsPDF = await ensureJsPDF();
     const searchTerm = $("adminSearch").value.trim().toLowerCase();
-    const list = filterCitizenList(allCitizens, searchTerm, adminFilter)
-      .filter(c => getEffectiveBalance(c) > 0);
+    const data = await getExportData();
+    const list = data.citizens
+      .filter(c => {
+        const q = searchTerm;
+        return !q ||
+          String(c.jobCard||c.id).toLowerCase().includes(q) ||
+          String(c.name||"").toLowerCase().includes(q);
+      })
+      .map(c => {
+        const entries = data.ledgers[c.id] || [];
+        const state = calculateLedgerState(entries, c.id);
+        const deferred = getDeferredAmount({...c,ledger:entries});
+        return { citizen:c, entries, state, deferred };
+      })
+      .filter(row => {
+        if(adminFilter==="deferred") return row.deferred>0;
+        if(adminFilter==="overpaid") return row.state.balance<0;
+        if(adminFilter==="pending") return row.state.balance>0;
+        return true;
+      })
+      .sort((a,b) => byCardNo(a.citizen,b.citizen));
     if(!list.length){ toast("No owing households to export"); return; }
 
     const fmtRs = n => "Rs. " + (Number(n)||0).toLocaleString("en-IN");
-    const ledgers = ledgerCache.size ? Object.fromEntries(ledgerCache) : await store.getAllLedgers();
     const rows = [];
-    for(const c of list){
-      const entries = ledgers[c.id] || await store.getLedger(c.id);
-      // PDF must use the live ledger, not the cached citizen.balance field.
-      // This guarantees the displayed "total remaining" is the same
-      // authoritative balance used by the account view.
-      const bal = calculateLedgerState(entries, c.id).balance;
+    for(const row of list){
+      const c = row.citizen, entries = row.entries;
+      // PDF uses the same authoritative ledger calculation as the dashboard
+      // and CSV exports. No per-household Firestore reads occur here.
+      const bal = row.state.balance;
       if(!(bal > 0)) continue;
       const payments = entries.filter(e=>e.type==="payment").map(e=>fmtRs(e.amount));
       const charges = entries.filter(e=>{
@@ -2699,7 +2727,64 @@ async function doExportPdf(){
 function csvCell(value){return '"' + String(value ?? "").replace(/"/g,'""') + '"';}
 function csvNumber(value){const n=Number(value);return Number.isFinite(n)?n:0;}
 function grossChargeTotal(entries){return (entries||[]).reduce((sum,e)=>{if(!e||(e.type!=="charge"&&e.type!=="sanitationFee"))return sum;return sum+Math.max(0,Number(e.amount)||0);},0);}
-async function getExportData(){const citizens=await store.getAllCitizens();const ledgers=await store.getAllLedgers();return {citizens,ledgers};}
+
+/*
+ * One export snapshot for every report.
+ *
+ * Fast path: reuse the dashboard's in-memory rawCitizens + ledgerCache.
+ * Slow path: fetch the missing ledger snapshot once, then every export in this
+ * session uses the same in-memory data. This keeps PDF, owing CSV, all-household
+ * CSV and period CSV on one dataset without repeated Firestore reads.
+ */
+let exportSnapshot=null;
+let exportSnapshotKey="";
+function invalidateExportSnapshot(){
+  exportSnapshot=null;
+  exportSnapshotKey="";
+}
+async function getExportData(){
+  const citizens = Array.isArray(rawCitizens) && rawCitizens.length
+    ? rawCitizens
+    : await store.getAllCitizens();
+
+  const cacheComplete = citizens.length>0 &&
+    citizens.every(c=>Array.isArray(ledgerCache.get(c.id)));
+
+  // A persisted cache can be old. Reuse it only when the live citizen
+  // snapshot says every cached ledger is at least as new as its citizen record,
+  // or when a recent full ledger snapshot is already known to be complete.
+  const cacheFresh = cacheComplete && (
+    isLocalMode ||
+    fullLedgerSnapshotCount >= citizens.length ||
+    citizens.every(c=>{
+      const serverAt=firestoreTimeMs(c.updatedAt);
+      return !serverAt || (ledgerCacheSyncAt.get(c.id)||0) >= serverAt;
+    })
+  );
+
+  if(cacheFresh){
+    const key = citizens.map(c=>c.id).join("|");
+    if(exportSnapshot && exportSnapshotKey===key) return exportSnapshot;
+    const ledgers = Object.fromEntries(citizens.map(c=>[c.id,ledgerCache.get(c.id)||[]]));
+    exportSnapshot={citizens,ledgers};
+    exportSnapshotKey=key;
+    return exportSnapshot;
+  }
+
+  // Missing ledger data: perform at most one full fetch. getAllLedgers()
+  // already has its own 15-minute snapshot cache, so repeated exports do not
+  // trigger repeated Firestore reads.
+  const ledgers = await store.getAllLedgers();
+  // getAllLedgers() is the single network fallback. Mark the in-memory
+  // snapshot fresh so subsequent exports reuse it without another read.
+  for(const c of citizens){
+    ledgerCacheSyncAt.set(c.id, firestoreTimeMs(c.updatedAt)||Date.now());
+  }
+  const key = citizens.map(c=>c.id).join("|");
+  exportSnapshot={citizens,ledgers};
+  exportSnapshotKey=key;
+  return exportSnapshot;
+}
 async function doExportAll(){
   await withExportUI("exportAllBtn","Export all households (CSV)",async()=>{
     const data=await getExportData(),citizens=data.citizens,ledgers=data.ledgers;
