@@ -2750,7 +2750,19 @@ async function getExportData(){
   const cacheComplete = citizens.length>0 &&
     citizens.every(c=>Array.isArray(ledgerCache.get(c.id)));
 
-  if(cacheComplete){
+  // A persisted cache can be old. Reuse it only when the live citizen
+  // snapshot says every cached ledger is at least as new as its citizen record,
+  // or when a recent full ledger snapshot is already known to be complete.
+  const cacheFresh = cacheComplete && (
+    isLocalMode ||
+    fullLedgerSnapshotCount >= citizens.length ||
+    citizens.every(c=>{
+      const serverAt=firestoreTimeMs(c.updatedAt);
+      return !serverAt || (ledgerCacheSyncAt.get(c.id)||0) >= serverAt;
+    })
+  );
+
+  if(cacheFresh){
     const key = citizens.map(c=>c.id).join("|");
     if(exportSnapshot && exportSnapshotKey===key) return exportSnapshot;
     const ledgers = Object.fromEntries(citizens.map(c=>[c.id,ledgerCache.get(c.id)||[]]));
@@ -2763,6 +2775,11 @@ async function getExportData(){
   // already has its own 15-minute snapshot cache, so repeated exports do not
   // trigger repeated Firestore reads.
   const ledgers = await store.getAllLedgers();
+  // getAllLedgers() is the single network fallback. Mark the in-memory
+  // snapshot fresh so subsequent exports reuse it without another read.
+  for(const c of citizens){
+    ledgerCacheSyncAt.set(c.id, firestoreTimeMs(c.updatedAt)||Date.now());
+  }
   const key = citizens.map(c=>c.id).join("|");
   exportSnapshot={citizens,ledgers};
   exportSnapshotKey=key;
