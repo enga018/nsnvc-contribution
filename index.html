@@ -76,9 +76,7 @@
         <button class="filter-tab" data-filter="overpaid">Overpaid <span class="tab-count" data-count="overpaid">0</span></button>
         <button class="filter-tab" data-filter="all">All <span class="tab-count" data-count="all">0</span></button>
       </div>
-      <div id="periodWrap" style="margin-bottom:12px">
-        <select id="periodSel" class="period-sel"><option value="">All pending (any period)</option></select>
-      </div>
+      <!-- Main dashboard period filter hidden; period-based export remains available. -->
       <div class="clist" id="adminList"></div>
     </div>
     <div id="adminDetail" class="hidden"></div>
@@ -1153,9 +1151,6 @@ document.querySelectorAll("#adminFilterTabs .filter-tab").forEach(btn=>{
     renderList();
   });
 });
-$("periodSel").addEventListener("change", ()=>{ periodFilter=$("periodSel").value; adminShown=20; renderList(); });
-$("periodSel").addEventListener("focus", ()=>{ if(!periodsReady && !loadingPeriods) loadOwedBreakdown(); });
-
 function filterCitizenList(citizens, searchTerm, filter, periodFilter){
   let list = citizens.slice();
   if(searchTerm){
@@ -1260,9 +1255,7 @@ function renderFilterTabs(){
 function renderList(){
   renderFilterTabs();
   const term = $("adminSearch").value.trim().toLowerCase();
-  const showPeriod = (adminFilter==="pending" && !term);
-  $("periodWrap").classList.toggle("hidden", !showPeriod);
-
+  periodFilter="";
   const list = filterCitizenList(allCitizens, term, adminFilter, periodFilter);
   const total = list.length;
   if(!total){
