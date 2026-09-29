@@ -2193,6 +2193,7 @@ async function renderCitizenDetail(id){
     // This is the actual remaining balance: active charges minus all
     // payments and waivers. Deferred charges are excluded by the engine.
     const bal = state.balance;
+    const deferred = getDeferredAmount({...c, ledger: entries});
     const allSorted = sortLedgerEntries(entries, true);
     const INITIAL_HISTORY = 3;
 
