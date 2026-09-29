@@ -43,25 +43,14 @@
           <button class="btn small ghost" id="logoutBtn">Log out</button>
         </div>
       </div>
-      <div class="stats" style="grid-template-columns:repeat(2,1fr)">
+      <div class="stats" style="grid-template-columns:1fr">
         <div class="stat" style="text-align:center">
           <div class="k">Still to collect</div>
-          <div class="v due" id="stOut" style="font-size:22px">₹0</div>
-          <div class="sub" id="stPendingCount" style="font-size:11.5px;color:var(--muted);margin-top:4px">—</div>
-        </div>
-        <div class="stat" style="text-align:center">
-          <div class="k">Deferred</div>
-          <div class="v" style="font-size:22px;color:var(--partial)" id="stDeferred">₹0</div>
-          <div class="sub" id="stDeferredCount" style="font-size:11.5px;color:var(--muted);margin-top:4px">—</div>
-        </div>
-        <div class="stat" style="text-align:center">
-          <div class="k">Overpaid</div>
-          <div class="v paid" id="stOverpaid" style="font-size:22px">₹0</div>
-          <div class="sub" id="stOverpaidCount" style="font-size:11.5px;color:var(--muted);margin-top:4px">—</div>
+          <div class="v due" id="stOut" style="font-size:28px">₹0</div>
         </div>
       </div>
       <div class="toolbar">
-        <input id="adminSearch" type="text" placeholder="Search job card no. or name" />
+        <input id="adminSearch" type="text" placeholder="Search name or Job Card" />
         <button class="btn small ghost" id="clearSearchBtn" style="display:none">Clear</button>
       </div>
       <div id="pendingContainer" class="hidden" style="margin-bottom:12px;">
@@ -71,10 +60,14 @@
         </div>
       </div>
       <div class="seg" id="adminFilterTabs" style="flex-wrap:wrap;margin-bottom:12px">
-        <button class="filter-tab active" data-filter="pending">Pending <span class="tab-count" data-count="pending">0</span></button>
+        <button class="filter-tab active" data-filter="owing">Owing <span class="tab-count" data-count="owing">0</span></button>
         <button class="filter-tab" data-filter="deferred">Deferred <span class="tab-count" data-count="deferred">0</span></button>
         <button class="filter-tab" data-filter="overpaid">Overpaid <span class="tab-count" data-count="overpaid">0</span></button>
         <button class="filter-tab" data-filter="all">All <span class="tab-count" data-count="all">0</span></button>
+      </div>
+      <div id="adminTabSummary" class="panel hidden" style="margin:0 0 12px;padding:10px 14px;background:var(--surface);display:flex;align-items:center;justify-content:space-between">
+        <span id="adminTabSummaryLabel" style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Total</span>
+        <strong id="adminTabSummaryAmount" class="money" style="font-size:17px"></strong>
       </div>
       <!-- Main dashboard period filter hidden; period-based export remains available. -->
       <div class="clist" id="adminList"></div>
@@ -544,7 +537,7 @@ let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null;
 // which happened when these lived further down the file (see the period
 // dropdown fields below).
 
-let adminFilter="pending", adminShown=20;
+let adminFilter="owing", adminShown=20;
 const ADMIN_STEP=20;
 let adminFilteredList=[]; // the currently filtered citizen list, for "show more"
 // Configuration
@@ -1079,17 +1072,6 @@ function renderStats(){
   const pending = allCitizens.filter(c=>getEffectiveBalance(c)>0);
   const out = pending.reduce((s,c)=>s+Math.max(0,getEffectiveBalance(c)),0);
   $("stOut").textContent = fmt(out);
-  $("stPendingCount").textContent = `${pending.length} household${pending.length===1?"":"s"} pending`;
-
-  const deferred = allCitizens.filter(c=>getDeferredAmount(c)>0);
-  const deferredOut = deferred.reduce((s,c)=>s+getDeferredAmount(c),0);
-  $("stDeferred").textContent = fmt(deferredOut);
-  $("stDeferredCount").textContent = `${deferred.length} household${deferred.length===1?"":"s"} deferred`;
-
-  const overpaid = allCitizens.filter(c=>getEffectiveBalance(c)<0);
-  const overpaidOut = overpaid.reduce((s,c)=>s+Math.abs(getEffectiveBalance(c)),0);
-  $("stOverpaid").textContent = fmt(overpaidOut);
-  $("stOverpaidCount").textContent = `${overpaid.length} household${overpaid.length===1?"":"s"} overpaid`;
 }
 $("adminSearch").addEventListener("input", ()=>{
   $("clearSearchBtn").style.display = $("adminSearch").value ? "" : "none";
@@ -1108,15 +1090,15 @@ document.querySelectorAll("#adminFilterTabs .filter-tab").forEach(btn=>{
 });
 function filterCitizenList(citizens, searchTerm, filter){
   let list = citizens.slice();
-  if(searchTerm){
-    list = list.filter(c => (c.jobCard||c.id).toLowerCase().includes(searchTerm) || (c.name||"").toLowerCase().includes(searchTerm));
-  }
-  if(filter==="pending"){
+  if(filter==="owing"){
     list = list.filter(c => getEffectiveBalance(c)>0);
-} else if(filter==="deferred"){
+  } else if(filter==="deferred"){
     list = list.filter(c => getDeferredAmount(c)>0);
   } else if(filter==="overpaid"){
     list = list.filter(c => getEffectiveBalance(c)<0);
+  }
+  if(searchTerm){
+    list = list.filter(c => (c.jobCard||c.id).toLowerCase().includes(searchTerm) || (c.name||"").toLowerCase().includes(searchTerm));
   }
   list.sort(byCardNo);
   return list;
@@ -1192,7 +1174,7 @@ function renderFilterTabs(){
     btn.classList.toggle("active", btn.dataset.filter===adminFilter);
   });
   const counts = {
-    pending: allCitizens.filter(c=>getEffectiveBalance(c)>0).length,
+    owing: allCitizens.filter(c=>getEffectiveBalance(c)>0).length,
     deferred: allCitizens.filter(c=>getDeferredAmount(c)>0).length,
     overpaid: allCitizens.filter(c=>getEffectiveBalance(c)<0).length,
     all: allCitizens.length
@@ -1201,6 +1183,38 @@ function renderFilterTabs(){
     const el = document.querySelector(`.tab-count[data-count="${key}"]`);
     if(el) el.textContent = val===null ? "…" : val;
   }
+
+  const summary = $("adminTabSummary");
+  const summaryLabel = $("adminTabSummaryLabel");
+  const summaryAmount = $("adminTabSummaryAmount");
+  if(!summary || !summaryLabel || !summaryAmount) return;
+
+  if(adminFilter==="all"){
+    summary.classList.add("hidden");
+    return;
+  }
+
+  let total=0, label="";
+  if(adminFilter==="owing"){
+    total = allCitizens.reduce((sum,c)=>{
+      const bal=getEffectiveBalance(c);
+      return sum + (bal>0 ? bal : 0);
+    },0);
+    label="Total owing";
+  }else if(adminFilter==="deferred"){
+    total = allCitizens.reduce((sum,c)=>sum+Math.max(0,getDeferredAmount(c)),0);
+    label="Total deferred";
+  }else if(adminFilter==="overpaid"){
+    total = allCitizens.reduce((sum,c)=>{
+      const bal=getEffectiveBalance(c);
+      return sum + (bal<0 ? Math.abs(bal) : 0);
+    },0);
+    label="Total overpaid";
+  }
+
+  summaryLabel.textContent=label;
+  summaryAmount.textContent=fmt(total);
+  summary.classList.remove("hidden");
 }
 
 function renderList(){
