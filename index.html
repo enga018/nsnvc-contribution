@@ -127,7 +127,6 @@ import {
   isPeriodDeferredForCitizen,
   calculateLedgerState,
   allocateLedgerPayments,
-  getOwedBreakdown,
   allocateByPeriod,
   recalcFromLedger as recalcFromLedgerEngine,
   periodKey,
@@ -311,9 +310,7 @@ async function hydrateDashboardCache(){
     }
 
     if(allCitizens.length){
-      periodsReady=false;
-      unpaidCache=new Map();
-      renderStats();
+renderStats();
       renderList();
       return true;
     }
@@ -546,7 +543,7 @@ let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null;
 // that mutate it) so login-time code paths can't hit a temporal-dead-zone error,
 // which happened when these lived further down the file (see the period
 // dropdown fields below).
-let periodFilter="", unpaidCache=new Map(), periodsReady=false, loadingPeriods=false;
+
 let adminFilter="pending", adminShown=20;
 const ADMIN_STEP=20;
 let adminFilteredList=[]; // the currently filtered citizen list, for "show more"
@@ -1052,9 +1049,7 @@ async function refreshDashboard(){
     const hasCompleteCache = list.every(c => Array.isArray(ledgerCache.get(c.id)));
     if(hasCompleteCache){
       allCitizens = cachedList;
-      periodsReady = false;
-      unpaidCache = new Map();
-      renderStats();
+renderStats();
       renderList();
     }
   }
@@ -1077,17 +1072,7 @@ async function refreshDashboard(){
 
   if(seq !== dashboardRefreshSeq) return; // superseded by a newer refresh; drop this stale result
   allCitizens = list;
-  // The period dropdown's cache (unpaidCache/periodsReady) was built from
-  // whatever allCitizens looked like at the time it was requested. If that
-  // happened before the very first citizen list arrived (e.g. someone opens
-  // the dropdown right after login), it would otherwise permanently cache an
-  // empty result — periodsReady stays true forever with no periods listed.
-  // Invalidating it here means the next dropdown focus (or an already-active
-  // period filter, re-checked by renderList below) recomputes against
-  // current data instead of a possibly-stale/empty snapshot.
-  periodsReady = false;
-  unpaidCache = new Map();
-  renderStats(); renderList(); refreshPending();
+renderStats(); renderList(); refreshPending();
 }
 function renderStats(){
   const pending = allCitizens.filter(c=>getEffectiveBalance(c)>0);
@@ -1105,36 +1090,6 @@ function renderStats(){
   $("stOverpaid").textContent = fmt(overpaidOut);
   $("stOverpaidCount").textContent = `${overpaid.length} household${overpaid.length===1?"":"s"} overpaid`;
 }
-async function loadOwedBreakdown(){
-  if(loadingPeriods) return; loadingPeriods=true;
-  const pend=allCitizens.filter(c=>getEffectiveBalance(c)>0);
-  const cache=new Map(), set=new Set(), usedLedgers=[];
-  await Promise.all(pend.map(async c => {
-    try{
-      // Period filtering must not turn into one Firestore read per household.
-      // Use a ledger already attached to the dashboard or present in cache;
-      // otherwise this citizen simply cannot contribute period options yet.
-      const led = Array.isArray(c.ledger)
-        ? c.ledger
-        : ledgerCache.get(c.id);
-      if(!Array.isArray(led)) return;
-      usedLedgers.push(led);
-      const owed=getOwedBreakdown(led, c.id);
-      const up=owed.filter(o=>o.note).map(o=>o.note);
-      cache.set(c.id, up); up.forEach(p=>set.add(p));
-    }catch(e){}
-  }));
-  unpaidCache=cache; periodsReady=true; loadingPeriods=false;
-  const sel=$("periodSel");
-  if(sel){
-    const periods=[...set].sort(comparePeriods(buildPeriodOrder(usedLedgers)));
-    sel.innerHTML=`<option value="">All pending (any period)</option>`+
-      periods.map(p=>`<option value="${esc(p)}"${p===periodFilter?" selected":""}>Pending: ${esc(prettyPeriod(p))}</option>`).join("");
-  }
-  renderStats(); renderList();
-}
-
-
 $("adminSearch").addEventListener("input", ()=>{
   $("clearSearchBtn").style.display = $("adminSearch").value ? "" : "none";
   adminShown=20; renderList();
@@ -1147,22 +1102,17 @@ $("clearSearchBtn").addEventListener("click", ()=>{
 document.querySelectorAll("#adminFilterTabs .filter-tab").forEach(btn=>{
   btn.addEventListener("click", ()=>{
     adminFilter=btn.dataset.filter; adminShown=20;
-    if(adminFilter!=="pending") periodFilter="";
     renderList();
   });
 });
-function filterCitizenList(citizens, searchTerm, filter, periodFilter){
+function filterCitizenList(citizens, searchTerm, filter){
   let list = citizens.slice();
   if(searchTerm){
     list = list.filter(c => (c.jobCard||c.id).toLowerCase().includes(searchTerm) || (c.name||"").toLowerCase().includes(searchTerm));
   }
   if(filter==="pending"){
     list = list.filter(c => getEffectiveBalance(c)>0);
-    if(periodFilter){
-      if(!periodsReady && !loadingPeriods) loadOwedBreakdown();
-      list = list.filter(c => (unpaidCache.get(c.id)||[]).includes(periodFilter));
-    }
-  } else if(filter==="deferred"){
+} else if(filter==="deferred"){
     list = list.filter(c => getDeferredAmount(c)>0);
   } else if(filter==="overpaid"){
     list = list.filter(c => getEffectiveBalance(c)<0);
@@ -1255,8 +1205,7 @@ function renderFilterTabs(){
 function renderList(){
   renderFilterTabs();
   const term = $("adminSearch").value.trim().toLowerCase();
-  periodFilter="";
-  const list = filterCitizenList(allCitizens, term, adminFilter, periodFilter);
+  const list = filterCitizenList(allCitizens, term, adminFilter);
   const total = list.length;
   if(!total){
     adminFilteredList=[];
@@ -1379,9 +1328,7 @@ async function handlePeriodsSave(pendingRenames){
   btn.disabled=true;
   msg.innerHTML='<div class="notice info">Saving…</div>';
   try{
-    periodsReady=false;
-    unpaidCache=new Map();
-    periodStatsCache=null;
+periodStatsCache=null;
     invalidateStatsMemo();
     const renameResults = await Promise.all(
       Array.from(pendingRenames).map(([oldName,newName])=>store.renamePeriod(oldName,newName))
@@ -1406,7 +1353,7 @@ async function handlePeriodsSave(pendingRenames){
     pendingRenames.clear();
     msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${renamed} rename${renamed===1?"":"s"}.</div>`;
     toast("Periods updated");
-    await refreshDashboard(); loadOwedBreakdown();
+    await refreshDashboard();
   }catch(err){
     console.error(err);
     msg.innerHTML='<div class="notice err">Failed to save.</div>';
@@ -1420,9 +1367,7 @@ function togglePeriodDeferred(period, shouldDefer){
   deferredPeriodUpdatedAt[period]=nextDeferTimestamp(deferredPeriodUpdatedAt[period]);
   deferredPeriods = next;
   syncDeferralStateToEngine();
-  periodsReady=false;
-  unpaidCache=new Map();
-  periodStatsCache=null;
+periodStatsCache=null;
   invalidateStatsMemo();
   renderStats();
   renderList();
@@ -1454,9 +1399,7 @@ function attachPeriodListeners(pendingRenames){
           deferredPeriods=previous;
           deferredPeriodUpdatedAt=previousUpdatedAt;
           syncDeferralStateToEngine();
-          periodsReady=false;
-          unpaidCache=new Map();
-          periodStatsCache=null;
+periodStatsCache=null;
           invalidateStatsMemo();
           renderStats();
           renderList();
@@ -2643,7 +2586,7 @@ async function doExportPdf(){
   await withExportUI("exportPdfBtn", "Export owing list (PDF)", async ()=>{
     const jsPDF = await ensureJsPDF();
     const searchTerm = $("adminSearch").value.trim().toLowerCase();
-    const list = filterCitizenList(allCitizens, searchTerm, adminFilter, periodFilter)
+    const list = filterCitizenList(allCitizens, searchTerm, adminFilter)
       .filter(c => getEffectiveBalance(c) > 0);
     if(!list.length){ toast("No owing households to export"); return; }
 
@@ -2687,7 +2630,7 @@ async function doExportPdf(){
 
     doc.setFontSize(10);
     doc.setFont(undefined, "normal");
-    doc.text(`${todayISO()} · ${adminFilter.charAt(0).toUpperCase()+adminFilter.slice(1)}${periodFilter?` · ${periodFilter}`:""}`, margin, y);
+    doc.text(`${todayISO()} · ${adminFilter.charAt(0).toUpperCase()+adminFilter.slice(1)}`, margin, y);
     y += 14;
 
     doc.setDrawColor(230, 230, 230);
