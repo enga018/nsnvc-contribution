@@ -174,7 +174,16 @@ covers the rules below.
   citizen doc after every change.
 - `normalizeDeferredPeriodState` / `normalizeDeferredPeriodOverrides` — accept
   legacy shapes and flag migration.
-- `periodKey` — rough month ordering for period labels.
+- `periodKey` — rough month ordering for period labels (month × 10 + batch
+  number, e.g. `MAY2` → 52). It knows nothing about years, so it is only the
+  **tie-breaker** for display order.
+- `buildPeriodOrder` / `comparePeriods` — display order of periods (dropdowns,
+  dashboard stats, export list): by the **day the period was first uploaded**,
+  then `periodKey` within the same day. This is what keeps `JAN` after `DEC`
+  across a year rollover without putting a year in the label.
+- `allocateByPeriod(entries, citizenId)` — reporting only (by-period CSV):
+  splits waivers then payments across active charges in upload-time order.
+  Never used for balances.
 
 `getEffectiveBalance` / `getDeferredAmount` / `statusOf` and the memoisation
 stay in `index.html` (they read `c.ledger` and the stats cache), but they call

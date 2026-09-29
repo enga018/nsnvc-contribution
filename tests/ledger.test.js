@@ -122,3 +122,40 @@ test("sortLedgerEntries can return oldest-first", () => {
   const sorted = sortLedgerEntries([a, b], false);
   assert.deepEqual(sorted.map(e=>e.entryId), ["b","a"]);
 });
+
+test("allocateByPeriod: upload-time order (not label), waiver + payments, deferred excluded", async () => {
+  const { allocateByPeriod, setDeferralState } = await import("../ledger.js");
+  setDeferralState({ deferredPeriods: ["MAR"], deferredPeriodUpdatedAt: { MAR: 1 }, deferredPeriodOverrides: {} });
+  // Entries given out of order, as a collection-group read may return them.
+  // Uploaded order: DEC (t=1), JAN (t=2, next year's label sorts "earlier"), MAR (t=3, deferred).
+  const entries = [
+    { type: "charge", amount: 500, note: "JAN", createdAtMs: 2 },
+    { type: "charge", amount: 500, note: "MAR", createdAtMs: 3 },
+    { type: "charge", amount: 500, note: "DEC", createdAtMs: 1 },
+    { type: "forgive", amount: 100, createdAtMs: 4 },
+    { type: "payment", amount: 600, createdAtMs: 5 },
+  ];
+  const r = allocateByPeriod(entries, "c1");
+  // waiver + payments hit DEC first (uploaded first), then JAN
+  assert.deepEqual(r.DEC, { charged: 500, deferred: 0, waived: 100, paid: 400, still: 0 });
+  assert.deepEqual(r.JAN, { charged: 500, deferred: 0, waived: 0, paid: 200, still: 300 });
+  assert.deepEqual(r.MAR, { charged: 500, deferred: 500, waived: 0, paid: 0, still: 0 });
+  setDeferralState(null);
+});
+
+test("comparePeriods: upload day first, periodKey breaks same-day ties", async () => {
+  const { buildPeriodOrder, comparePeriods } = await import("../ledger.js");
+  const day = (y,m,d) => new Date(y,m-1,d,10).getTime();
+  const ledgers = [[
+    { type:"charge", note:"NOV",  amount:1, createdAtMs: day(2025,11,5) },
+    { type:"charge", note:"DEC",  amount:1, createdAtMs: day(2025,12,5) },
+    { type:"charge", note:"JAN",  amount:1, createdAtMs: day(2026,1,5)  },   // next year, label sorts "early"
+    // historical register imported in one day: month order decides
+    { type:"charge", note:"MAR",  amount:1, createdAtMs: day(2025,9,1) },
+    { type:"charge", note:"FEB",  amount:1, createdAtMs: day(2025,9,1) },
+    { type:"charge", note:"FEB2", amount:1, createdAtMs: day(2025,9,1) },
+  ]];
+  const order = buildPeriodOrder(ledgers);
+  const sorted = ["JAN","DEC","MAR","NOV","FEB2","FEB"].sort(comparePeriods(order));
+  assert.deepEqual(sorted, ["FEB","FEB2","MAR","NOV","DEC","JAN"]);
+});
