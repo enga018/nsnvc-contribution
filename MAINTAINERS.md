@@ -1,6 +1,6 @@
 # NSNVC Contribution Tracker — Maintainer's Guide
 
-A single-file progressive web app for tracking citizen contributions in
+A modular progressive web app for tracking citizen contributions in
 New Serchhip North village council. Deployed via GitHub Pages at
 <https://enga018.github.io/nsnvc-contribution>.
 
@@ -40,9 +40,9 @@ maintained and (later) refactored safely.
 
 Three strings must always agree:
 
-1. `VERSION` (e.g. `1.31.2`)
-2. `index.html` footer: `New Serchhip North Village Council · v1.31.2`
-3. `sw.js`: `const CACHE_NAME = 'nsnvc-tracker-v1.31.2'`
+1. `VERSION` (currently `1.34.0`)
+2. `index.html` footer: `New Serchhip North Village Council · v1.34.0`
+3. `sw.js`: `const CACHE_NAME = 'nsnvc-tracker-v1.34.0'`
 
 The service worker only reinstalls when its bytes change, so **the cache name
 must be bumped on any deploy that changes `index.html`/`manifest.json`**, or
@@ -93,7 +93,9 @@ periodStatsCache // memoised { periods, stats }
 statsMemo / statsRevision  // memoised per-citizen balance/deferred
 excludedPeriods  // REMOVED — do not reintroduce
 deferredPeriods, deferredPeriodUpdatedAt, deferredPeriodOverrides
-adminFilter, adminShown, adminFilteredList, periodFilter, unpaidCache, periodsReady
+adminFilter, adminShown, adminFilteredList
+// The old dashboard period selector/state was removed in v1.34.x.
+// `periodFilter` remains only where required by reporting/export logic.
 ```
 
 ---
