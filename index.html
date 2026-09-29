@@ -127,7 +127,7 @@ import {
   isPeriodDeferredForCitizen,
   calculateLedgerState,
   allocateLedgerPayments,
-  getOwedBreakdown,
+
   allocateByPeriod,
   recalcFromLedger as recalcFromLedgerEngine,
   periodKey,
@@ -1073,14 +1073,6 @@ renderStats();
 
   if(seq !== dashboardRefreshSeq) return; // superseded by a newer refresh; drop this stale result
   allCitizens = list;
-  // The period dropdown's cache (unpaidCache/periodsReady) was built from
-  // whatever allCitizens looked like at the time it was requested. If that
-  // happened before the very first citizen list arrived (e.g. someone opens
-  // the dropdown right after login), it would otherwise permanently cache an
-  // empty result — periodsReady stays true forever with no periods listed.
-  // Invalidating it here means the next dropdown focus (or an already-active
-  // period filter, re-checked by renderList below) recomputes against
-  // current data instead of a possibly-stale/empty snapshot.
 renderStats(); renderList(); refreshPending();
 }
 function renderStats(){
@@ -1099,36 +1091,6 @@ function renderStats(){
   $("stOverpaid").textContent = fmt(overpaidOut);
   $("stOverpaidCount").textContent = `${overpaid.length} household${overpaid.length===1?"":"s"} overpaid`;
 }
-async function loadOwedBreakdown(){
-  if(loadingPeriods) return; loadingPeriods=true;
-  const pend=allCitizens.filter(c=>getEffectiveBalance(c)>0);
-  const cache=new Map(), set=new Set(), usedLedgers=[];
-  await Promise.all(pend.map(async c => {
-    try{
-      // Period filtering must not turn into one Firestore read per household.
-      // Use a ledger already attached to the dashboard or present in cache;
-      // otherwise this citizen simply cannot contribute period options yet.
-      const led = Array.isArray(c.ledger)
-        ? c.ledger
-        : ledgerCache.get(c.id);
-      if(!Array.isArray(led)) return;
-      usedLedgers.push(led);
-      const owed=getOwedBreakdown(led, c.id);
-      const up=owed.filter(o=>o.note).map(o=>o.note);
-      cache.set(c.id, up); up.forEach(p=>set.add(p));
-    }catch(e){}
-  }));
-  unpaidCache=cache; periodsReady=true; loadingPeriods=false;
-  const sel=$("periodSel");
-  if(sel){
-    const periods=[...set].sort(comparePeriods(buildPeriodOrder(usedLedgers)));
-    sel.innerHTML=`<option value="">All pending (any period)</option>`+
-      periods.map(p=>`<option value="${esc(p)}"${p===periodFilter?" selected":""}>Pending: ${esc(prettyPeriod(p))}</option>`).join("");
-  }
-  renderStats(); renderList();
-}
-
-
 $("adminSearch").addEventListener("input", ()=>{
   $("clearSearchBtn").style.display = $("adminSearch").value ? "" : "none";
   adminShown=20; renderList();
@@ -1141,7 +1103,6 @@ $("clearSearchBtn").addEventListener("click", ()=>{
 document.querySelectorAll("#adminFilterTabs .filter-tab").forEach(btn=>{
   btn.addEventListener("click", ()=>{
     adminFilter=btn.dataset.filter; adminShown=20;
-    if(adminFilter!=="pending") periodFilter="";
     renderList();
   });
 });
