@@ -2863,7 +2863,11 @@ if('serviceWorker' in navigator){
   }).catch(err=>{
     console.log('Service Worker registration failed', err);
   });
+  const hadServiceWorkerController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    // Do not reload during the first service-worker takeover on a fresh page.
+    // A reload here races Playwright's startup checks and is unnecessary.
+    if(!hadServiceWorkerController) return;
     console.log('New service worker activated, reloading');
     window.location.reload();
   });
