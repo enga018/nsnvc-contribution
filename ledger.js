@@ -249,6 +249,75 @@ export function periodKey(note){
   return idx*10 + (m[2]?parseInt(m[2],10):0);
 }
 
+/* ---------- per-period allocation (reporting only) */
+// Splits one household's ledger across periods for the by-period export.
+// Active (non-deferred) charges are ordered by upload time, oldest first —
+// the same order the live ledger uses — and waivers, then payments, are
+// applied to them in that order. Period labels are NOT used for ordering,
+// so a year rollover (JAN after DEC) cannot misallocate anything.
+// Accepts createdAt (live ledger) or createdAtMs (export/backup shape).
+// Ties keep the order the entries were given in.
+// This is a reporting view only — the real balance never depends on it.
+// Returns { [period]: {charged, deferred, waived, paid, still} }.
+export function allocateByPeriod(entries, citizenId){
+  const out={};
+  const row=p=>out[p]||(out[p]={charged:0,deferred:0,waived:0,paid:0,still:0});
+  const timeOf=e=>e.createdAt!=null ? entryTimeMs(e) : (Number(e.createdAtMs)||0);
+  const active=[];
+  let waivedLeft=0, paidLeft=0;
+  (entries||[]).forEach((e,i)=>{
+    if(!e) return;
+    const amt=Math.max(0, Number(e.amount)||0);
+    if(e.type==="payment"){ paidLeft+=amt; return; }
+    if(e.type==="forgive"){ waivedLeft+=amt; return; }
+    if(e.type!=="charge" && e.type!=="sanitationFee") return;
+    const period=String(e.note||"").trim();
+    row(period).charged+=amt;
+    if(isPeriodDeferredForCitizen(e,citizenId)){ row(period).deferred+=amt; return; }
+    active.push({period, left:amt, t:timeOf(e), i});
+  });
+  active.sort((a,b)=>a.t-b.t||a.i-b.i);
+  for(const it of active){
+    const w=Math.min(waivedLeft,it.left);
+    waivedLeft-=w; it.left-=w; row(it.period).waived+=w;
+  }
+  for(const it of active){
+    const p=Math.min(paidLeft,it.left);
+    paidLeft-=p; it.left-=p; row(it.period).paid+=p;
+  }
+  for(const it of active) row(it.period).still+=it.left;
+  return out;
+}
+
+/* ---------- period display order */
+// Periods are ordered by the day they were first uploaded, so a label that
+// repeats across a year rollover (JAN after DEC) still sorts after the
+// earlier months. Within the same upload day — e.g. a historical register
+// imported in one go — periodKey (month, then batch number) breaks the tie.
+// Display order only; no balance ever depends on it.
+function _uploadDay(ms){
+  if(!ms) return 0;
+  const d=new Date(ms); d.setHours(0,0,0,0); return d.getTime();
+}
+// ledgers: iterable of entry arrays (live ledgers or export ledgers).
+export function buildPeriodOrder(ledgers){
+  const first=new Map();
+  for(const entries of ledgers){
+    for(const e of (entries||[])){
+      if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) continue;
+      const p=String(e.note||"").trim();
+      if(!p) continue;
+      const ms=e.createdAt!=null ? entryTimeMs(e) : (Number(e.createdAtMs)||0);
+      const day=_uploadDay(ms);
+      if(!first.has(p) || day<first.get(p)) first.set(p,day);
+    }
+  }
+  return first;
+}
+export function comparePeriods(order){
+  return (a,b)=>((order.get(a)||0)-(order.get(b)||0)) || periodKey(a)-periodKey(b) || String(a).localeCompare(String(b));
+}
+
 /* ---------- entry sorting ---------- */
 // createdAt may be a number (Date.now()), a Firestore serverTimestamp read
 // back as a Timestamp-like object ({seconds, nanoseconds}), or missing on

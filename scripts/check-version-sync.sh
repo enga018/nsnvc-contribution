@@ -15,7 +15,7 @@ SW_LINE=$(grep -m1 "CACHE_NAME = 'nsnvc-tracker-v" sw.js || true)
 FOOTER_LINE=$(grep -m1 '<footer>' index.html || true)
 
 SW_VERSION=$(printf '%s' "$SW_LINE" | grep -oP "CACHE_NAME = 'nsnvc-tracker-v\K[0-9.]+(?=')" || true)
-FOOTER_VERSION=$(printf '%s' "$FOOTER_LINE" | grep -oP 'Village Council · v\K[0-9.]+(?=</footer>)' || true)
+FOOTER_VERSION=$(printf '%s' "$FOOTER_LINE" | grep -oP 'Village Council · v\K[0-9.]+(?=<)' || true)
 
 fail=0
 

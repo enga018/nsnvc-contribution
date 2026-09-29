@@ -86,7 +86,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.33.16<span id="accEmail"></span></footer>
+<footer>New Serchhip North Village Council · v1.34.0<span id="accEmail"></span></footer>
 
 <script>
 (function(){
@@ -130,8 +130,11 @@ import {
   calculateLedgerState,
   allocateLedgerPayments,
   getOwedBreakdown,
+  allocateByPeriod,
   recalcFromLedger as recalcFromLedgerEngine,
   periodKey,
+  buildPeriodOrder,
+  comparePeriods,
   sortLedgerEntries
 } from "./ledger.js";
 import { makeLocalStore, makeFirebaseStore } from "./store.js";
@@ -1015,7 +1018,7 @@ function getPeriodStats(){
       }
     }
   }
-  periodStatsCache={periods:[...periods].sort((a,b)=>periodKey(a)-periodKey(b)),stats};
+  periodStatsCache={periods:[...periods].sort(comparePeriods(buildPeriodOrder(ledgerCache.values()))),stats};
   return periodStatsCache;
 }
 function scheduleDashboardRefresh(){
@@ -1107,7 +1110,7 @@ function renderStats(){
 async function loadOwedBreakdown(){
   if(loadingPeriods) return; loadingPeriods=true;
   const pend=allCitizens.filter(c=>getEffectiveBalance(c)>0);
-  const cache=new Map(), set=new Set();
+  const cache=new Map(), set=new Set(), usedLedgers=[];
   await Promise.all(pend.map(async c => {
     try{
       // Period filtering must not turn into one Firestore read per household.
@@ -1117,6 +1120,7 @@ async function loadOwedBreakdown(){
         ? c.ledger
         : ledgerCache.get(c.id);
       if(!Array.isArray(led)) return;
+      usedLedgers.push(led);
       const owed=getOwedBreakdown(led, c.id);
       const up=owed.filter(o=>o.note).map(o=>o.note);
       cache.set(c.id, up); up.forEach(p=>set.add(p));
@@ -1125,7 +1129,7 @@ async function loadOwedBreakdown(){
   unpaidCache=cache; periodsReady=true; loadingPeriods=false;
   const sel=$("periodSel");
   if(sel){
-    const periods=[...set].sort((a,b)=>periodKey(a)-periodKey(b));
+    const periods=[...set].sort(comparePeriods(buildPeriodOrder(usedLedgers)));
     sel.innerHTML=`<option value="">All pending (any period)</option>`+
       periods.map(p=>`<option value="${esc(p)}"${p===periodFilter?" selected":""}>Pending: ${esc(prettyPeriod(p))}</option>`).join("");
   }
@@ -2782,7 +2786,7 @@ async function doExportPeriod(){
   try{
     const data=await getExportData(),citizens=data.citizens,ledgers=data.ledgers,periodSet=new Set();
     for(const c of citizens)for(const e of (ledgers[c.id]||[])){if(e.type!=="charge"&&e.type!=="sanitationFee")continue;const p=String(e.note||"").trim();if(p)periodSet.add(p);}
-    const periods=[...periodSet].sort((a,b)=>periodKey(a)-periodKey(b)||a.localeCompare(b));
+    const periods=[...periodSet].sort(comparePeriods(buildPeriodOrder(Object.values(ledgers))));
     if(!periods.length){select.innerHTML='<option value="">No periods found</option>';msg.innerHTML='<div class="notice info">No contribution periods found.</div>';return;}
     exportPeriodContext={citizens,ledgers};
     select.innerHTML=periods.map(p=>'<option value="'+esc(p)+'">'+esc(prettyPeriod(p))+'</option>').join("");
@@ -2797,10 +2801,11 @@ async function exportSelectedPeriod(period){
     for(const c of citizens){
       const entries=ledgers[c.id]||[],charges=entries.filter(e=>(e.type==="charge"||e.type==="sanitationFee")&&String(e.note||"").trim()===period);
       if(!charges.length)continue;
-      const charged=charges.reduce((sum,e)=>sum+Math.max(0,Number(e.amount)||0),0),deferred=charges.reduce((sum,e)=>sum+(isPeriodDeferredForCitizen(e,c.id)?Math.max(0,Number(e.amount)||0):0),0),still=Math.max(0,charged-deferred);
-      let status="Paid";if(still>0)status="Owing";else if(deferred>=charged&&charged>0)status="Deferred";
+      const r=allocateByPeriod(entries,c.id)[period]||{charged:0,deferred:0,waived:0,paid:0,still:0};
+      const charged=r.charged,deferred=r.deferred,still=r.still;
+      let status="Paid";if(still>0)status="Owing";else if(charged>0&&deferred>=charged)status="Deferred";
       const payments=entries.filter(e=>e.type==="payment").map(e=>entryLabel(e)+" "+fmt(e.amount)).join("; ");
-      csv+=[csvCell(c.name),csvCell(c.jobCard),csvCell(period),csvNumber(charged),0,0,csvNumber(deferred),csvNumber(still),csvCell(status),csvCell(payments)].join(",")+"\n";rows++;
+      csv+=[csvCell(c.name),csvCell(c.jobCard),csvCell(period),csvNumber(charged),csvNumber(r.paid),csvNumber(r.waived),csvNumber(deferred),csvNumber(still),csvCell(status),csvCell(payments)].join(",")+"\n";rows++;
     }
     const filename="period_"+period.replace(/[^a-z0-9_-]+/gi,"_")+"_"+todayISO()+".csv",picker=beginTextFileSave(filename,"text/csv");
     if(picker)await finishTextFileSave(picker,csv);else downloadBlob(csv,filename,"text/csv");
