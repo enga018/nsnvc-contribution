@@ -1625,7 +1625,7 @@ function openImportExport(){
     <div style="border-top:1px solid var(--border);padding-top:16px">
       <p style="font-size:13.5px;color:var(--muted);margin:0 0 10px"><b>Export</b>:</p>
       <button class="btn block ghost" id="exportAllBtn">Export all households (CSV)</button>
-      <button class="btn block ghost" id="exportPeriodBtn" style="margin-top:8px">Export all periods (CSV)</button>
+      <button class="btn block ghost" id="exportPeriodBtn" style="margin-top:8px">Export by period (CSV)</button>
       <button class="btn block ghost" id="exportCsvBtn2" style="margin-top:8px">Export owing list (CSV)</button>
       <button class="btn block ghost" id="exportPdfBtn" style="margin-top:8px">Export owing list (PDF)</button>
     </div>
@@ -2756,145 +2756,57 @@ async function doExportPdf(){
 /* ============================================================
    ADMIN — Reporting CSV exports
    ============================================================ */
-
-let exportBusy=false;
-
-async function withExportUI(buttonId, originalText, exportFn){
-  if(exportBusy) return;
-  exportBusy=true;
-  const btn=$(buttonId);
-  if(btn){btn.disabled=true;btn.textContent="Preparing…";}
-  try{await exportFn();clearOperationErrors();}
-  catch(err){handleOperationError("export",err);toast("Export failed");}
-  finally{exportBusy=false;if(btn){btn.disabled=false;btn.textContent=originalText;}}
-}
-
-function csvCell(value){return `"${String(value ?? "").replace(/"/g,'""')}"`;}
+function csvCell(value){return '"' + String(value ?? "").replace(/"/g,'""') + '"';}
 function csvNumber(value){const n=Number(value);return Number.isFinite(n)?n:0;}
-function grossChargeTotal(entries){
-  return (entries||[]).reduce((sum,e)=>{
-    if(!e||(e.type!=="charge"&&e.type!=="sanitationFee"))return sum;
-    return sum+Math.max(0,Number(e.amount)||0);
-  },0);
-}
-async function getExportLedgers(){
-  return ledgerCache.size?Object.fromEntries(ledgerCache):await store.getAllLedgers();
-}
-
-async function doExportCsv(){
-  await withExportUI("exportCsvBtn2","Export owing list (CSV)",async()=>{
-    const filename=`owing_${todayISO()}.csv`;
-    const picker=beginTextFileSave(filename,"text/csv");
-    const csv=await store.exportOwingCsv();
-    if(picker)await finishTextFileSave(picker,csv);else downloadBlob(csv,filename,"text/csv");
-    toast("CSV saved");
-  });
-}
-
-async function doExportPdf(){
-  await withExportUI("exportPdfBtn","Export owing list (PDF)",async()=>{
-    const jsPDF=await ensureJsPDF();
-    const searchTerm=$("adminSearch").value.trim().toLowerCase();
-    const list=filterCitizenList(allCitizens,searchTerm,adminFilter,periodFilter).filter(c=>getEffectiveBalance(c)>0);
-    if(!list.length){toast("No owing households to export");return;}
-    const fmtRs=n=>"Rs. "+(Number(n)||0).toLocaleString("en-IN");
-    const ledgers=await getExportLedgers();
-    const rows=[];
-    for(const c of list){
-      const entries=ledgers[c.id]||await store.getLedger(c.id);
-      const bal=calculateLedgerState(entries,c.id).balance;
-      if(!(bal>0))continue;
-      const payments=entries.filter(e=>e.type==="payment").map(e=>fmtRs(e.amount));
-      const charges=entries.filter(e=>{
-        if(e.type!=="charge"&&e.type!=="sanitationFee")return false;
-        return !isPeriodDeferredForCitizen(e,c.id);
-      }).map(e=>{
-        const period=e.note&&e.note.trim()?e.note.trim():(e.type==="sanitationFee"?"Sanitation Fee":"Charge");
-        return `${period}: ${fmtRs(e.amount)}`;
-      });
-      rows.push({name:c.name||"—",jobCard:c.jobCard||c.id,amount:fmtRs(bal),payments:payments.length?"Paid: "+payments.join(", "):"",charges:charges.length?charges.join(", "):""});
-    }
-    const doc=new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
-    const pageW=doc.internal.pageSize.getWidth(),margin=16,rightX=pageW-margin;
-    let y=22;
-    doc.setFontSize(18);doc.setFont(undefined,"bold");doc.text("Owing List",margin,y);y+=10;
-    doc.setFontSize(10);doc.setFont(undefined,"normal");
-    doc.text(`${todayISO()} · ${adminFilter.charAt(0).toUpperCase()+adminFilter.slice(1)}${periodFilter?` · ${periodFilter}`:""}`,margin,y);y+=14;
-    doc.setDrawColor(230,230,230);
-    for(const r of rows){
-      if(y>doc.internal.pageSize.getHeight()-36){doc.addPage();y=20;}
-      doc.setFont(undefined,"bold");doc.setFontSize(11);
-      const amountW=doc.getTextWidth(r.amount),nameMaxW=pageW-margin*2-amountW-8;
-      const nameLines=doc.splitTextToSize(r.name,nameMaxW);
-      doc.setTextColor(40,40,40);doc.text(nameLines,margin,y);
-      const nameLastLine=nameLines[nameLines.length-1]||"",nameLastW=doc.getTextWidth(nameLastLine),amountX=margin+nameLastW+5;
-      doc.setTextColor(180,40,40);doc.text(r.amount,amountX,y+(nameLines.length-1)*3.8);
-      y+=nameLines.length*3.8+1;let rightY=y-nameLines.length*3.8-1;
-      doc.setFont(undefined,"normal");doc.setTextColor(120,120,120);doc.setFontSize(9);doc.text(r.jobCard,margin,y);
-      if(r.charges){const lines=doc.splitTextToSize(r.charges,70);doc.setTextColor(180,40,40);doc.text(lines,rightX,rightY,{align:"right"});rightY+=lines.length*3.8;}
-      if(r.payments){rightY+=1;const lines=doc.splitTextToSize(r.payments,70);doc.setTextColor(26,125,66);doc.text(lines,rightX,rightY,{align:"right"});rightY+=lines.length*3.8;}
-      y=Math.max(y+3.8,rightY);doc.setFontSize(11);y+=2;doc.line(margin,y,pageW-margin,y);y+=5;
-    }
-    doc.save(`owing_${todayISO()}.pdf`);toast("PDF exported");
-  });
-}
-
+function grossChargeTotal(entries){return (entries||[]).reduce((sum,e)=>{if(!e||(e.type!=="charge"&&e.type!=="sanitationFee"))return sum;return sum+Math.max(0,Number(e.amount)||0);},0);}
+async function getExportData(){const citizens=await store.getAllCitizens();const ledgers=await store.getAllLedgers();return {citizens,ledgers};}
 async function doExportAll(){
   await withExportUI("exportAllBtn","Export all households (CSV)",async()=>{
-    const ledgers=await getExportLedgers();
-    let csv="Name,Job Card,Total Charged (₹),Total Paid (₹),Waived (₹),Deferred (₹),Still to Collect (₹),Status,Payment History\n";
-    for(const c of allCitizens){
-      const entries=ledgers[c.id]||[];
-      const state=calculateLedgerState(entries,c.id);
-      const grossCharged=grossChargeTotal(entries);
-      const still=Math.max(0,state.balance);
-      let status="Paid";
-      if(state.balance>0)status="Owing";
-      else if(state.balance<0)status="Overpaid";
-      else if(state.deferredRemaining>0)status="Deferred";
-      const payments=entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
-      csv+=[
-        csvCell(c.name),csvCell(c.jobCard),csvNumber(grossCharged),csvNumber(state.totalPaid),
-        csvNumber(state.totalWaived),csvNumber(state.deferredRemaining),csvNumber(still),csvCell(status),csvCell(payments)
-      ].join(",")+"\n";
+    const data=await getExportData(),citizens=data.citizens,ledgers=data.ledgers;
+    let csv="Name, Job Card,Total Charged (₹),Total Paid (₹),Waived (₹),Deferred (₹),Still to Collect (₹),Status,Payment History\n";
+    for(const c of citizens){
+      const entries=ledgers[c.id]||[],state=calculateLedgerState(entries,c.id),still=Math.max(0,state.balance);
+      let status="Paid";if(state.balance>0)status="Owing";else if(state.balance<0)status="Overpaid";else if(state.deferredRemaining>0)status="Deferred";
+      const payments=entries.filter(e=>e.type==="payment").map(e=>entryLabel(e)+" "+fmt(e.amount)).join("; ");
+      csv+=[csvCell(c.name),csvCell(c.jobCard),csvNumber(grossChargeTotal(entries)),csvNumber(state.totalPaid),csvNumber(state.totalWaived),csvNumber(state.deferredRemaining),csvNumber(still),csvCell(status),csvCell(payments)].join(",")+"\n";
     }
-    const filename=`all_households_${todayISO()}.csv`;
-    const picker=beginTextFileSave(filename,"text/csv");
+    const filename="all_households_"+todayISO()+".csv",picker=beginTextFileSave(filename,"text/csv");
     if(picker)await finishTextFileSave(picker,csv);else downloadBlob(csv,filename,"text/csv");
-    toast("All households CSV exported");
+    toast("All households CSV exported ("+citizens.length+" households)");
   });
 }
-
+let exportPeriodContext=null;
 async function doExportPeriod(){
-  await withExportUI("exportPeriodBtn","Export all periods (CSV)",async()=>{
-    const ledgers=await getExportLedgers(),periodSet=new Set();
-    for(const c of allCitizens){
-      for(const e of (ledgers[c.id]||[])){
-        if(e.type==="charge"){const p=String(e.note||"").trim();if(p)periodSet.add(p);}
-      }
-    }
+  openSheet("Export by period",'<p style="font-size:13.5px;color:var(--muted);margin:0 0 12px">Select one period to export.</p><div class="field"><label>Period</label><select id="exportPeriodSelect" class="period-sel"><option value="">Loading periods…</option></select></div><button class="btn block" id="exportPeriodConfirmBtn" disabled>Export selected period</button><div id="exportPeriodMsg" style="margin-top:10px"></div>');
+  const select=$("exportPeriodSelect"),confirmBtn=$("exportPeriodConfirmBtn"),msg=$("exportPeriodMsg");
+  try{
+    const data=await getExportData(),citizens=data.citizens,ledgers=data.ledgers,periodSet=new Set();
+    for(const c of citizens)for(const e of (ledgers[c.id]||[])){if(e.type!=="charge"&&e.type!=="sanitationFee")continue;const p=String(e.note||"").trim();if(p)periodSet.add(p);}
     const periods=[...periodSet].sort((a,b)=>periodKey(a)-periodKey(b)||a.localeCompare(b));
-    let csv="Name,Job Card,Period,Charged (₹),Paid (₹),Waived (₹),Deferred (₹),Still to Collect (₹),Status,Payment History\n";
-    for(const c of allCitizens){
-      const entries=ledgers[c.id]||[];
-      const payments=entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
-      for(const period of periods){
-        const charges=entries.filter(e=>e.type==="charge"&&String(e.note||"").trim()===period);
-        if(!charges.length)continue;
-        const charged=charges.reduce((sum,e)=>sum+Math.max(0,Number(e.amount)||0),0);
-        const deferred=charges.reduce((sum,e)=>sum+(isPeriodDeferredForCitizen(e,c.id)?Math.max(0,Number(e.amount)||0):0),0);
-        const still=Math.max(0,charged-deferred);
-        const status=deferred>=charged?"Deferred":(still>0?"Owing":"Paid");
-        csv+=[csvCell(c.name),csvCell(c.jobCard),csvCell(period),csvNumber(charged),0,0,csvNumber(deferred),csvNumber(still),csvCell(status),csvCell(payments)].join(",")+"\n";
-      }
+    if(!periods.length){select.innerHTML='<option value="">No periods found</option>';msg.innerHTML='<div class="notice info">No contribution periods found.</div>';return;}
+    exportPeriodContext={citizens,ledgers};
+    select.innerHTML=periods.map(p=>'<option value="'+esc(p)+'">'+esc(prettyPeriod(p))+'</option>').join("");
+    confirmBtn.disabled=false;confirmBtn.onclick=async()=>{const period=select.value;if(period)await exportSelectedPeriod(period);};
+  }catch(err){handleOperationError("loadExportPeriods",err);msg.innerHTML='<div class="notice err">Could not load the periods.</div>';}
+}
+async function exportSelectedPeriod(period){
+  const ctx=exportPeriodContext;if(!ctx)return;
+  await withExportUI("exportPeriodConfirmBtn","Export selected period",async()=>{
+    const citizens=ctx.citizens,ledgers=ctx.ledgers;
+    let csv="Name, Job Card,Period,Charged (₹),Paid (₹),Waived (₹),Deferred (₹),Still to Collect (₹),Status,Payment History\n",rows=0;
+    for(const c of citizens){
+      const entries=ledgers[c.id]||[],charges=entries.filter(e=>(e.type==="charge"||e.type==="sanitationFee")&&String(e.note||"").trim()===period);
+      if(!charges.length)continue;
+      const charged=charges.reduce((sum,e)=>sum+Math.max(0,Number(e.amount)||0),0),deferred=charges.reduce((sum,e)=>sum+(isPeriodDeferredForCitizen(e,c.id)?Math.max(0,Number(e.amount)||0):0),0),still=Math.max(0,charged-deferred);
+      let status="Paid";if(still>0)status="Owing";else if(deferred>=charged&&charged>0)status="Deferred";
+      const payments=entries.filter(e=>e.type==="payment").map(e=>entryLabel(e)+" "+fmt(e.amount)).join("; ");
+      csv+=[csvCell(c.name),csvCell(c.jobCard),csvCell(period),csvNumber(charged),0,0,csvNumber(deferred),csvNumber(still),csvCell(status),csvCell(payments)].join(",")+"\n";rows++;
     }
-    const filename=`all_periods_${todayISO()}.csv`;
-    const picker=beginTextFileSave(filename,"text/csv");
+    const filename="period_"+period.replace(/[^a-z0-9_-]+/gi,"_")+"_"+todayISO()+".csv",picker=beginTextFileSave(filename,"text/csv");
     if(picker)await finishTextFileSave(picker,csv);else downloadBlob(csv,filename,"text/csv");
-    toast("All periods CSV exported");
+    toast(prettyPeriod(period)+" CSV exported ("+rows+" households)");closeSheet();exportPeriodContext=null;
   });
 }
-
 // Register service worker
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('./sw.js').then(reg=>{

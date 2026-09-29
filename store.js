@@ -64,6 +64,7 @@ export function makeLocalStore(host){
   }
   return {
     isLocal:true,
+    async getAllCitizens(){return Object.entries(data.citizens).map(([id,c])=>({id,jobCard:c.jobCard,cardNo:c.cardNo,name:c.name,phone:c.phone||"",totalCharged:c.totalCharged||0,totalPaid:c.totalPaid||0,balance:c.balance||0,deferredTotal:c.deferredTotal||0})).sort((a,b)=>(a.name||"").localeCompare(b.name||""));},
     async getLedger(id){ const c=data.citizens[id]; if(!c) return [];
       return [...(c.ledger||[])].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)); },
     subscribe(cb){ listeners.add(cb); cb(sortedList()); return ()=>listeners.delete(cb); },
@@ -429,6 +430,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
   }
   return {
     isLocal:false,
+    async getAllCitizens(){const snap=await fs.getDocs(fs.query(fs.collection(db,"citizens"),fs.orderBy("name")));return snap.docs.map(d=>({id:d.id,...d.data()}));},
     async getLedger(id){
       const q=fs.query(fs.collection(db,"citizens",id,"ledger"), fs.orderBy("createdAt","asc"));
       const snap = await fs.getDocs(q);
