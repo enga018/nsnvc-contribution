@@ -1151,9 +1151,6 @@ document.querySelectorAll("#adminFilterTabs .filter-tab").forEach(btn=>{
     renderList();
   });
 });
-$("periodSel").addEventListener("change", ()=>{ periodFilter=$("periodSel").value; adminShown=20; renderList(); });
-$("periodSel").addEventListener("focus", ()=>{ if(!periodsReady && !loadingPeriods) loadOwedBreakdown(); });
-
 function filterCitizenList(citizens, searchTerm, filter, periodFilter){
   let list = citizens.slice();
   if(searchTerm){
@@ -1258,9 +1255,7 @@ function renderFilterTabs(){
 function renderList(){
   renderFilterTabs();
   const term = $("adminSearch").value.trim().toLowerCase();
-  const showPeriod = (adminFilter==="pending" && !term);
-  $("periodWrap").classList.toggle("hidden", !showPeriod);
-
+  periodFilter="";
   const list = filterCitizenList(allCitizens, term, adminFilter, periodFilter);
   const total = list.length;
   if(!total){
