@@ -4,113 +4,108 @@ A lightweight web app for the **New Serchhip North Village Council (NSNVC)**, Mi
 
 **Live site:** https://enga018.github.io/nsnvc-contribution/
 
-It is a single HTML file. No build step, no server of its own — just static hosting plus Firebase for data and admin login.
+The app is a static PWA with a main `index.html` UI plus separate JavaScript modules for ledger rules and data stores. There is no build step or application server; GitHub Pages hosts the static files and Firebase provides authentication and Firestore data.
 
 ---
 
 ## What it does
 
-There is no public-facing view — the app opens straight to the council login. (An earlier version let citizens look up their own balance and pay via UPI without logging in; that was removed because it required Firestore to allow public read access to every household's name, balance, and payment history.)
+There is no public-facing view — the app opens straight to the council login. An earlier citizen lookup/UPI flow was removed so Firestore does not need public read access to household data.
 
 ### For the council (admin, email/password login)
-- Dashboard with a single **"Still to collect"** figure (total outstanding + number of pending households).
-- Filter households by **Pending / Paid / Deferred / All**, and by **period** ("Pending: January", etc.).
-- Open any household to add a contribution, record a payment, **mark fully paid**, **forgive** part or all of a balance, or **defer** a charge (for someone still awaiting their wages).
-- **Edit or delete** any history entry; balances recompute from the ledger automatically.
-- **Import from Excel:**
-  - First-time historical register (one-time, with a guard against duplicating existing data).
-  - Monthly update file — detects the layout and asks you to confirm which column is the job card, name and amount, so fixed header names aren't required.
-  - Bank payment file — records payments and flags rows it can't match.
-  - A duplicate-period guard warns before re-importing a period already added.
-- **Export** the owing list (with payment detail) as CSV.
-- **Backup & restore:** download a full JSON backup of every household and its history, or restore from one.
-- **Recalculate all balances** — rebuilds every total from its history if anything ever looks off.
+
+- Dashboard with **Still to collect** and household statistics.
+- Filter households by **Pending / Paid / Deferred / All**. The main dashboard no longer has a period dropdown.
+- Open any household to add a contribution, record a payment, **mark fully paid**, **forgive** part or all of a balance, or **defer** a charge.
+- **Edit or delete** history entries; balances recompute from the ledger.
+- **Manage Periods** for imported periods and deferral state.
+- **Import from Excel**:
+  - First-time historical register.
+  - Monthly update files, with column/layout detection.
+  - Bank payment files, with unmatched rows flagged.
+  - Duplicate-period protection.
+- **Export**:
+  - Owing list as CSV.
+  - Owing list as PDF.
+  - All households as CSV.
+  - Periods as CSV.
+  - A selected period's contribution/payment detail.
+- **Backup & restore**: download or restore the complete household/ledger backup.
+- **Recalculate all balances** when a full rebuild is needed.
+
+### Important balance rule
+
+The effective outstanding balance is derived from the ledger:
+
+**active charges + sanitation fees − payments − applicable waivers**
+
+Charges that are currently deferred are excluded from the active amount to collect. Deferred amounts are therefore **not included in “Still to collect.”** If a deferred charge is restored, it becomes active again.
 
 ---
 
 ## Tech stack
 
-- **Vanilla JavaScript**, single `index.html` (no frameworks, no bundler)
+- **Vanilla JavaScript** with ES modules
+- **`index.html`** — application shell, UI, state, rendering and event wiring
+- **`ledger.js`** — pure ledger/deferral engine
+- **`store.js`** — local and Firebase data-store implementations
 - **Firebase Firestore** — database
-- **Firebase Authentication** — admin login (email/password)
-- **SheetJS (xlsx)** — Excel parsing, loaded on demand from a CDN
-- **GitHub Pages** — free static hosting
+- **Firebase Authentication** — admin login
+- **SheetJS (xlsx)** — Excel parsing, loaded on demand
+- **GitHub Pages** — static hosting
+- **Playwright / Node tests** — automated checks
 
-The app runs in a local **test mode** with sample data if no Firebase config is present, so you can try the UI without a backend.
+The app has a local **test mode** with sample data when Firebase configuration is not present.
 
 ---
 
 ## Setup
 
 ### 1. Firebase
+
 1. Create a Firebase project and enable **Firestore** and **Authentication → Email/Password**.
-2. Add an admin user under Authentication.
-3. Copy your web app config into the `firebaseConfig` object near the top of `index.html`:
+2. Add the authorized admin user under Authentication.
+3. Copy the web app config into the `firebaseConfig` object in `index.html`.
 
-   ```js
-   const firebaseConfig = {
-     apiKey: "…",
-     authDomain: "YOUR_PROJECT.firebaseapp.com",
-     projectId: "YOUR_PROJECT",
-     storageBucket: "YOUR_PROJECT.firebasestorage.app",
-     messagingSenderId: "…",
-     appId: "…"
-   };
-   ```
-
-   > The web `apiKey` is **not** a secret — it is meant to ship in client code. Access is controlled by Firestore security rules, not by hiding the key.
+The web Firebase API key is not a secret; Firestore security rules are what protect the data.
 
 ### 2. Firestore security rules
-Admin-only read and write — there's no public view left that needs open read access:
 
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
+Use the admin-only rules in [`FIRESTORE_SECURITY_RULES.md`](FIRESTORE_SECURITY_RULES.md).
 
-    match /citizens/{cid} {
-      allow read, write: if request.auth != null && request.auth.token.email == "YOUR_ADMIN_EMAIL";
-      match /{sub=**} {
-        allow read, write: if request.auth != null && request.auth.token.email == "YOUR_ADMIN_EMAIL";
-      }
-    }
-
-    match /meta/{doc} {
-      allow read, write: if request.auth != null && request.auth.token.email == "YOUR_ADMIN_EMAIL";
-    }
-
-  }
-}
-```
-
-Replace `YOUR_ADMIN_EMAIL` with your admin login email. The `meta` doc holds imported-period tracking and the Manage Periods exclusion list.
-
-> **If you're upgrading an existing deployment:** this app version no longer has a public citizen lookup, but removing the UI alone does not change your live Firestore rules. If your project still has `allow read: if true` from an earlier version, anyone with your Firebase config (which isn't secret, see above) can still read every household's name, balance, and payment history directly via the Firestore API, bypassing this app entirely. Update your rules in the Firebase console to the version above to actually close that off.
+The production application has no public citizen view, so **do not use public Firestore read rules**.
 
 ### 3. Deploy
-Commit `index.html` to the repo and enable **GitHub Pages** (Settings → Pages → deploy from branch). The app is served from the repo's `index.html`.
+
+Commit the static files to the repo and enable GitHub Pages from the `main` branch.
 
 ---
 
-## Data model (brief)
+## Data model
 
-Each household is a document in the `citizens` collection, keyed by its full job card (with `/` encoded). It stores name, job card, totals (`totalCharged`, `totalPaid`, `balance`, `deferredTotal`) and a `ledger` subcollection of entries:
+Each household is a document in the `citizens` collection, keyed by its full job card (with `/` encoded). It stores name, job card, cached totals and timestamps.
 
-- `charge` — a period's contribution (can be `deferred`)
+Ledger entries live in `citizens/{id}/ledger`:
+
+- `charge` — a period contribution
 - `payment` — money received (cash / bank / UPI)
 - `forgive` — a waived amount
+- `sanitationFee` — sanitation charge
 
-Balances are derived from the ledger: effective balance = (charges excluding deferred) − payments. Payments are not tied to specific periods; the period filter applies them oldest-first (FIFO).
+A charge may be deferred. Deferral is resolved using the current whole-period and per-charge override state.
+
+Balances are derived from the ledger; cached citizen totals are summaries and can be rebuilt with **Recalculate all balances**.
 
 ---
 
 ## Backups
 
-The data lives only in Firestore, so **take a backup regularly**: Admin → Backup / Restore → Download backup. Keep the JSON file somewhere safe. Restore reads that file back. There is no automatic off-site backup.
+The data lives in Firestore, so take backups regularly: **Admin → Backup / Restore → Download backup**. Backup files contain household information and payment history; store them securely.
 
 ---
 
 ## Notes
 
-- Designed for low-end phones and patchy connectivity — minimal, fast, single file.
-- Built and maintained for NSNVC, Mizoram.
+- Designed for low-end phones and patchy connectivity.
+- The dashboard is cache-first and the application supports offline Firestore persistence when available.
+- Current deployed version: **v1.34.0**.
