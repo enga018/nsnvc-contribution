@@ -999,7 +999,7 @@ function getPeriodStats(){
   const periods=new Set(), stats=new Map();
   for(const [cid,entries] of ledgerCache){
     for(const e of entries){
-      if(e.type==="charge" && e.note){
+      if(e.type==="charge" && e.note && String(e.note).trim() !== "Return"){
         periods.add(e.note);
         const s=stats.get(e.note)||{count:0,amount:0};
         s.count++; s.amount+=Number(e.amount||0);
@@ -2827,7 +2827,7 @@ async function doExportPeriod(){
   const select=$("exportPeriodSelect"),confirmBtn=$("exportPeriodConfirmBtn"),msg=$("exportPeriodMsg");
   try{
     const data=await getExportData(),citizens=data.citizens,ledgers=data.ledgers,periodSet=new Set();
-    for(const c of citizens)for(const e of (ledgers[c.id]||[])){if(e.type!=="charge"&&e.type!=="sanitationFee")continue;const p=String(e.note||"").trim();if(p)periodSet.add(p);}
+    for(const c of citizens)for(const e of (ledgers[c.id]||[])){if(e.type!=="charge"&&e.type!=="sanitationFee")continue;const p=String(e.note||"").trim();if(!p||p==="Return")continue;periodSet.add(p);}
     const periods=[...periodSet].sort(comparePeriods(buildPeriodOrder(Object.values(ledgers))));
     if(!periods.length){select.innerHTML='<option value="">No periods found</option>';msg.innerHTML='<div class="notice info">No contribution periods found.</div>';return;}
     exportPeriodContext={citizens,ledgers};
