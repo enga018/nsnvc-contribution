@@ -65,6 +65,10 @@
         <button class="filter-tab" data-filter="overpaid">Overpaid <span class="tab-count" data-count="overpaid">0</span></button>
         <button class="filter-tab" data-filter="all">All <span class="tab-count" data-count="all">0</span></button>
       </div>
+      <div id="adminTabSummary" class="panel hidden" style="margin:0 0 12px;padding:10px 14px;background:var(--surface);display:flex;align-items:center;justify-content:space-between">
+        <span id="adminTabSummaryLabel" style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Total</span>
+        <strong id="adminTabSummaryAmount" class="money" style="font-size:17px"></strong>
+      </div>
       <!-- Main dashboard period filter hidden; period-based export remains available. -->
       <div class="clist" id="adminList"></div>
     </div>
@@ -1179,6 +1183,38 @@ function renderFilterTabs(){
     const el = document.querySelector(`.tab-count[data-count="${key}"]`);
     if(el) el.textContent = val===null ? "…" : val;
   }
+
+  const summary = $("adminTabSummary");
+  const summaryLabel = $("adminTabSummaryLabel");
+  const summaryAmount = $("adminTabSummaryAmount");
+  if(!summary || !summaryLabel || !summaryAmount) return;
+
+  if(adminFilter==="all"){
+    summary.classList.add("hidden");
+    return;
+  }
+
+  let total=0, label="";
+  if(adminFilter==="owing"){
+    total = allCitizens.reduce((sum,c)=>{
+      const bal=getEffectiveBalance(c);
+      return sum + (bal>0 ? bal : 0);
+    },0);
+    label="Total owing";
+  }else if(adminFilter==="deferred"){
+    total = allCitizens.reduce((sum,c)=>sum+Math.max(0,getDeferredAmount(c)),0);
+    label="Total deferred";
+  }else if(adminFilter==="overpaid"){
+    total = allCitizens.reduce((sum,c)=>{
+      const bal=getEffectiveBalance(c);
+      return sum + (bal<0 ? Math.abs(bal) : 0);
+    },0);
+    label="Total overpaid";
+  }
+
+  summaryLabel.textContent=label;
+  summaryAmount.textContent=fmt(total);
+  summary.classList.remove("hidden");
 }
 
 function renderList(){
