@@ -509,35 +509,7 @@ function classifyFirebaseError(err){
 }
 
 /* ---------- Firebase init with retry + blocking offline screen ---------- */
-// Firebase is configured but unreachable. Do NOT substitute sample data: show a
-// blocking screen and keep retrying. Returns a store on success, null on
-// failure (after showing the screen).
-async function initFirebaseStoreWithRetry(){
-  const attempts = 3;
-  let lastErr = null;
-  for(let i=1;i<=attempts;i++){
-    try{
-      console.log(`Initializing Firebase (attempt ${i}/${attempts})...`);
-      const fbModule = await Promise.race([
-        loadFirebase(firebaseConfig),
-        new Promise((_,reject) => setTimeout(()=>reject(new Error("timeout after 15s")), 15000))
-      ]);
-      console.log("Firebase loaded successfully");
-      return makeFirebaseStore(fbModule);
-    }catch(err){
-      lastErr = err;
-      console.error(`Firebase initialization attempt ${i} failed:`, err);
-      // Retrying a quota/billing error is pointless — it stays broken until the
-      // quota resets — so fail fast with an accurate message.
-      if(classifyFirebaseError(err) !== "offline") break;
-      if(i < attempts){
-        await new Promise(r=>setTimeout(r, 1500*i));
-      }
-    }
-  }
-  showOfflineBlock(lastErr);
-  return null;
-}
+// Firebase bootstrap/retry lives in firebase.js. UI failure handling remains here.
 
 // Blocking screen shown when the real data can't be loaded. The point is to make
 // it impossible to mistake this for the real app and record data into a void.
