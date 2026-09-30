@@ -835,7 +835,10 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       for(const p of Object.keys(updatedAt)){
         if(!next.includes(p)) delete updatedAt[p];
       }
-      host.deferredPeriodUpdatedAt={...updatedAt};
+      // The UI owns the live deferral state. Do not write it back through
+      // storeHost here: older cached app shells exposed this accessor as
+      // getter-only, which could throw before Firestore was reached.
+      // Persist first; the caller already updated its local state.
       await fs.setDoc(fs.doc(db,"meta","deferredPeriods"), { periods:next, updatedAt }, {merge:true});
       markSyncing();
     },
