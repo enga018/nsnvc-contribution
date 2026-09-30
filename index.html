@@ -2377,6 +2377,7 @@ async function doExportPdf(){
       const bal = row.state.balance;
       if(!(bal > 0)) continue;
       const payments = entries.filter(e=>e.type==="payment").map(e=>fmtRs(e.amount));
+      const waived = entries.filter(e=>e.type==="forgive").map(e=>fmtRs(e.amount));
       const charges = entries.filter(e=>{
         if(e.type!=="charge" && e.type!=="sanitationFee") return false;
         return !isPeriodDeferredForCitizen(e, c.id);
@@ -2389,6 +2390,7 @@ async function doExportPdf(){
         jobCard: c.jobCard || c.id,
         amount: fmtRs(bal),
         payments: payments.length ? "Paid: " + payments.join(", ") : "",
+        waived: waived.length ? "Waived: " + waived.join(", ") : "",
         charges: charges.length ? charges.join(", ") : ""
       });
     }
@@ -2430,19 +2432,43 @@ async function doExportPdf(){
       doc.setTextColor(180, 40, 40);
       doc.text(r.amount, amountX, y + (nameLines.length - 1) * 3.8);
 
-      // Row 2: job card (left) and charges (right, red).
+      // Row 2: job card (left) and charges (right, black).
+      // The number immediately after the first slash in the job card is bold.
       // The right-side details start on the same line as the citizen name.
       y += nameLines.length * 3.8 + 1;
       let rightY = y - nameLines.length * 3.8 - 1;
       doc.setFont(undefined, "normal");
       doc.setTextColor(120, 120, 120);
       doc.setFontSize(9);
-      doc.text(r.jobCard, margin, y);
+      const jobCardText = String(r.jobCard || "");
+      const slashIndex = jobCardText.indexOf("/");
+      if(slashIndex >= 0){
+        const jobPrefix = jobCardText.slice(0, slashIndex + 1);
+        const afterSlash = jobCardText.slice(slashIndex + 1);
+        const numberMatch = afterSlash.match(/^\\d+/);
+        const boldNumber = numberMatch ? numberMatch[0] : "";
+        const jobSuffix = afterSlash.slice(boldNumber.length);
+        let jobX = margin;
+        doc.setFont(undefined, "normal");
+        doc.text(jobPrefix, jobX, y);
+        jobX += doc.getTextWidth(jobPrefix);
+        if(boldNumber){
+          doc.setFont(undefined, "bold");
+          doc.text(boldNumber, jobX, y);
+          jobX += doc.getTextWidth(boldNumber);
+        }
+        if(jobSuffix){
+          doc.setFont(undefined, "normal");
+          doc.text(jobSuffix, jobX, y);
+        }
+      }else{
+        doc.text(jobCardText, margin, y);
+      }
 
       if(r.charges){
         const chargeMaxW = 70;
         const chargeLines = doc.splitTextToSize(r.charges, chargeMaxW);
-        doc.setTextColor(180, 40, 40);
+        doc.setTextColor(20, 20, 20);
         doc.text(chargeLines, rightX, rightY, { align: "right" });
         rightY += chargeLines.length * 3.8;
       }
@@ -2455,6 +2481,17 @@ async function doExportPdf(){
         doc.setTextColor(26, 125, 66);
         doc.text(payLines, rightX, rightY, { align: "right" });
         rightY += payLines.length * 3.8;
+      }
+
+      // Row 4: waived amount (right, grey). Waivers reduce the balance but
+      // are not payments, so they are shown separately.
+      if(r.waived){
+        rightY += 1;
+        const waivedMaxW = 70;
+        const waivedLines = doc.splitTextToSize(r.waived, waivedMaxW);
+        doc.setTextColor(120, 120, 120);
+        doc.text(waivedLines, rightX, rightY, { align: "right" });
+        rightY += waivedLines.length * 3.8;
       }
 
       y = Math.max(y + 3.8, rightY);
