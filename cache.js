@@ -14,6 +14,7 @@ import {
   setAllCitizens,
   invalidateStatsMemo
 } from "./state.js";
+import { firestoreTimeMs } from "./util.js";
 
 const DASHBOARD_CACHE_DB = "nsnvc-dashboard-cache";
 const DASHBOARD_CACHE_VERSION = 1;
@@ -77,7 +78,7 @@ export function createDashboardCache(){
             id,
             entries:entries||[],
             cachedAt,
-            syncAt:(citizens||[]).find(c=>c.id===id)?.updatedAt || cachedAt
+            syncAt:firestoreTimeMs((citizens||[]).find(c=>c.id===id)?.updatedAt)||cachedAt
           });
         }
       }catch(err){
