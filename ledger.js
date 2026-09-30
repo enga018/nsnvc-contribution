@@ -269,6 +269,10 @@ export function periodKey(note){
 // Ties keep the order the entries were given in.
 // This is a reporting view only — the real balance never depends on it.
 // Returns { [period]: {charged, deferred, waived, paid, still} }.
+export function isReturnEntry(e){
+  return Boolean(e && (e.type==="return" || (e.type==="charge" && String(e.note||"").trim()==="Return")));
+}
+
 export function allocateByPeriod(entries, citizenId){
   const out={};
   const row=p=>out[p]||(out[p]={charged:0,deferred:0,waived:0,paid:0,still:0});
@@ -281,6 +285,7 @@ export function allocateByPeriod(entries, citizenId){
     if(e.type==="payment"){ paidLeft+=amt; return; }
     if(e.type==="forgive"){ waivedLeft+=amt; return; }
     if(e.type!=="charge" && e.type!=="sanitationFee") return;
+    if(isReturnEntry(e)) return;
     const period=String(e.note||"").trim();
     row(period).charged+=amt;
     if(isPeriodDeferredForCitizen(e,citizenId)){ row(period).deferred+=amt; return; }
@@ -314,7 +319,7 @@ export function buildPeriodOrder(ledgers){
   const first=new Map();
   for(const entries of ledgers){
     for(const e of (entries||[])){
-      if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) continue;
+      if(!e || (e.type!=="charge" && e.type!=="sanitationFee") || isReturnEntry(e)) continue;
       const p=String(e.note||"").trim();
       if(!p) continue;
       const ms=e.createdAt!=null ? entryTimeMs(e) : (Number(e.createdAtMs)||0);

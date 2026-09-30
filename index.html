@@ -77,7 +77,7 @@
 </main>
 
 <div id="modalRoot"></div>
-<footer>New Serchhip North Village Council · v1.35.3<span id="accEmail"></span></footer>
+<footer>New Serchhip North Village Council · v1.35.4<span id="accEmail"></span></footer>
 
 <script>
 (function(){
@@ -125,7 +125,8 @@ import {
   periodKey,
   buildPeriodOrder,
   comparePeriods,
-  sortLedgerEntries
+  sortLedgerEntries,
+  isReturnEntry
 } from "./ledger.js";
 import { makeLocalStore, makeFirebaseStore } from "./store.js";
 
@@ -1000,7 +1001,7 @@ function getPeriodStats(){
   const periods=new Set(), stats=new Map();
   for(const [cid,entries] of ledgerCache){
     for(const e of entries){
-      if(e.type==="charge" && e.note){
+      if(e.type==="charge" && e.note && !isReturnEntry(e)){
         periods.add(e.note);
         const s=stats.get(e.note)||{count:0,amount:0};
         s.count++; s.amount+=Number(e.amount||0);
@@ -2756,7 +2757,7 @@ async function doExportPdf(){
    ============================================================ */
 function csvCell(value){return '"' + String(value ?? "").replace(/"/g,'""') + '"';}
 function csvNumber(value){const n=Number(value);return Number.isFinite(n)?n:0;}
-function grossChargeTotal(entries){return (entries||[]).reduce((sum,e)=>{if(!e||(e.type!=="charge"&&e.type!=="sanitationFee"))return sum;return sum+Math.max(0,Number(e.amount)||0);},0);}
+function grossChargeTotal(entries){return (entries||[]).reduce((sum,e)=>{if(!e||(e.type!=="charge"&&e.type!=="sanitationFee")||isReturnEntry(e))return sum;return sum+Math.max(0,Number(e.amount)||0);},0);}
 
 /*
  * One export snapshot for every report.
@@ -2836,7 +2837,7 @@ async function doExportPeriod(){
   const select=$("exportPeriodSelect"),confirmBtn=$("exportPeriodConfirmBtn"),msg=$("exportPeriodMsg");
   try{
     const data=await getExportData(),citizens=data.citizens,ledgers=data.ledgers,periodSet=new Set();
-    for(const c of citizens)for(const e of (ledgers[c.id]||[])){if(e.type!=="charge"&&e.type!=="sanitationFee")continue;const p=String(e.note||"").trim();if(p)periodSet.add(p);}
+    for(const c of citizens)for(const e of (ledgers[c.id]||[])){if(e.type!=="charge"&&e.type!=="sanitationFee")continue;if(isReturnEntry(e))continue;const p=String(e.note||"").trim();if(p)periodSet.add(p);}
     const periods=[...periodSet].sort(comparePeriods(buildPeriodOrder(Object.values(ledgers))));
     if(!periods.length){select.innerHTML='<option value="">No periods found</option>';msg.innerHTML='<div class="notice info">No contribution periods found.</div>';return;}
     exportPeriodContext={citizens,ledgers};
@@ -2850,7 +2851,7 @@ async function exportSelectedPeriod(period){
     const citizens=ctx.citizens,ledgers=ctx.ledgers;
     let csv="Name, Job Card,Period,Charged (₹),Paid (₹),Waived (₹),Deferred (₹),Still to Collect (₹),Status,Payment History\n",rows=0;
     for(const c of citizens){
-      const entries=ledgers[c.id]||[],charges=entries.filter(e=>(e.type==="charge"||e.type==="sanitationFee")&&String(e.note||"").trim()===period);
+      const entries=ledgers[c.id]||[],charges=entries.filter(e=>(e.type==="charge"||e.type==="sanitationFee")&&!isReturnEntry(e)&&String(e.note||"").trim()===period);
       if(!charges.length)continue;
       const r=allocateByPeriod(entries,c.id)[period]||{charged:0,deferred:0,waived:0,paid:0,still:0};
       const charged=r.charged,deferred=r.deferred,still=r.still;
