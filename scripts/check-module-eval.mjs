@@ -32,6 +32,7 @@ writeFileSync(join(dir, "module.mjs"), mod[1]);
 writeFileSync(join(dir, "ledger.js"), readFileSync(join(root, "ledger.js")));
 writeFileSync(join(dir, "store.js"), readFileSync(join(root, "store.js")));
 writeFileSync(join(dir, "cache.js"), readFileSync(join(root, "cache.js")));
+writeFileSync(join(dir, "state.js"), readFileSync(join(root, "state.js")));
 writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "module" }));
 
 const noop = () => {};
