@@ -33,13 +33,14 @@ writeFileSync(join(dir, "ledger.js"), readFileSync(join(root, "ledger.js")));
 writeFileSync(join(dir, "store.js"), readFileSync(join(root, "store.js")));
 writeFileSync(join(dir, "cache.js"), readFileSync(join(root, "cache.js")));
 writeFileSync(join(dir, "state.js"), readFileSync(join(root, "state.js")));
+writeFileSync(join(dir, "util.js"), readFileSync(join(root, "util.js")));
 writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "module" }));
 
 const noop = () => {};
 const el = () => ({
   classList: { add: noop, remove: noop, toggle: noop },
   style: {}, dataset: {}, appendChild: noop, insertAdjacentHTML: noop,
-  addEventListener: noop, remove: noop, querySelector: () => null,
+  addEventListener: noop, removeEventListener: noop, querySelector: () => null,
   querySelectorAll: () => [], setAttribute: noop, focus: noop,
   innerHTML: "", textContent: "", value: ""
 });
@@ -64,10 +65,6 @@ define("scrollTo", noop);
 // only care that the module's own top-level code evaluated first.
 define("fetch", () => Promise.reject(new Error("no network in evaluation")));
 
-// Capture console output. A ReferenceError/TypeError ("X is not defined") that
-// the app's own try/catch swallows is still a real bug — that is exactly how the
-// stage-2b extraction shipped "loadFirebase is not defined" and showed users an
-// error screen. Fail on any such message even if evaluation completes.
 const suspicious = [];
 for (const level of ["error", "warn", "log"]) {
   const original = console[level].bind(console);
@@ -80,14 +77,9 @@ for (const level of ["error", "warn", "log"]) {
   };
 }
 
-// Evaluate the module. The module sets window.__nsnvcBootComplete as its LAST
-// top-level statement, so we assert on that positive signal instead of trying to
-// classify whatever error a browser-only call happens to throw in Node.
 try {
   await import(pathToFileURL(join(dir, "module.mjs")).href);
 } catch (e) {
-  // A throw is fine ONLY if the module still reached its final statement
-  // (i.e. everything above ran). Anything else is a real top-level error.
   if (!globalThis.__nsnvcBootComplete) {
     console.error("::error::index.html module threw during evaluation:");
     console.error(`  ${e && e.name}: ${(e && e.message) || e}`);

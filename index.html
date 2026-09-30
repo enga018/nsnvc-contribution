@@ -130,7 +130,41 @@ import {
 } from "./ledger.js";
 import { makeLocalStore, makeFirebaseStore } from "./store.js";
 import { createDashboardCache } from "./cache.js";
-import { createAppState } from "./state.js";
+import {
+  ledgerCache,
+  ledgerCacheSyncAt,
+  periodStatsCache,
+  deferredPeriods,
+  deferredPeriodUpdatedAt,
+  deferredPeriodOverrides,
+  rawCitizens,
+  allCitizens,
+
+  fullLedgerSnapshotAt,
+  fullLedgerSnapshotCount,
+  syncPendingWrites,
+  FULL_LEDGER_TTL_MS,
+  setLedgerCache,
+  setLedgerCacheSyncAt,
+  setPeriodStatsCache,
+  setDeferredPeriods,
+  setDeferredPeriodUpdatedAt,
+  setDeferredPeriodOverrides,
+  setRawCitizens,
+  setAllCitizens,
+  setFullLedgerSnapshotAt,
+  setFullLedgerSnapshotCount,
+  invalidateFullLedgerSnapshot,
+  invalidateStatsMemo,
+  getEffectiveBalance,
+  getDeferredAmount,
+  statusOf,
+  nextDeferTimestamp,
+  setSyncPending,
+  onSyncIndicatorRender,
+  invalidateLedgerCache,
+  onExportSnapshotInvalidated
+} from "./state.js";
 
 // Loads the Firebase SDK and initialises Auth + Firestore. This is app startup
 // glue, so it lives here rather than in store.js. (It was accidentally left in
@@ -197,15 +231,7 @@ const BACKUP_MAX_HOUSEHOLDS = 10000;
 /* ---------- persistent dashboard cache state ---------- */
 // IndexedDB persistence itself lives in cache.js. These in-memory values remain
 // app state until Stage 3 Step 3 moves them into state.js.
-const ledgerCacheSyncAt = new Map();
-// When the last FULL-village ledger scan ran, and how many ledgers it returned.
-// getAllLedgers() reuses the in-memory cache within FULL_LEDGER_TTL_MS instead of
-// re-scanning: each scan costs one read per ledger document, which is what
-// exhausts the free Firestore plan's daily quota. Invalidated on any write.
-const FULL_LEDGER_TTL_MS = 15 * 60 * 1000;
-let fullLedgerSnapshotAt = 0;
-let fullLedgerSnapshotCount = 0;
-function invalidateFullLedgerSnapshot(){ fullLedgerSnapshotAt = 0; fullLedgerSnapshotCount = 0; }
+// Cache and full-snapshot state are owned by state.js in Stage 3 Step 3B.
 function firestoreTimeMs(value){
   if(!value) return 0;
   if(typeof value==="number") return value;
@@ -285,9 +311,6 @@ async function saveCsvFile(content, filename){
   }
   downloadBlob(content, filename, "text/csv");
 }
-let deferredPeriods=[];
-let deferredPeriodUpdatedAt={};
-let deferredPeriodOverrides={};
 
 // Deferral state is owned here (the app mutates these on login and on every
 // defer action) and handed to the ledger engine, which resolves deferral from
@@ -357,9 +380,7 @@ let store=null, loggedIn=false, isLocalMode=false;
 // Firebase Realtime Subscription
 let citizensUnsub=null;
 // Citizen Data
-let allCitizens=[], rawCitizens=[];
 // Caching & Performance
-let ledgerCache=new Map(), periodStatsCache=null;
 let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null;
 // Dashboard list / filter state. Declared here (top-level, before the functions
 // that mutate it) so login-time code paths can't hit a temporal-dead-zone error,
@@ -370,25 +391,7 @@ let adminFilter="owing", adminShown=20;
 const ADMIN_STEP=20;
 let adminFilteredList=[]; // the currently filtered citizen list, for "show more"
 
-const appState = createAppState();
-const { invalidateStatsMemo, getEffectiveBalance, getDeferredAmount, statusOf, nextDeferTimestamp } = appState;
-
-const dashboardCache = createDashboardCache({
-  get ledgerCache(){ return ledgerCache; },
-  set ledgerCache(v){ ledgerCache = v; },
-  get ledgerCacheSyncAt(){ return ledgerCacheSyncAt; },
-  set ledgerCacheSyncAt(v){ ledgerCacheSyncAt = v; },
-  get periodStatsCache(){ return periodStatsCache; },
-  set periodStatsCache(v){ periodStatsCache = v; },
-  get deferredPeriods(){ return deferredPeriods; },
-  get deferredPeriodOverrides(){ return deferredPeriodOverrides; },
-  get rawCitizens(){ return rawCitizens; },
-  set rawCitizens(v){ rawCitizens = v; },
-  get allCitizens(){ return allCitizens; },
-  set allCitizens(v){ allCitizens = v; },
-  invalidateStatsMemo,
-  firestoreTimeMs
-});
+const dashboardCache = createDashboardCache();
 const { writeDashboardCache, hydrateDashboardCache } = dashboardCache;
 
 // Configuration
@@ -405,26 +408,26 @@ try {
 // factories still live here; only their interface changed.
 const storeHost = {
   get ledgerCache(){ return ledgerCache; },
-  set ledgerCache(v){ ledgerCache = v; },
+  set ledgerCache(v){ setLedgerCache(v); },
   get ledgerCacheSyncAt(){ return ledgerCacheSyncAt; },
-  set ledgerCacheSyncAt(v){ ledgerCacheSyncAt = v; },
+  set ledgerCacheSyncAt(v){ setLedgerCacheSyncAt(v); },
   get periodStatsCache(){ return periodStatsCache; },
-  set periodStatsCache(v){ periodStatsCache = v; },
+  set periodStatsCache(v){ setPeriodStatsCache(v); },
   get deferredPeriods(){ return deferredPeriods; },
-  set deferredPeriods(v){ deferredPeriods = v; },
+  set deferredPeriods(v){ setDeferredPeriods(v); },
   get deferredPeriodUpdatedAt(){ return deferredPeriodUpdatedAt; },
-  set deferredPeriodUpdatedAt(v){ deferredPeriodUpdatedAt = v; },
+  set deferredPeriodUpdatedAt(v){ setDeferredPeriodUpdatedAt(v); },
   get deferredPeriodOverrides(){ return deferredPeriodOverrides; },
-  set deferredPeriodOverrides(v){ deferredPeriodOverrides = v; },
+  set deferredPeriodOverrides(v){ setDeferredPeriodOverrides(v); },
   get rawCitizens(){ return rawCitizens; },
-  set rawCitizens(v){ rawCitizens = v; },
+  set rawCitizens(v){ setRawCitizens(v); },
   // Timestamp of the last FULL ledger scan (collectionGroup read). Used to avoid
   // re-scanning the whole village for every export/backup/period action — the
   // free Firestore plan's daily read quota is easily exhausted otherwise.
   get fullLedgerSnapshotAt(){ return fullLedgerSnapshotAt; },
-  set fullLedgerSnapshotAt(v){ fullLedgerSnapshotAt = v; },
+  set fullLedgerSnapshotAt(v){ setFullLedgerSnapshotAt(v); },
   get fullLedgerSnapshotCount(){ return fullLedgerSnapshotCount; },
-  set fullLedgerSnapshotCount(v){ fullLedgerSnapshotCount = v; },
+  set fullLedgerSnapshotCount(v){ setFullLedgerSnapshotCount(v); },
   get fullLedgerTtlMs(){ return FULL_LEDGER_TTL_MS; },
   get FIRESTORE_BATCH_SIZE(){ return FIRESTORE_BATCH_SIZE; },
   // Lets the store tell the UI that local writes are still draining to the
@@ -478,13 +481,6 @@ window.__nsnvcStoreReady = !!store;
 // code that runs immediately), because renderSyncIndicator reads
 // syncPendingWrites — a `let` read before its declaration throws a
 // temporal-dead-zone ReferenceError that aborts the module.
-let syncPendingWrites=false;
-function setSyncPending(pending){
-  const next=Boolean(pending);
-  if(next===syncPendingWrites) return;
-  syncPendingWrites=next;
-  renderSyncIndicator();
-}
 function renderSyncIndicator(){
   const existing=document.getElementById("syncStatus");
   if(isLocalMode){ if(existing) existing.remove(); return; }
@@ -503,6 +499,8 @@ function renderSyncIndicator(){
 }
 window.addEventListener("online", renderSyncIndicator);
 window.addEventListener("offline", renderSyncIndicator);
+
+onSyncIndicatorRender(renderSyncIndicator);
 
 if(!store){
   // No store means Firebase is configured but unreachable (the blocking screen
@@ -773,10 +771,10 @@ async function onAuth(isIn, userEmail){
         store.getDeferredPeriodOverrides()
       ]);
       const normalizedPeriods=normalizeDeferredPeriodState(deferredState);
-      deferredPeriods = normalizedPeriods.periods;
-      deferredPeriodUpdatedAt = normalizedPeriods.updatedAt;
+      setDeferredPeriods(normalizedPeriods.periods);
+      setDeferredPeriodUpdatedAt(normalizedPeriods.updatedAt);
       const normalizedOverrides=normalizeDeferredPeriodOverrides(rawOverrides);
-      deferredPeriodOverrides = normalizedOverrides.overrides;
+      setDeferredPeriodOverrides(normalizedOverrides.overrides);
       syncDeferralStateToEngine();
 
       // Migrate legacy shapes once on load. Missing timestamps become 0 so
@@ -813,7 +811,7 @@ async function onAuth(isIn, userEmail){
 function subscribeCitizens(){
   if(citizensUnsub) return;
   citizensUnsub = store.subscribe(list=>{
-    rawCitizens = list;
+    setRawCitizens(list);
     // Persist the lightweight citizen snapshot as soon as Firestore gives us
     // authoritative data. This makes the next app start render without waiting
     // for the network. Ledgers are NOT rewritten here: refreshChangedLedgers /
@@ -838,14 +836,6 @@ function subscribeCitizens(){
 // per-person override exists) — any future code reading c.ledger directly
 // (instead of through getEffectiveBalance/getDeferredAmount, which both guard
 // for its absence) needs to handle it being missing.
-function invalidateLedgerCache(id){
-  if(id) ledgerCache.delete(id); else ledgerCache.clear();
-  periodStatsCache = null;
-  invalidateStatsMemo();
-  invalidateExportSnapshot();
-  // Any ledger change means a full snapshot is no longer trustworthy.
-  invalidateFullLedgerSnapshot();
-}
 function recalcFromLedger(entries, citizenId){
   return recalcFromLedgerEngine(entries, citizenId);
 }
@@ -862,7 +852,7 @@ function getPeriodStats(){
       }
     }
   }
-  periodStatsCache={periods:[...periods].sort(comparePeriods(buildPeriodOrder(ledgerCache.values()))),stats};
+  setPeriodStatsCache({periods:[...periods].sort(comparePeriods(buildPeriodOrder(ledgerCache.values()))),stats});
   return periodStatsCache;
 }
 function scheduleDashboardRefresh(){
@@ -897,7 +887,7 @@ async function refreshDashboard(){
     const cachedList = list.map(c => ({...c, ledger: ledgerCache.get(c.id) || []}));
     const hasCompleteCache = list.every(c => Array.isArray(ledgerCache.get(c.id)));
     if(hasCompleteCache){
-      allCitizens = cachedList;
+      setAllCitizens(cachedList);
 renderStats();
       renderList();
     }
@@ -920,7 +910,7 @@ renderStats();
   }
 
   if(seq !== dashboardRefreshSeq) return; // superseded by a newer refresh; drop this stale result
-  allCitizens = list;
+  setAllCitizens(list);
 renderStats(); renderList(); refreshPending();
 }
 function renderStats(){
@@ -1198,7 +1188,7 @@ async function handlePeriodsSave(pendingRenames){
   btn.disabled=true;
   msg.innerHTML='<div class="notice info">Saving…</div>';
   try{
-periodStatsCache=null;
+setPeriodStatsCache(null);
     invalidateStatsMemo();
     const renameResults = await Promise.all(
       Array.from(pendingRenames).map(([oldName,newName])=>store.renamePeriod(oldName,newName))
@@ -1215,7 +1205,7 @@ periodStatsCache=null;
           }
         }
         await store.setDeferredPeriods(renamedDeferred);
-        deferredPeriods=renamedDeferred;
+        setDeferredPeriods(renamedDeferred);
         syncDeferralStateToEngine();
       }
     }
@@ -1235,9 +1225,9 @@ function togglePeriodDeferred(period, shouldDefer){
   const next = deferredPeriods.filter(p=>p!==period);
   if(shouldDefer) next.push(period);
   deferredPeriodUpdatedAt[period]=nextDeferTimestamp(deferredPeriodUpdatedAt[period]);
-  deferredPeriods = next;
+  setDeferredPeriods(next);
   syncDeferralStateToEngine();
-periodStatsCache=null;
+setPeriodStatsCache(null);
   invalidateStatsMemo();
   renderStats();
   renderList();
@@ -1266,10 +1256,10 @@ function attachPeriodListeners(pendingRenames){
         .then(()=>clearOperationErrors())
         .catch(err=>{
           console.error(err);
-          deferredPeriods=previous;
-          deferredPeriodUpdatedAt=previousUpdatedAt;
+          setDeferredPeriods(previous);
+          setDeferredPeriodUpdatedAt(previousUpdatedAt);
           syncDeferralStateToEngine();
-periodStatsCache=null;
+setPeriodStatsCache(null);
           invalidateStatsMemo();
           renderStats();
           renderList();
@@ -2159,7 +2149,7 @@ function attachHistoryListeners(id, editing){
       const previousOverrides = JSON.parse(JSON.stringify(deferredPeriodOverrides));
       const next = JSON.parse(JSON.stringify(deferredPeriodOverrides));
       setCitizenChargeOverride(next, id, entry, nowChecked);
-      deferredPeriodOverrides=next; periodStatsCache=null; invalidateStatsMemo(); syncDeferralStateToEngine();
+      setDeferredPeriodOverrides(next); setPeriodStatsCache(null); invalidateStatsMemo(); syncDeferralStateToEngine();
 
       // Re-render immediately from the optimistic local state. Do not wait for
       // Firestore before updating the account view.
@@ -2172,7 +2162,7 @@ function attachHistoryListeners(id, editing){
       store.setCitizenChargeDeferred(id, entryId, nowChecked)
         .then(()=>clearOperationErrors())
         .catch(e=>{
-          deferredPeriodOverrides=previousOverrides; periodStatsCache=null; invalidateStatsMemo(); syncDeferralStateToEngine();
+          setDeferredPeriodOverrides(previousOverrides); setPeriodStatsCache(null); invalidateStatsMemo(); syncDeferralStateToEngine();
           chk.checked=!nowChecked;
           handleOperationError("deferCharge", e);
           renderCitizenDetail(id);
@@ -2626,6 +2616,8 @@ function invalidateExportSnapshot(){
   exportSnapshot=null;
   exportSnapshotKey="";
 }
+
+onExportSnapshotInvalidated(invalidateExportSnapshot);
 async function getExportData(){
   const citizens = Array.isArray(rawCitizens) && rawCitizens.length
     ? rawCitizens
