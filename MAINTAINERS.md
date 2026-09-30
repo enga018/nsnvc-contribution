@@ -14,9 +14,9 @@ maintained and (later) refactored safely.
 
 | File | Purpose |
 | --- | --- |
-| `index.html` | The app: styles, markup, and all UI/state/store/main-thread JavaScript. |
+| `index.html` | App shell, markup, DOM wiring, UI rendering, and main-thread orchestration. |
 | `ledger.js` | **Pure ledger engine** (money + deferral rules). DOM-free, state-injected, unit-tested. |
-| `store.js` | **Data stores** (`makeLocalStore` / `makeFirebaseStore`), extracted in stage 2b. Handed a `host` object; identical `store.*` interface. |
+| `store.js` | **Data stores** (`makeLocalStore` / `makeFirebaseStore`), with direct imports from shared state/helpers. Identical `store.*` interface. |
 | `tests/ledger.test.js` | Node unit tests for `ledger.js` (`npm run test:unit`). |
 | `tests/errors.test.js` | Node unit tests for the Firebase error classifier. |
 | `tests/smoke.spec.js` | Playwright browser smoke test (boots the app in local test mode). |
@@ -40,12 +40,12 @@ maintained and (later) refactored safely.
 
 Three strings must always agree:
 
-1. `VERSION` (currently `1.34.0`)
-2. `index.html` footer: `New Serchhip North Village Council · v1.34.0`
-3. `sw.js`: `const CACHE_NAME = 'nsnvc-tracker-v1.34.0'`
+1. `VERSION` (currently `1.35.7`)
+2. `index.html` footer: `New Serchhip North Village Council · v1.35.7`
+3. `sw.js`: `const CACHE_NAME = 'nsnvc-tracker-v1.35.7'`
 
 The service worker only reinstalls when its bytes change, so **the cache name
-must be bumped on any deploy that changes `index.html`/`manifest.json`**, or
+must be bumped on any deploy that changes the app shell or module assets**, or
 installed PWAs keep serving the old shell. `scripts/sync-version.sh`
 (sed-based) updates all three from `VERSION`; `check-version-sync.sh` enforces it.
 
@@ -61,26 +61,27 @@ The file is, in order:
 3. A small **classic** `<script>` — installs global error handlers and a
    "did the module start?" watchdog.
 4. One **module** `<script type="module">` (top-level `await`) containing the
-   entire application.
+   remaining UI/rendering/orchestration code; shared state, persistence,
+   store, and Firebase bootstrap are imported from separate modules.
 
 Section banners inside the module (search for these):
 
 | Banner | What it holds |
 | --- | --- |
 | `constants` | `CURRENCY`, debounce/delay constants, `FIRESTORE_BATCH_SIZE`. |
-| `persistent dashboard cache` | IndexedDB read/write (`readDashboardCache`, `writeDashboardCache`, `hydrateDashboardCache`). |
-| `helpers` | `fmt`, `$`, `esc`, date/period helpers, defer-resolution helpers, ledger math. |
-| `Global State` | Module-level `let` variables (store, caches, period state). |
+| `persistent dashboard cache` | **REMOVED from index.html**; IndexedDB persistence now lives in `cache.js`. |
+| `helpers` | DOM/UI helpers and app-specific orchestration; pure helpers live in `util.js` and ledger rules in `ledger.js`. |
+| `Global State` | UI-local state/orchestration; shared mutable state is owned by `state.js`. |
 | `Offline / sync indicator` | The offline/syncing pill. |
 | `Backup / Restore` | Encrypted backup download and restore. |
 | `one-time maintenance` | A one-shot balance recalculation + meta cleanup. |
 
 Other notable markers: `/* ---------- ADMIN AUTH ---------- */`,
 `ADMIN — live citizen list + stats`, `ADMIN — citizen detail: all actions`,
-`ADMIN — citizen detail: all actions`, upload/import/export blocks, and the
-two store factories `makeLocalStore()` / `makeFirebaseStore()`.
+upload/import/export blocks, and store initialization. The store factories live
+in `store.js`; Firebase bootstrap lives in `firebase.js`.
 
-### Global state (module scope)
+### Shared state (`state.js`)
 
 ```
 store            // the active data store (local or firebase)
@@ -187,9 +188,8 @@ covers the rules below.
   splits waivers then payments across active charges in upload-time order.
   Never used for balances.
 
-`getEffectiveBalance` / `getDeferredAmount` / `statusOf` and the memoisation
-stay in `index.html` (they read `c.ledger` and the stats cache), but they call
-into the engine.
+`getEffectiveBalance` / `getDeferredAmount` / `statusOf` and their memoisation
+now live in `state.js`; they call into the pure ledger engine.
 
 ### 4.1 Defer resolution — "latest wins"
 
@@ -225,7 +225,8 @@ Rules that must hold (learned the hard way):
 ## 5. Store interface
 
 Both `makeLocalStore()` and `makeFirebaseStore()` expose the same API. Callers
-only ever use `store.*`.
+only ever use `store.*`. `store.js` imports shared state, ledger functions, and
+utilities directly; there is no `storeHost` boundary.
 
 ```
 subscribe(cb)                    // live citizen list
@@ -264,7 +265,7 @@ signIn / signOut / onAuth
 
 ### Offline
 
-`loadFirebase` initialises Firestore with `persistentLocalCache` +
+`firebase.js` initialises Firestore with `persistentLocalCache` +
 `persistentMultipleTabManager` so the app reads from a local cache and queues
 writes offline, syncing automatically. It falls back to the in-memory cache if
 persistence is unavailable.
@@ -374,11 +375,12 @@ Goal: shrink `index.html` so it is easier to maintain. Done so far:
 | 0 | a map of the codebase | `MAINTAINERS.md` | ✅ |
 | 1 | pure ledger engine (`calculateLedgerState`, defer resolution, normalizers, `periodKey`) | `ledger.js` + `tests/ledger.test.js` | ✅ |
 | 2 | the two store factories (`makeLocalStore`, `makeFirebaseStore`) | `store.js` | ✅ done, but see the incident notes below |
-| 3 | module split: `state.js` / `util.js` / `cache.js` / `firebase.js`, then delete `storeHost` | see "Stage 3" section below | 📋 planned — do **not** start until the user gives the go-ahead |
+| 3 | module split: `state.js` / `util.js` / `cache.js` / `firebase.js`, then delete `storeHost` | `state.js`, `util.js`, `cache.js`, `firebase.js`, `store.js`, `sw.js` | ✅ complete in v1.35.7 |
 
-Progress: `index.html` is ~135 KB after stage 2 (some of the 125 KB reflected
-back as diagnostics added while chasing the write bugs). Stage 3 is planned and
-locked — the full plan is at the end of this section.
+Stage 3 is complete and deployed as **v1.35.7**. `index.html` now retains the
+app shell, UI rendering, DOM wiring, and orchestration; shared state, pure
+utilities, IndexedDB persistence, Firebase bootstrap, and data stores are in
+dedicated modules.
 
 #### Stage 2 in detail (done)
 
@@ -505,9 +507,9 @@ should eventually exercise a small Firestore write.
    - `npx playwright test` (or let CI run it — it is a required check)
 7. **Verify on a real browser against real data** before trusting it.
 
-#### Stage 3: module split that kills `storeHost` (planned)
+#### Stage 3: module split that kills `storeHost` — complete
 
-**Status: agreed, reviewed, NOT started.** The write bugs are fixed and verified
+**Status: complete and deployed in v1.35.7.** The write bugs are fixed and verified
 (mark-paid + defer work against real Firebase data), so the original gate for
 stage 3 is open. Start only on the user's go-ahead, one module per commit, the
 checks listed above green between every step — incidents #1, #8 and #9 are all
@@ -519,13 +521,13 @@ done slowly.
 | File | Role | Status |
 | --- | --- | --- |
 | `index.html` | app shell + DOM wiring + UI rendering (`render*`/`build*`/`open*` ~36 fns + event wiring stay here) | stays, shrinks |
-| `state.js` | shared mutable state + small helpers that read/write it | **new** |
+| `state.js` | shared mutable state + small helpers that read/write it | **complete** |
 | `ledger.js` | pure ledger math — money & deferral rules only | stays, unchanged |
-| `util.js` | pure helpers: `fmt`, `esc`, `todayISO`, `entryLabel`, `suffixOf`, `fullKey`, `seqNum`, `byCardNo`, `firestoreTimeMs` | **new** |
-| `store.js` | data layer — same exports; imports state directly | stays, refactored |
-| `firebase.js` | bootstrap only: `firebaseConfig`, `loadFirebase`, `initFirebaseStoreWithRetry` | **new** |
-| `cache.js` | IndexedDB persistence (all four cache functions + the three `DASHBOARD_CACHE_*` constants) | **new** |
-| `sw.js` | precache + fetch — gains every module in `urlsToCache` | stays, edited |
+| `util.js` | pure helpers: `fmt`, `esc`, `todayISO`, `entryLabel`, `suffixOf`, `fullKey`, `seqNum`, `byCardNo`, `firestoreTimeMs` | **complete** |
+| `store.js` | data layer — same exports; imports state directly | **complete** |
+| `firebase.js` | bootstrap only: `firebaseConfig`, `loadFirebase`, `initFirebaseStoreWithRetry` | **complete** |
+| `cache.js` | IndexedDB persistence (all four cache functions + the three `DASHBOARD_CACHE_*` constants) | **complete** |
+| `sw.js` | precache + fetch — includes every application module in `urlsToCache` | **complete** |
 
 **Locked decisions:**
 
@@ -581,14 +583,13 @@ done slowly.
   — these all read/write the shared state and are called from store.js, so they
   move with it. Not advertised in the proposal table, but required.
 
-**Build order (one commit each, checks + tests green between):**
-1. `util.js` — pure, DOM-free, gains unit tests.
-2. `cache.js` — IndexedDB I/O + constants; hydrate contract change; caller renders.
-3. `state.js` — state + stats helpers + account helpers + sync indicator.
-4. Delete `storeHost` — rewrite store.js to direct imports; swap CI guards;
-   fix the two local-store bugs; add `importAll`/`recalcAll` unit tests.
-5. `firebase.js` — bootstrap only.
-6. Final: sw precache + CACHE_NAME + footer bump, full check suite, on-device verify.
+**Build order (completed):**
+1. `util.js` — pure helpers and tests. ✅
+2. `cache.js` — IndexedDB persistence and DOM-free hydrate contract. ✅
+3. `state.js` — shared state, memoisation, account helpers, and sync indicator. ✅
+4. `store.js` — `storeHost` removed; direct imports and local-store fixes/tests. ✅
+5. `firebase.js` — bootstrap extracted from `index.html`. ✅
+6. `sw.js` / `VERSION` / footer — precache, cache bump, full CI and browser verification. ✅
 
 **Later (separate, not part of this stage):** the ~36 `render*`/`build*`/
 `attach*`/`open*` functions + event wiring still live in `index.html`, sliced
