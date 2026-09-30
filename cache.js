@@ -9,6 +9,7 @@ import {
   deferredPeriods,
   deferredPeriodOverrides,
   rawCitizens,
+  allCitizens,
   setPeriodStatsCache,
   setRawCitizens,
   setAllCitizens,
