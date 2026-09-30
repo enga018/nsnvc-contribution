@@ -144,16 +144,12 @@ import {
   fullLedgerSnapshotCount,
   syncPendingWrites,
   FULL_LEDGER_TTL_MS,
-  setLedgerCache,
-  setLedgerCacheSyncAt,
   setPeriodStatsCache,
   setDeferredPeriods,
   setDeferredPeriodUpdatedAt,
   setDeferredPeriodOverrides,
   setRawCitizens,
   setAllCitizens,
-  setFullLedgerSnapshotAt,
-  setFullLedgerSnapshotCount,
   invalidateFullLedgerSnapshot,
   invalidateStatsMemo,
   getEffectiveBalance,
@@ -401,58 +397,11 @@ try {
   if(logoutBtn) logoutBtn.addEventListener("click", ()=>{ if(store) store.signOut(); });
 } catch(e) { console.error("Failed to attach logout button listener:", e); }
 
-// Host adapters for the store factories. The stores are handed these instead of
-// reaching into app globals directly, so they can later move to store.js. Using
-// accessors (not a plain snapshot) is essential for state the app *reassigns*
-// (deferredPeriods, etc.) — a captured value would go stale. Step 2a: the
-// factories still live here; only their interface changed.
-const storeHost = {
-  get ledgerCache(){ return ledgerCache; },
-  set ledgerCache(v){ setLedgerCache(v); },
-  get ledgerCacheSyncAt(){ return ledgerCacheSyncAt; },
-  set ledgerCacheSyncAt(v){ setLedgerCacheSyncAt(v); },
-  get periodStatsCache(){ return periodStatsCache; },
-  set periodStatsCache(v){ setPeriodStatsCache(v); },
-  get deferredPeriods(){ return deferredPeriods; },
-  set deferredPeriods(v){ setDeferredPeriods(v); },
-  get deferredPeriodUpdatedAt(){ return deferredPeriodUpdatedAt; },
-  set deferredPeriodUpdatedAt(v){ setDeferredPeriodUpdatedAt(v); },
-  get deferredPeriodOverrides(){ return deferredPeriodOverrides; },
-  set deferredPeriodOverrides(v){ setDeferredPeriodOverrides(v); },
-  get rawCitizens(){ return rawCitizens; },
-  set rawCitizens(v){ setRawCitizens(v); },
-  // Timestamp of the last FULL ledger scan (collectionGroup read). Used to avoid
-  // re-scanning the whole village for every export/backup/period action — the
-  // free Firestore plan's daily read quota is easily exhausted otherwise.
-  get fullLedgerSnapshotAt(){ return fullLedgerSnapshotAt; },
-  set fullLedgerSnapshotAt(v){ setFullLedgerSnapshotAt(v); },
-  get fullLedgerSnapshotCount(){ return fullLedgerSnapshotCount; },
-  set fullLedgerSnapshotCount(v){ setFullLedgerSnapshotCount(v); },
-  get fullLedgerTtlMs(){ return FULL_LEDGER_TTL_MS; },
-  get FIRESTORE_BATCH_SIZE(){ return FIRESTORE_BATCH_SIZE; },
-  // Lets the store tell the UI that local writes are still draining to the
-  // server (the sync pill). Lives on host — NOT leaned on the bare name —
-  // because store.js is its own module and cannot see this module scope.
-  setSyncPending,
-  writeDashboardCache,
-  invalidateLedgerCache,
-  invalidateStatsMemo,
-  nextDeferTimestamp,
-  firestoreTimeMs,
-  recalcFromLedger,
-  allocateLedgerPayments,
-  getEffectiveBalance,
-  todayISO,
-  entryLabel,
-  esc,
-  fmt
-};
-
 const notConfigured = Object.values(firebaseConfig).some(v => v === "PASTE_HERE");
 if(notConfigured){
   // Genuine demo mode: no Firebase config at all. Sample data is appropriate
   // here because there is no real data to confuse it with.
-  isLocalMode=true; store=makeLocalStore(storeHost);
+  isLocalMode=true; store=makeLocalStore();
   showModeBanner("Test mode — running on this device with sample data. Add citizens, contributions and payments to try it out; everything is saved in this browser only. Paste your Firebase config into the file to go live.");
 } else {
   // Firebase IS configured. If we can't reach it, it is NOT safe to fall back
@@ -621,7 +570,7 @@ async function initFirebaseStoreWithRetry(){
         new Promise((_,reject) => setTimeout(()=>reject(new Error("timeout after 15s")), 15000))
       ]);
       console.log("Firebase loaded successfully");
-      return makeFirebaseStore(fbModule, storeHost);
+      return makeFirebaseStore(fbModule);
     }catch(err){
       lastErr = err;
       console.error(`Firebase initialization attempt ${i} failed:`, err);
