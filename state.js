@@ -16,6 +16,7 @@ export let deferredPeriods = [];
 export let deferredPeriodUpdatedAt = {};
 export let deferredPeriodOverrides = {};
 export let rawCitizens = [];
+export let allCitizens = [];
 
 export const FULL_LEDGER_TTL_MS = 15 * 60 * 1000;
 export let fullLedgerSnapshotAt = 0;
@@ -34,6 +35,7 @@ export function setDeferredPeriods(value){ deferredPeriods=Array.isArray(value) 
 export function setDeferredPeriodUpdatedAt(value){ deferredPeriodUpdatedAt=value && typeof value==="object" ? value : {}; }
 export function setDeferredPeriodOverrides(value){ deferredPeriodOverrides=value && typeof value==="object" ? value : {}; }
 export function setRawCitizens(value){ rawCitizens=Array.isArray(value) ? value : []; }
+export function setAllCitizens(value){ allCitizens=Array.isArray(value) ? value : []; }
 export function setFullLedgerSnapshotAt(value){ fullLedgerSnapshotAt=Number(value)||0; }
 export function setFullLedgerSnapshotCount(value){ fullLedgerSnapshotCount=Number(value)||0; }
 
