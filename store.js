@@ -1,16 +1,43 @@
 /* =====================================================================
    NSNVC data stores (local + Firebase).
-   =====================================================================
-   Extracted from index.html in refactor stage 2b. Each factory is handed a
-   `host` object with the app's mutable state exposed as getters (so
-   reassignment is observed, not snapshotted) plus the helper functions it
-   needs. Both expose the same store.* interface, so callers don't change.
-
-   `fs` in makeFirebaseStore is the Firestore module (injected), not the
-   Node filesystem.
    ===================================================================== */
 
-export function makeLocalStore(host){
+import {
+  allocateLedgerPayments,
+  recalcFromLedger,
+  normalizeDeferredPeriodState,
+  normalizeDeferredPeriodOverrides
+} from "./ledger.js";
+import {
+  ledgerCache,
+  ledgerCacheSyncAt,
+  periodStatsCache,
+  deferredPeriods,
+  deferredPeriodUpdatedAt,
+  deferredPeriodOverrides,
+  rawCitizens,
+  fullLedgerSnapshotAt,
+  fullLedgerSnapshotCount,
+  FULL_LEDGER_TTL_MS,
+  setPeriodStatsCache,
+  setDeferredPeriodUpdatedAt,
+  setDeferredPeriodOverrides,
+  setFullLedgerSnapshotAt,
+  setFullLedgerSnapshotCount,
+  invalidateStatsMemo,
+  getEffectiveBalance,
+  nextDeferTimestamp,
+  invalidateLedgerCache,
+  setSyncPending
+} from "./state.js";
+import {
+  fmt, esc, todayISO, entryLabel, firestoreTimeMs
+} from "./util.js";
+import { createDashboardCache } from "./cache.js";
+
+const dashboardCache = createDashboardCache();
+
+export function makeLocalStore(){
   const KEY="nsn_contrib_v1";
   let data=null;
   try{ const raw=localStorage.getItem(KEY); if(raw) data=JSON.parse(raw); }catch(e){}
@@ -72,7 +99,7 @@ export function makeLocalStore(host){
       else if(e.type==="return" || (e.type==="charge" && String(e.note||"").trim()==="Return")) { /* handled by ledger engine */ }
       else if(e.type==="forgive") totalWaived+=amt;
     }
-    const allocation=host.allocateLedgerPayments(entries, c.id);
+    const allocation=allocateLedgerPayments(entries, c.id);
     c.totalCharged = Math.max(0, grossCharges - Math.min(grossCharges, totalWaived));
     c.totalPaid = totalPaid;
     c.deferredTotal = allocation.deferredRemaining;
@@ -88,7 +115,7 @@ export function makeLocalStore(host){
     async listOwing(){
       const list=[]; 
       for(const [id,c] of Object.entries(data.citizens)){
-        const effBal = host.getEffectiveBalance(c);
+        const effBal = getEffectiveBalance(c);
         if(effBal > 0) list.push({ id, jobCard:c.jobCard, cardNo:c.cardNo, name:c.name,
                           totalCharged:c.totalCharged, totalPaid:c.totalPaid, balance:effBal });
       }
@@ -103,15 +130,15 @@ export function makeLocalStore(host){
       if(!c.ledger) c.ledger=[];
       c.ledger.push(entry);
       recalcTotals(c);
-      c.updatedAt=++clock; persist(); notify(); host.invalidateLedgerCache(id);
+      c.updatedAt=++clock; persist(); notify(); invalidateLedgerCache(id);
     },
     async forgiveDebt(id, amount, note){
       const c=data.citizens[id]; if(!c) throw new Error("missing");
       const entryId = String(++clock);
-      const entry = { entryId, type:"forgive", amount, note, date:host.todayISO(), deferred:false, createdAt:clock };
+      const entry = { entryId, type:"forgive", amount, note, date:todayISO(), deferred:false, createdAt:clock };
       c.ledger.push(entry);
       recalcTotals(c);
-      c.updatedAt=++clock; persist(); notify(); host.invalidateLedgerCache(id);
+      c.updatedAt=++clock; persist(); notify(); invalidateLedgerCache(id);
     },
     async confirmPendingPayment(id, pendingId){
       const c=data.citizens[id]; if(!c) return;
@@ -124,7 +151,7 @@ export function makeLocalStore(host){
       c.ledger.push(entry);
       recalcTotals(c);
       pp.status="confirmed";
-      c.updatedAt=++clock; persist(); notify(); host.invalidateLedgerCache(id);
+      c.updatedAt=++clock; persist(); notify(); invalidateLedgerCache(id);
     },
     async deleteEntry(id, entryId){
       const c=data.citizens[id]; if(!c) return;
@@ -132,7 +159,7 @@ export function makeLocalStore(host){
       if(idx<0) return;
       c.ledger.splice(idx,1);
       recalcTotals(c);
-      c.updatedAt=++clock; persist(); notify(); host.invalidateLedgerCache(id);
+      c.updatedAt=++clock; persist(); notify(); invalidateLedgerCache(id);
     },
     async editEntry(id, entryId, updates){
       const c=data.citizens[id]; if(!c) return;
@@ -143,7 +170,7 @@ export function makeLocalStore(host){
       if(updates.note!==undefined) e.note=updates.note;
       if(updates.date!==undefined) e.date=updates.date;
       recalcTotals(c);
-      c.updatedAt=++clock; persist(); notify(); host.invalidateLedgerCache(id);
+      c.updatedAt=++clock; persist(); notify(); invalidateLedgerCache(id);
     },
     async getPendingPayments(){
       const all=[];
@@ -154,7 +181,7 @@ export function makeLocalStore(host){
       }
       return all;
     },
-    async deleteCitizen(id){ delete data.citizens[id]; persist(); notify(); host.invalidateLedgerCache(id); },
+    async deleteCitizen(id){ delete data.citizens[id]; persist(); notify(); invalidateLedgerCache(id); },
     async bulkAppendCharges(items, onProgress){
       let n=0;
       for(const it of items){
@@ -169,7 +196,7 @@ export function makeLocalStore(host){
         c.updatedAt=++clock;
         if((++n % 50)===0 && onProgress) onProgress(n, items.length);
       }
-      persist(); notify(); host.invalidateLedgerCache(); if(onProgress) onProgress(items.length, items.length);
+      persist(); notify(); invalidateLedgerCache(); if(onProgress) onProgress(items.length, items.length);
       return items.length;
     },
     async bulkAppendPayments(items, onProgress){
@@ -182,7 +209,7 @@ export function makeLocalStore(host){
         c.updatedAt=++clock;
         if((++n % 50)===0 && onProgress) onProgress(n, items.length);
       }
-      persist(); notify(); host.invalidateLedgerCache(); if(onProgress) onProgress(items.length, items.length);
+      persist(); notify(); invalidateLedgerCache(); if(onProgress) onProgress(items.length, items.length);
       return items.length;
     },
     async signIn(email, pass){
@@ -198,11 +225,11 @@ export function makeLocalStore(host){
       // citizen read plus a full ledger read before the export even starts.
       // Reuse the dashboard's citizen/ledger cache whenever it is complete;
       // otherwise load all ledgers once.
-      const citizens = Array.isArray(host.rawCitizens) ? host.rawCitizens : Object.entries(data.citizens).map(([id,c])=>({id,...c}));
+      const citizens = Array.isArray(rawCitizens) ? rawCitizens : Object.entries(data.citizens).map(([id,c])=>({id,...c}));
       let ledgers;
-      const cacheComplete = citizens.length > 0 && citizens.every(c=>Array.isArray(host.ledgerCache.get(c.id)));
+      const cacheComplete = citizens.length > 0 && citizens.every(c=>Array.isArray(ledgerCache.get(c.id)));
       if(cacheComplete){
-        ledgers = Object.fromEntries(citizens.map(c=>[c.id, host.ledgerCache.get(c.id)]));
+        ledgers = Object.fromEntries(citizens.map(c=>[c.id, ledgerCache.get(c.id)]));
       }else{
         ledgers = await this.getAllLedgers();
       }
@@ -210,10 +237,10 @@ export function makeLocalStore(host){
       let csv = "Name, Job Card, Outstanding (₹), Payment History\n";
       for(const c of citizens){
         const entries = ledgers[c.id] || [];
-        const balance = host.allocateLedgerPayments(entries, c.id).balance;
+        const balance = allocateLedgerPayments(entries, c.id).balance;
         if(!(balance > 0)) continue;
-        const payments = entries.filter(e=>e.type==="payment").map(e=>`${host.entryLabel(e)} ${host.fmt(e.amount)}`).join("; ");
-        csv += `"${host.esc(c.name)}","${host.esc(c.jobCard)}",${balance},"${host.esc(payments)}"\n`;
+        const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
+        csv += `"${esc(c.name)}","${esc(c.jobCard)}",${balance},"${esc(payments)}"\n`;
       }
       return csv;
     },
@@ -221,7 +248,7 @@ export function makeLocalStore(host){
       const citizens=Object.entries(data.citizens).map(([id,c])=>({id,jobCard:c.jobCard,cardNo:c.cardNo,name:c.name,phone:c.phone||"",totalCharged:c.totalCharged||0,totalPaid:c.totalPaid||0,balance:c.balance||0,deferredTotal:c.deferredTotal||0,pendingPayments:Array.isArray(c.pendingPayments)?c.pendingPayments.map(p=>({...p})):[],ledger:(c.ledger||[]).map(e=>({entryId:e.entryId,type:e.type,amount:e.amount,note:e.note,date:e.date||"",deferred:e.deferred||false,createdAtMs:typeof e.createdAt==="number"?e.createdAt:null}))}));
       return {app:"nsnvc-contribution",version:2,exportedAt:new Date().toISOString(),count:citizens.length,meta:{deferredPeriods:(data.meta&&data.meta.deferredPeriods)?JSON.parse(JSON.stringify(data.meta.deferredPeriods)):{periods:[],updatedAt:{}},deferredPeriodOverrides:(data.meta&&data.meta.deferredPeriodOverrides)?JSON.parse(JSON.stringify(data.meta.deferredPeriodOverrides)):{},imports:(data.meta&&data.meta.periods)?data.meta.periods.slice():[]},citizens};
     },
-    async deleteAll(onProgress){data.citizens={};data.meta={periods:[],deferredUploads:[]};persist();notify();host.invalidateLedgerCache();if(onProgress)onProgress(1,1);},
+    async deleteAll(onProgress){data.citizens={};data.meta={periods:[],deferredUploads:[]};persist();notify();invalidateLedgerCache();if(onProgress)onProgress(1,1);},
     async renamePeriod(oldPeriod, newPeriod, onProgress){
       let count=0;
       for(const [id,c] of Object.entries(data.citizens)){
@@ -257,7 +284,7 @@ export function makeLocalStore(host){
         if(!next.includes(p)) delete updatedAt[p];
       }
       data.meta.deferredPeriods={periods:next,updatedAt};
-      host.deferredPeriodUpdatedAt={...updatedAt};
+      setDeferredPeriodUpdatedAt({...updatedAt});
       persist();
     },
     async getDeferredPeriodOverrides(){
@@ -270,136 +297,50 @@ export function makeLocalStore(host){
     },
     async setDeferredPeriodOverrides(overrides){
       if(!data.meta) data.meta={};
-      data.meta.deferredPeriodOverrides=overrides || {};
+      data.meta.setDeferredPeriodOverrides(overrides || {});
       persist();
     },
     async setCitizenChargeDeferred(citizenId, entryId, deferred){
       if(!data.meta) data.meta={};
-      if(!data.meta.deferredPeriodOverrides) data.meta.deferredPeriodOverrides={};
+      if(!data.meta.deferredPeriodOverrides) data.meta.setDeferredPeriodOverrides({});
       if(!data.meta.deferredPeriodOverrides[citizenId]) data.meta.deferredPeriodOverrides[citizenId]={};
       const key=String(entryId);
       const previous=data.meta.deferredPeriodOverrides[citizenId][key];
       const previousAt=previous && typeof previous==="object" ? previous.at : 0;
       data.meta.deferredPeriodOverrides[citizenId][key]={
         value:Boolean(deferred),
-        at:host.nextDeferTimestamp(previousAt)
+        at:nextDeferTimestamp(previousAt)
       };
       persist();
     },
     async importAll(backup,onProgress){
       if(!backup||!Array.isArray(backup.citizens))throw new Error("Not a valid backup file");const validTypes=["charge","payment","forgive","sanitationFee","return"];let done=0;data.citizens={};const meta=backup.meta&&typeof backup.meta==="object"?backup.meta:{};
-      data.meta={...(data.meta||{}),deferredPeriods:meta.deferredPeriods&&typeof meta.deferredPeriods==="object"?JSON.parse(JSON.stringify(meta.deferredPeriods)):{periods:[],updatedAt:{}},deferredPeriodOverrides:meta.deferredPeriodOverrides&&typeof meta.deferredPeriodOverrides==="object"?JSON.parse(JSON.stringify(meta.deferredPeriodOverrides)):{},periods:Array.isArray(meta.imports)?meta.imports.slice():[]};
+      data.meta={...(data.meta||{}),deferredPeriods:meta.deferredPeriods&&typeof meta.deferredPeriods==="object"?JSON.parse(JSON.stringify(meta.deferredPeriods)):{periods:[],updatedAt:{}},deferredPeriodOverrides:meta.deferredPeriodOverrides&&typeof meta.setDeferredPeriodOverrides(=="object"?JSON.parse(JSON.stringify(meta.deferredPeriodOverrides)):{},periods:Array.isArray(meta.imports)?meta.imports.slice():[]});
       for(const r of backup.citizens){const ledger=(r.ledger||[]).filter(e=>e&&validTypes.includes(e.type)&&e.amount).map(e=>{const amt=Number(e.amount);if(!Number.isFinite(amt)||amt<=0)return null;return {entryId:e.entryId||String(++clock),type:(e.type==="charge" && String(e.note||"").trim()==="Return") ? "return" : e.type,amount:amt,note:e.note||"",date:e.date||"",deferred:(e.type==="return" ? false : e.deferred||false),createdAt:e.createdAtMs||++clock};}).filter(Boolean);data.citizens[r.id]={jobCard:r.jobCard,cardNo:r.cardNo,name:r.name,phone:r.phone||"",totalCharged:r.totalCharged||0,totalPaid:r.totalPaid||0,balance:r.balance||0,deferredTotal:r.deferredTotal||0,createdAt:++clock,updatedAt:++clock,pendingPayments:Array.isArray(r.pendingPayments)?r.pendingPayments.map(p=>({...p})):[],ledger};recalcTotals(data.citizens[r.id]);if((++done%50)===0&&onProgress)onProgress(done,backup.citizens.length);}
-      host.deferredPeriodUpdatedAt=normalizeDeferredPeriodState(data.meta.deferredPeriods).updatedAt;host.deferredPeriodOverrides=normalizeDeferredPeriodOverrides(data.meta.deferredPeriodOverrides).overrides;persist();notify();host.invalidateLedgerCache();if(onProgress)onProgress(backup.citizens.length,backup.citizens.length);return backup.citizens.length;
+      deferredPeriodUpdatedAt=normalizeDeferredPeriodState(data.meta.deferredPeriods).updatedAt;setDeferredPeriodOverrides(normalizeDeferredPeriodOverrides(data.meta.deferredPeriodOverrides).overrides);persist();notify();invalidateLedgerCache();if(onProgress)onProgress(backup.citizens.length,backup.citizens.length);return backup.citizens.length;
     },
     async getImportedPeriods(){ return (data.meta && data.meta.periods) ? data.meta.periods.slice() : []; },
     async recordImportedPeriod(p){ if(!data.meta) data.meta={periods:[]}; if(!data.meta.periods) data.meta.periods=[];
       if(!data.meta.periods.includes(p)) data.meta.periods.push(p); persist(); },
     async recalcAll(onProgress){
-      // Decide whether the existing ledger cache is current before doing any
-      // network work. For a small number of changed ledgers, fetch only those.
-      // If many ledgers are stale, one collection-group read is substantially
-      // faster than opening one Firestore subcollection per citizen.
-      const recalcStart=performance.now();
-      const citizens=Array.isArray(host.rawCitizens)?rawCitizens:[];
-      const staleDetectionStart=performance.now();
-      const changed=citizens.filter(c=>{
-        const entries=host.ledgerCache.get(c.id);
-        const cachedAt=host.ledgerCacheSyncAt.get(c.id)||0;
-        const serverAt=host.firestoreTimeMs(c.updatedAt);
-        return !Array.isArray(entries) || serverAt>cachedAt;
-      });
-      const staleDetectionMs=performance.now()-staleDetectionStart;
-
-      let ledgers={};
-      let usedCache=false;
-      const firestoreReadStart=performance.now();
-      let firestoreReadMs=0;
-
-      if(citizens.length && changed.length===0){
-        usedCache=true;
-        for(const c of citizens) ledgers[c.id]=host.ledgerCache.get(c.id);
-      }else if(changed.length>0 && changed.length<=20 && typeof this.refreshChangedLedgers==="function"){
-        if(onProgress) onProgress(0,citizens.length);
-        await this.refreshChangedLedgers(changed);
-        for(const c of citizens) ledgers[c.id]=host.ledgerCache.get(c.id)||[];
-      }else{
-        // Bulk path: collectionGroup("ledger") is a single indexed Firestore
-        // query and avoids hundreds/thousands of individual ledger reads.
-        ledgers=await this.getAllLedgers();
+      const citizens=Object.entries(data.citizens);
+      let done=0;
+      for(const [id,c] of citizens){
+        recalcTotals(c);
+        c.updatedAt=c.updatedAt||++clock;
+        if((++done%25)===0&&onProgress)onProgress(done,citizens.length);
       }
-      firestoreReadMs=performance.now()-firestoreReadStart;
-
-      const citizenIds=Object.keys(ledgers);
-      const currentById=new Map(citizens.map(c=>[c.id,c]));
-      const calculationStart=performance.now();
-      let batch=fs.writeBatch(db),ops=0,done=0,writeCount=0;
-
-      const calculationStartForWrite=calculationStart;
-      let calculationMs=0;
-      const writeStart=performance.now();
-
-      const flush=async()=>{
-        if(ops===0)return;
-        await batch.commit();
-        batch=fs.writeBatch(db);
-        ops=0;
-      };
-
-      for(const id of citizenIds){
-        const next=host.recalcFromLedger(ledgers[id]||[],id);
-        const current=currentById.get(id);
-        const changedSummary=!current ||
-          Number(current.totalCharged||0)!==Number(next.totalCharged||0) ||
-          Number(current.totalPaid||0)!==Number(next.totalPaid||0) ||
-          Number(current.balance||0)!==Number(next.balance||0) ||
-          Number(current.deferredTotal||0)!==Number(next.deferredTotal||0);
-
-        if(changedSummary){
-          // Derived totals do not update updatedAt; that timestamp marks real
-          // ledger changes and drives cache synchronization.
-          batch.set(fs.doc(db,"citizens",id),{
-            totalCharged:next.totalCharged,
-            totalPaid:next.totalPaid,
-            balance:next.balance,
-            deferredTotal:next.deferredTotal
-          },{merge:true});
-          ops++;
-          writeCount++;
-          if(ops>=300)await flush();
-        }
-
-        if((++done%25)===0&&onProgress)onProgress(done,citizenIds.length);
-      }
-
-      calculationMs=performance.now()-calculationStartForWrite;
-      await flush();
-      const firestoreWriteMs=performance.now()-writeStart;
-      host.periodStatsCache=null;
-      host.invalidateStatsMemo();
-      if(onProgress)onProgress(citizenIds.length,citizenIds.length);
-      const totalMs=performance.now()-recalcStart;
-      console.log("Recalculate timing breakdown:",{
-        citizens:citizenIds.length,
-        staleLedgers:changed.length,
-        writes:writeCount,
-        usedCache,
-        bulkRead:!usedCache && changed.length>20,
-        staleDetectionMs:Math.round(staleDetectionMs),
-        firestoreReadMs:Math.round(firestoreReadMs),
-        calculationMs:Math.round(calculationMs),
-        firestoreWriteMs:Math.round(firestoreWriteMs),
-        totalMs:Math.round(totalMs)
-      });
-      return citizenIds.length;
+      persist(); notify(); invalidateLedgerCache();
+      if(onProgress)onProgress(citizens.length,citizens.length);
+      return citizens.length;
     },
     async getAllLedgers(){
       const out={};
       for(const [id,c] of Object.entries(data.citizens)){ out[id]=[...(c.ledger||[])]; }
-      host.ledgerCache.clear();
-      for(const [id,entries] of Object.entries(out)) host.ledgerCache.set(id,entries);
-      host.periodStatsCache=null;
-      host.invalidateStatsMemo();
+      ledgerCache.clear();
+      for(const [id,entries] of Object.entries(out)) ledgerCache.set(id,entries);
+      setPeriodStatsCache(null);
+      invalidateStatsMemo();
       return out;
     }
   };
@@ -432,17 +373,17 @@ function seedData(){
   }};
 }
 
-export function makeFirebaseStore({ auth, db, fs, au }, host){
+export function makeFirebaseStore({ auth, db, fs, au }){
   // Ask Firestore to tell us when its queue of local writes has drained, so the
   // sync pill can show "Syncing changes…" and then disappear. waitForPendingWrites
   // resolves only after every queued write is acknowledged by the server, so it
   // stays pending while offline — which is exactly the state we want to reflect.
   let syncClearTimer=null;
   function markSyncing(){
-    host.setSyncPending(true);
+    setSyncPending(true);
     clearTimeout(syncClearTimer);
     syncClearTimer=setTimeout(()=>{
-      fs.waitForPendingWrites(db).then(()=>host.setSyncPending(false)).catch(()=>host.setSyncPending(false));
+      fs.waitForPendingWrites(db).then(()=>setSyncPending(false)).catch(()=>setSyncPending(false));
     }, 120);
   }
   return {
@@ -469,7 +410,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
             e.type="return"; e.deferred=false;
           }
         }
-        const totals=host.recalcFromLedger(entries,id);
+        const totals=recalcFromLedger(entries,id);
         await fs.updateDoc(fs.doc(db,"citizens",id),{...totals,updatedAt:fs.serverTimestamp()});
         markSyncing();
       }
@@ -478,9 +419,9 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     async refreshChangedLedgers(citizens){
       const list=Array.isArray(citizens) ? citizens : [];
       const changed=list.filter(c=>{
-        const serverAt=host.firestoreTimeMs(c.updatedAt);
-        const cachedAt=host.ledgerCacheSyncAt.get(c.id)||0;
-        return !Array.isArray(host.ledgerCache.get(c.id)) || serverAt>cachedAt;
+        const serverAt=firestoreTimeMs(c.updatedAt);
+        const cachedAt=ledgerCacheSyncAt.get(c.id)||0;
+        return !Array.isArray(ledgerCache.get(c.id)) || serverAt>cachedAt;
       });
       if(!changed.length) return 0;
 
@@ -495,18 +436,18 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
         const slice=changed.slice(i,i+CHUNK);
         const batch=await Promise.all(slice.map(async c=>{
           const entries=await this.getLedger(c.id);
-          return [c.id,entries,host.firestoreTimeMs(c.updatedAt)||Date.now()];
+          return [c.id,entries,firestoreTimeMs(c.updatedAt)||Date.now()];
         }));
         results.push(...batch);
       }
       const changedLedgers={};
       for(const [id,entries,syncAt] of results){
-        host.ledgerCache.set(id,entries);
-        host.ledgerCacheSyncAt.set(id,syncAt);
+        ledgerCache.set(id,entries);
+        ledgerCacheSyncAt.set(id,syncAt);
         changedLedgers[id]=entries;
       }
-      host.periodStatsCache=null; host.invalidateStatsMemo();
-      host.writeDashboardCache([],changedLedgers);
+      setPeriodStatsCache(null); invalidateStatsMemo();
+      dashboardCache.writeDashboardCache([],changedLedgers);
       return changed.length;
     },
     subscribe(cb, onError){
@@ -532,7 +473,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     },
     async listOwing(){
       const snap=await fs.getDocs(fs.collection(db,"citizens"));
-      const needsLedger = host.deferredPeriods.length || Object.keys(host.deferredPeriodOverrides).length;
+      const needsLedger = deferredPeriods.length || Object.keys(deferredPeriodOverrides).length;
       if(!needsLedger){
         return snap.docs
           .map(d=>({ id:d.id, ...d.data(), balance:Number(d.data().balance || 0) }))
@@ -544,7 +485,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       const results=snap.docs.map(d=>{
         const c={id:d.id, ...d.data()};
         const entries=byId[c.id] || [];
-        const allocation=host.allocateLedgerPayments(entries, c.id);
+        const allocation=allocateLedgerPayments(entries, c.id);
         const effBal=allocation.owed.reduce((sum,o)=>sum+o.remaining,0)-allocation.unappliedPayment;
         return effBal>0 ? { ...c, balance:effBal } : null;
       });
@@ -569,7 +510,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       // ledger was not already cached, load the complete history first.
       // Otherwise the next account render can temporarily appear to have
       // lost all previous transactions even though Firestore still has them.
-      let entries=host.ledgerCache.get(id);
+      let entries=ledgerCache.get(id);
       if(!Array.isArray(entries)){
         entries=await this.getLedger(id);
       }else{
@@ -578,12 +519,12 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       entries.push(entry);
       entries.sort((a,b)=>(a.createdAt?.seconds ? a.createdAt.seconds*1000 : Number(a.createdAt)||0) -
                           (b.createdAt?.seconds ? b.createdAt.seconds*1000 : Number(b.createdAt)||0));
-      host.ledgerCache.set(id,entries); host.periodStatsCache=null; host.invalidateStatsMemo();
+      ledgerCache.set(id,entries); setPeriodStatsCache(null); invalidateStatsMemo();
 
       // The ledger write and the cached citizen totals are independent writes.
       // Run them in parallel so a person-view payment does not wait for two
       // sequential Firestore round trips before the UI can refresh.
-      const totals=host.recalcFromLedger(entries, id);
+      const totals=recalcFromLedger(entries, id);
       try{
         await Promise.all([
           fs.setDoc(eRef, {
@@ -601,17 +542,17 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
           })
         ]);
       }catch(err){
-        // addEntry updates host.ledgerCache before the network write so the person
+        // addEntry updates ledgerCache before the network write so the person
         // view can render optimistically. Restore the previous cache if either
         // Firestore write fails.
-        host.ledgerCache.set(id, entries.filter(e=>e.entryId!==eRef.id));
-        host.periodStatsCache=null;
-        host.invalidateStatsMemo();
+        ledgerCache.set(id, entries.filter(e=>e.entryId!==eRef.id));
+        setPeriodStatsCache(null);
+        invalidateStatsMemo();
         throw err;
       }
     },
     async forgiveDebt(id, amount, note){
-      await this.addEntry(id, "forgive", amount, note, host.todayISO());
+      await this.addEntry(id, "forgive", amount, note, todayISO());
     },
     async confirmPendingPayment(id, pendingId){
       const ppRef=fs.doc(db,"citizens",id,"pendingPayments",pendingId);
@@ -655,7 +596,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       if(!rows.length) return rows;
       // Attach the display name/jobCard. Prefer the in-memory citizen list;
       // fetch only the citizens we do not already have, in bounded batches.
-      const byId=new Map((host.rawCitizens||[]).map(c=>[c.id,c]));
+      const byId=new Map((rawCitizens||[]).map(c=>[c.id,c]));
       const missing=[...new Set(rows.map(r=>r.citizenId).filter(id=>!byId.has(id)))];
       for(let i=0;i<missing.length;i+=20){
         await Promise.all(missing.slice(i,i+20).map(async id=>{
@@ -672,11 +613,11 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     },
     async deleteEntry(id, entryId){
       await fs.deleteDoc(fs.doc(db,"citizens",id,"ledger",entryId));
-      const entries=host.ledgerCache.get(id)||[];
+      const entries=ledgerCache.get(id)||[];
       const idx=entries.findIndex(x=>x.entryId===entryId);
       if(idx>=0) entries.splice(idx,1);
-      host.ledgerCache.set(id,entries); host.periodStatsCache=null; host.invalidateStatsMemo();
-      const totals=host.recalcFromLedger(entries, id);
+      ledgerCache.set(id,entries); setPeriodStatsCache(null); invalidateStatsMemo();
+      const totals=recalcFromLedger(entries, id);
       await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
     },
     async editEntry(id, entryId, updates){
@@ -689,11 +630,11 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       if(updates.date !== undefined) updates.date = String(updates.date || "");
       const ref=fs.doc(db,"citizens",id,"ledger",entryId);
       await fs.updateDoc(ref, updates);
-      const entries=host.ledgerCache.get(id)||[];
+      const entries=ledgerCache.get(id)||[];
       const e=entries.find(x=>x.entryId===entryId);
       if(e) Object.assign(e,updates);
-      host.ledgerCache.set(id,entries); host.periodStatsCache=null; host.invalidateStatsMemo();
-      const totals=host.recalcFromLedger(entries, id);
+      ledgerCache.set(id,entries); setPeriodStatsCache(null); invalidateStatsMemo();
+      const totals=recalcFromLedger(entries, id);
       await fs.updateDoc(fs.doc(db,"citizens",id),{ ...totals, updatedAt:fs.serverTimestamp() });
     },
     async deleteCitizen(id){
@@ -702,7 +643,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       const pp=await fs.getDocs(fs.collection(db,"citizens",id,"pendingPayments"));
       await Promise.all(pp.docs.map(d=>fs.deleteDoc(d.ref)));
       await fs.deleteDoc(fs.doc(db,"citizens",id));
-      host.invalidateLedgerCache(id);
+      invalidateLedgerCache(id);
     },
     async bulkAppendCharges(items, onProgress){
       let batch=fs.writeBatch(db), ops=0, done=0;
@@ -719,7 +660,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
         if((++done % 50)===0 && onProgress) onProgress(done, items.length);
       }
       await flush();
-      host.invalidateLedgerCache();
+      invalidateLedgerCache();
       if(onProgress) onProgress(items.length, items.length);
       return items.length;
     },
@@ -735,7 +676,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
         if((++done % 50)===0 && onProgress) onProgress(done, items.length);
       }
       await flush();
-      host.invalidateLedgerCache();
+      invalidateLedgerCache();
       if(onProgress) onProgress(items.length, items.length);
       return items.length;
     },
@@ -746,11 +687,11 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       // Reuse the dashboard cache when it is complete. This avoids the extra
       // citizens + ledger read caused by listOwing() and keeps CSV export
       // comparable in speed to the PDF export.
-      const citizens = Array.isArray(host.rawCitizens) ? host.rawCitizens : [];
+      const citizens = Array.isArray(rawCitizens) ? rawCitizens : [];
       let ledgers;
-      const cacheComplete = citizens.length > 0 && citizens.every(c=>Array.isArray(host.ledgerCache.get(c.id)));
+      const cacheComplete = citizens.length > 0 && citizens.every(c=>Array.isArray(ledgerCache.get(c.id)));
       if(cacheComplete){
-        ledgers = Object.fromEntries(citizens.map(c=>[c.id, host.ledgerCache.get(c.id)]));
+        ledgers = Object.fromEntries(citizens.map(c=>[c.id, ledgerCache.get(c.id)]));
       }else{
         ledgers = await this.getAllLedgers();
       }
@@ -758,10 +699,10 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       let csv = "Name, Job Card, Outstanding (₹), Payment History\n";
       for(const c of citizens){
         const entries = ledgers[c.id] || [];
-        const balance = host.allocateLedgerPayments(entries, c.id).balance;
+        const balance = allocateLedgerPayments(entries, c.id).balance;
         if(!(balance > 0)) continue;
-        const payments = entries.filter(e=>e.type==="payment").map(e=>`${host.entryLabel(e)} ${host.fmt(e.amount)}`).join("; ");
-        csv += `"${host.esc(c.name)}","${host.esc(c.jobCard)}",${balance},"${host.esc(payments)}"\n`;
+        const payments = entries.filter(e=>e.type==="payment").map(e=>`${entryLabel(e)} ${fmt(e.amount)}`).join("; ");
+        csv += `"${esc(c.name)}","${esc(c.jobCard)}",${balance},"${esc(payments)}"\n`;
       }
       return csv;
     },
@@ -790,8 +731,8 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     },
     async deleteAll(onProgress){
       if(onProgress)onProgress(0,2);const cSnap=await fs.getDocs(fs.collection(db,"citizens"));let batch=fs.writeBatch(db),ops=0;const flush=async()=>{if(ops>0){await batch.commit();batch=fs.writeBatch(db);ops=0;}};
-      for(const d of cSnap.docs){const [led,pp]=await Promise.all([fs.getDocs(fs.collection(db,"citizens",d.id,"ledger")),fs.getDocs(fs.collection(db,"citizens",d.id,"pendingPayments"))]);for(const x of led.docs){batch.delete(x.ref);if(++ops>=host.FIRESTORE_BATCH_SIZE)await flush();}for(const x of pp.docs){batch.delete(x.ref);if(++ops>=host.FIRESTORE_BATCH_SIZE)await flush();}batch.delete(d.ref);if(++ops>=host.FIRESTORE_BATCH_SIZE)await flush();}
-      await flush();batch=fs.writeBatch(db);ops=0;for(const id of ["deferredPeriods","deferredPeriodOverrides","imports"]){batch.delete(fs.doc(db,"meta",id));if(++ops>=host.FIRESTORE_BATCH_SIZE)await flush();}await flush();host.invalidateLedgerCache();markSyncing();
+      for(const d of cSnap.docs){const [led,pp]=await Promise.all([fs.getDocs(fs.collection(db,"citizens",d.id,"ledger")),fs.getDocs(fs.collection(db,"citizens",d.id,"pendingPayments"))]);for(const x of led.docs){batch.delete(x.ref);if(++ops>=400)await flush();}for(const x of pp.docs){batch.delete(x.ref);if(++ops>=400)await flush();}batch.delete(d.ref);if(++ops>=400)await flush();}
+      await flush();batch=fs.writeBatch(db);ops=0;for(const id of ["deferredPeriods","deferredPeriodOverrides","imports"]){batch.delete(fs.doc(db,"meta",id));if(++ops>=400)await flush();}await flush();invalidateLedgerCache();markSyncing();
     },
     async renamePeriod(oldPeriod, newPeriod, onProgress){
       // Query only the charge entries belonging to this period. The previous
@@ -812,11 +753,11 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
         // rejected: use the in-memory ledger cache when complete, otherwise
         // read ledgers in bounded parallel batches.
         console.warn("Indexed period rename query failed; using fallback.", err);
-        const citizens=Array.isArray(host.rawCitizens)?host.rawCitizens:[];
-        const cacheComplete=citizens.length>0 && citizens.every(c=>Array.isArray(host.ledgerCache.get(c.id)));
+        const citizens=Array.isArray(rawCitizens)?rawCitizens:[];
+        const cacheComplete=citizens.length>0 && citizens.every(c=>Array.isArray(ledgerCache.get(c.id)));
         if(cacheComplete){
           for(const c of citizens){
-            for(const entry of host.ledgerCache.get(c.id)||[]){
+            for(const entry of ledgerCache.get(c.id)||[]){
               if(entry.type==="charge" && entry.note===oldPeriod && String(entry.note||"").trim()!=="Return"){
                 docs.push({
                   ref:fs.doc(db,"citizens",c.id,"ledger",entry.entryId),
@@ -845,7 +786,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
         count++;
       }
       await flush();
-      host.invalidateLedgerCache();
+      invalidateLedgerCache();
       markSyncing();
       if(onProgress) onProgress(count,count);
       return count;
@@ -859,7 +800,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     },
     async setDeferredPeriods(periods){
       const next=Array.isArray(periods) ? periods.slice() : [];
-      const updatedAt={...(host.deferredPeriodUpdatedAt || {})};
+      const updatedAt={...(deferredPeriodUpdatedAt || {})};
       // Preserve a period that has no timestamp as 0 instead of stamping it
       // "now". Stamping here made a rename (or a legacy load) look like a fresh
       // defer, which silently overrode per-person restores under that period.
@@ -899,7 +840,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       // FieldPath segments — not dotted strings — for cid/eid: citizen ids can
       // contain dots (fullKey keeps them), and a dotted string path would either
       // mis-nest the write or fail SDK validation with a code-less error.
-      const cid=String(citizenId), eid=String(entryId), at=host.nextDeferTimestamp();
+      const cid=String(citizenId), eid=String(entryId), at=nextDeferTimestamp();
       const ref=fs.doc(db,"meta","deferredPeriodOverrides");
       await fs.setDoc(ref,
         { overrides: { [cid]: { [eid]: { value:Boolean(deferred), at } } } },
@@ -908,16 +849,16 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     },
     async importAll(backup,onProgress){
       if(!backup||!Array.isArray(backup.citizens))throw new Error("Not a valid backup file");if(onProgress)onProgress(0,3);const old=await fs.getDocs(fs.collection(db,"citizens"));let batch=fs.writeBatch(db),ops=0;const flush=async()=>{if(ops>0){await batch.commit();batch=fs.writeBatch(db);ops=0;}};
-      for(const d of old.docs){const [led,pp]=await Promise.all([fs.getDocs(fs.collection(db,"citizens",d.id,"ledger")),fs.getDocs(fs.collection(db,"citizens",d.id,"pendingPayments"))]);for(const x of led.docs){batch.delete(x.ref);if(++ops>=host.FIRESTORE_BATCH_SIZE)await flush();}for(const x of pp.docs){batch.delete(x.ref);if(++ops>=host.FIRESTORE_BATCH_SIZE)await flush();}batch.delete(d.ref);if(++ops>=host.FIRESTORE_BATCH_SIZE)await flush();}await flush();if(onProgress)onProgress(1,3);
-      const meta=backup.meta&&typeof backup.meta==="object"?backup.meta:{};for(const [id,value] of [["deferredPeriods",meta.deferredPeriods&&typeof meta.deferredPeriods==="object"?meta.deferredPeriods:{periods:[],updatedAt:{}}],["deferredPeriodOverrides",{overrides:meta.deferredPeriodOverrides&&typeof meta.deferredPeriodOverrides==="object"?meta.deferredPeriodOverrides:{}}],["imports",{periods:Array.isArray(meta.imports)?meta.imports:[]}]]){batch.set(fs.doc(db,"meta",id),value);if(++ops>=host.FIRESTORE_BATCH_SIZE)await flush();}await flush();batch=fs.writeBatch(db);ops=0;let done=0;const validTypes=["charge","payment","forgive","sanitationFee"];
-      for(const r of backup.citizens){const cRef=fs.doc(db,"citizens",r.id);batch.set(cRef,{jobCard:r.jobCard,cardNo:r.cardNo,name:r.name,phone:r.phone||"",totalCharged:r.totalCharged||0,totalPaid:r.totalPaid||0,balance:r.balance||0,deferredTotal:r.deferredTotal||0,updatedAt:fs.serverTimestamp()});if(++ops>=host.FIRESTORE_BATCH_SIZE)await flush();for(const e of (r.ledger||[])){if(!e||!validTypes.includes(e.type)||!e.amount)continue;const amt=Number(e.amount);if(!Number.isFinite(amt)||amt<=0)continue;const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));batch.set(eRef,{entryId:e.entryId||eRef.id,type:e.type,amount:amt,note:e.note||"",date:e.date||"",deferred:e.deferred||false,createdAt:e.createdAtMs?fs.Timestamp.fromMillis(e.createdAtMs):fs.serverTimestamp()});if(++ops>=host.FIRESTORE_BATCH_SIZE)await flush();}for(const p of (Array.isArray(r.pendingPayments)?r.pendingPayments:[])){if(!p||!p.id||!Number.isFinite(Number(p.amount))||Number(p.amount)<=0)continue;const pRef=fs.doc(db,"citizens",r.id,"pendingPayments",String(p.id));batch.set(pRef,{amount:Number(p.amount),date:p.date||"",status:p.status||"pending",createdAt:p.createdAt||fs.serverTimestamp()});if(++ops>=host.FIRESTORE_BATCH_SIZE)await flush();}if((++done%50)===0&&onProgress)onProgress(2,3);}
-      await flush();host.invalidateLedgerCache();markSyncing();if(onProgress)onProgress(3,3);return backup.citizens.length;
+      for(const d of old.docs){const [led,pp]=await Promise.all([fs.getDocs(fs.collection(db,"citizens",d.id,"ledger")),fs.getDocs(fs.collection(db,"citizens",d.id,"pendingPayments"))]);for(const x of led.docs){batch.delete(x.ref);if(++ops>=400)await flush();}for(const x of pp.docs){batch.delete(x.ref);if(++ops>=400)await flush();}batch.delete(d.ref);if(++ops>=400)await flush();}await flush();if(onProgress)onProgress(1,3);
+      const meta=backup.meta&&typeof backup.meta==="object"?backup.meta:{};for(const [id,value] of [["deferredPeriods",meta.deferredPeriods&&typeof meta.deferredPeriods==="object"?meta.deferredPeriods:{periods:[],updatedAt:{}}],["deferredPeriodOverrides",{overrides:meta.deferredPeriodOverrides&&typeof meta.setDeferredPeriodOverrides(=="object"?meta.deferredPeriodOverrides:{}}],["imports",{periods:Array.isArray(meta.imports)?meta.imports:[]}]]){batch.set(fs.doc(db,"meta",id),value));if(++ops>=400)await flush();}await flush();batch=fs.writeBatch(db);ops=0;let done=0;const validTypes=["charge","payment","forgive","sanitationFee"];
+      for(const r of backup.citizens){const cRef=fs.doc(db,"citizens",r.id);batch.set(cRef,{jobCard:r.jobCard,cardNo:r.cardNo,name:r.name,phone:r.phone||"",totalCharged:r.totalCharged||0,totalPaid:r.totalPaid||0,balance:r.balance||0,deferredTotal:r.deferredTotal||0,updatedAt:fs.serverTimestamp()});if(++ops>=400)await flush();for(const e of (r.ledger||[])){if(!e||!validTypes.includes(e.type)||!e.amount)continue;const amt=Number(e.amount);if(!Number.isFinite(amt)||amt<=0)continue;const eRef=fs.doc(fs.collection(db,"citizens",r.id,"ledger"));batch.set(eRef,{entryId:e.entryId||eRef.id,type:e.type,amount:amt,note:e.note||"",date:e.date||"",deferred:e.deferred||false,createdAt:e.createdAtMs?fs.Timestamp.fromMillis(e.createdAtMs):fs.serverTimestamp()});if(++ops>=400)await flush();}for(const p of (Array.isArray(r.pendingPayments)?r.pendingPayments:[])){if(!p||!p.id||!Number.isFinite(Number(p.amount))||Number(p.amount)<=0)continue;const pRef=fs.doc(db,"citizens",r.id,"pendingPayments",String(p.id));batch.set(pRef,{amount:Number(p.amount),date:p.date||"",status:p.status||"pending",createdAt:p.createdAt||fs.serverTimestamp()});if(++ops>=400)await flush();}if((++done%50)===0&&onProgress)onProgress(2,3);}
+      await flush();invalidateLedgerCache();markSyncing();if(onProgress)onProgress(3,3);return backup.citizens.length;
     },
     async getImportedPeriods(){ const s=await fs.getDoc(fs.doc(db,"meta","imports")); return s.exists()? (s.data().periods||[]) : []; },
     async recordImportedPeriod(p){ await fs.setDoc(fs.doc(db,"meta","imports"), { periods:fs.arrayUnion(p) }, {merge:true}); markSyncing(); },
     async recalcAll(onProgress){
       // Always rebuild from the complete Firestore ledgers. Do not trust cached
-      // citizen totals or a partially populated host.ledgerCache. A repair must
+      // citizen totals or a partially populated ledgerCache. A repair must
       // read fresh data, so force a scan even if a snapshot is cached.
       const ledgers = await this.getAllLedgers({force:true});
       const citizenIds = Object.keys(ledgers);
@@ -927,7 +868,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       // set updatedAt on all of them, which then made refreshChangedLedgers
       // re-read every ledger too.
       const known = new Map();
-      for(const c of (host.rawCitizens || [])) known.set(c.id, c);
+      for(const c of (rawCitizens || [])) known.set(c.id, c);
 
       const flush=async()=>{
         if(ops===0) return;
@@ -937,7 +878,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       };
 
       for(const id of citizenIds){
-        const {totalCharged,totalPaid,balance,deferredTotal}=host.recalcFromLedger(ledgers[id]||[],id);
+        const {totalCharged,totalPaid,balance,deferredTotal}=recalcFromLedger(ledgers[id]||[],id);
 
         // Skip households whose cached totals already match — avoids needless
         // writes (and the updatedAt bump that would trigger ledger re-reads).
@@ -967,7 +908,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       }
 
       await flush();
-      host.invalidateLedgerCache();
+      invalidateLedgerCache();
 
       // The ledger cache was invalidated above; the live snapshot/refresh will
       // provide the repaired totals without an artificial delay.
@@ -980,12 +921,12 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       // Firestore plan's daily quota when exports/backups/period actions each
       // trigger their own scan.
       const force = !!(opts && opts.force);
-      const ttlMs = host.fullLedgerTtlMs || 15 * 60 * 1000;
-      const age = Date.now() - (host.fullLedgerSnapshotAt || 0);
-      if(!force && host.fullLedgerSnapshotCount > 0 && age < ttlMs){
-        console.log(`Using cached full ledger snapshot (${Math.round(age/1000)}s old, ${host.fullLedgerSnapshotCount} ledgers) — no Firestore reads.`);
+      const ttlMs = FULL_LEDGER_TTL_MS || 15 * 60 * 1000;
+      const age = Date.now() - (fullLedgerSnapshotAt || 0);
+      if(!force && fullLedgerSnapshotCount > 0 && age < ttlMs){
+        console.log(`Using cached full ledger snapshot (${Math.round(age/1000)}s old, ${fullLedgerSnapshotCount} ledgers) — no Firestore reads.`);
         const out={};
-        for(const [id,entries] of host.ledgerCache) out[id]=entries;
+        for(const [id,entries] of ledgerCache) out[id]=entries;
         return out;
       }
 
@@ -997,7 +938,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
       // Seed ids from the already-subscribed citizen list (no extra read) and
       // only fall back to reading the citizens collection if we have none.
       const out={};
-      const known = host.rawCitizens;
+      const known = rawCitizens;
       if(Array.isArray(known) && known.length){
         for(const c of known) out[c.id]=[];
       }else{
@@ -1029,7 +970,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
         if(migratedIds.size){
           let summaryBatch=fs.writeBatch(db), summaryOps=0;
           for(const id of migratedIds){
-            const totals=host.recalcFromLedger(out[id]||[],id);
+            const totals=recalcFromLedger(out[id]||[],id);
             summaryBatch.set(fs.doc(db,"citizens",id),{...totals,updatedAt:fs.serverTimestamp()},{merge:true});
             summaryOps++;
             if(summaryOps>=300){ await summaryBatch.commit(); summaryBatch=fs.writeBatch(db); summaryOps=0; }
@@ -1055,18 +996,18 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
         }
       }
 
-      host.ledgerCache.clear();
+      ledgerCache.clear();
       for(const [id,entries] of Object.entries(out)){
-        host.ledgerCache.set(id, entries);
+        ledgerCache.set(id, entries);
       }
-      host.periodStatsCache=null;
-      host.invalidateStatsMemo();
+      setPeriodStatsCache(null);
+      invalidateStatsMemo();
       // Record the snapshot so later callers skip the scan.
-      host.fullLedgerSnapshotAt = Date.now();
-      host.fullLedgerSnapshotCount = Object.keys(out).length;
+      setFullLedgerSnapshotAt(Date.now());
+      setFullLedgerSnapshotCount(Object.keys(out).length);
       // Keep the complete ledger snapshot persistent so the next dashboard
       // load can render period-aware balances before Firestore responds.
-      host.writeDashboardCache(Object.values(out).map(()=>null), out);
+      dashboardCache.writeDashboardCache(Object.values(out).map(()=>null), out);
       return out;
     }
   };
