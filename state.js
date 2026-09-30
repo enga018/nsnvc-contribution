@@ -10,7 +10,7 @@ import {
 } from "./ledger.js";
 
 export let ledgerCache = new Map();
-export const ledgerCacheSyncAt = new Map();
+export let ledgerCacheSyncAt = new Map();
 export let periodStatsCache = null;
 export let deferredPeriods = [];
 export let deferredPeriodUpdatedAt = {};
@@ -30,6 +30,7 @@ let syncIndicatorRenderer = null;
 let exportSnapshotInvalidator = null;
 
 export function setLedgerCache(value){ ledgerCache=value instanceof Map ? value : new Map(); }
+export function setLedgerCacheSyncAt(value){ ledgerCacheSyncAt=value instanceof Map ? value : new Map(); }
 export function setPeriodStatsCache(value){ periodStatsCache=value ?? null; }
 export function setDeferredPeriods(value){ deferredPeriods=Array.isArray(value) ? value : []; }
 export function setDeferredPeriodUpdatedAt(value){ deferredPeriodUpdatedAt=value && typeof value==="object" ? value : {}; }
