@@ -139,6 +139,7 @@ import {
   deferredPeriodOverrides,
   rawCitizens,
   allCitizens,
+
   fullLedgerSnapshotAt,
   fullLedgerSnapshotCount,
   syncPendingWrites,
@@ -850,7 +851,7 @@ function getPeriodStats(){
       }
     }
   }
-  periodStatsCache={periods:[...periods].sort(comparePeriods(buildPeriodOrder(ledgerCache.values()))),stats};
+  setPeriodStatsCache({periods:[...periods].sort(comparePeriods(buildPeriodOrder(ledgerCache.values()))),stats});
   return periodStatsCache;
 }
 function scheduleDashboardRefresh(){
@@ -885,7 +886,7 @@ async function refreshDashboard(){
     const cachedList = list.map(c => ({...c, ledger: ledgerCache.get(c.id) || []}));
     const hasCompleteCache = list.every(c => Array.isArray(ledgerCache.get(c.id)));
     if(hasCompleteCache){
-      allCitizens = cachedList;
+      setAllCitizens(cachedList);
 renderStats();
       renderList();
     }
@@ -908,7 +909,7 @@ renderStats();
   }
 
   if(seq !== dashboardRefreshSeq) return; // superseded by a newer refresh; drop this stale result
-  allCitizens = list;
+  setAllCitizens(list);
 renderStats(); renderList(); refreshPending();
 }
 function renderStats(){
