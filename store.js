@@ -227,7 +227,7 @@ export function makeLocalStore(host){
       for(const [id,c] of Object.entries(data.citizens)){
         if(c.ledger){
           for(const e of c.ledger){
-            if(e.type==="charge" && e.note===oldPeriod){
+            if(e.type==="charge" && e.note===oldPeriod && String(e.note||"").trim()!=="Return"){
               e.note=newPeriod;
               count++;
             }
@@ -817,7 +817,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
         if(cacheComplete){
           for(const c of citizens){
             for(const entry of host.ledgerCache.get(c.id)||[]){
-              if(entry.type==="charge" && entry.note===oldPeriod){
+              if(entry.type==="charge" && entry.note===oldPeriod && String(entry.note||"").trim()!=="Return"){
                 docs.push({
                   ref:fs.doc(db,"citizens",c.id,"ledger",entry.entryId),
                   data:()=>entry
@@ -830,7 +830,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
             const chunks=await Promise.all(citizens.slice(i,i+20).map(c=>fs.getDocs(fs.collection(db,"citizens",c.id,"ledger"))));
             for(const snap of chunks){
               for(const ld of snap.docs){
-                if(ld.data().type==="charge" && ld.data().note===oldPeriod) docs.push(ld);
+                if(ld.data().type==="charge" && ld.data().note===oldPeriod && String(ld.data().note||"").trim()!=="Return") docs.push(ld);
               }
             }
           }
