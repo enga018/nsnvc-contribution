@@ -65,6 +65,31 @@ test("overpayment produces a negative balance and unapplied credit", () => {
   assert.equal(st.unappliedPayment, 900);
 });
 
+test("return refunds overpayment without becoming a charge", () => {
+  setDeferralState({});
+  const st = calculateLedgerState([
+    payment("p",900),
+    { entryId:"r", type:"return", amount:400, note:"Return" }
+  ],"C9");
+  assert.equal(st.totalCharged, 0);
+  assert.equal(st.totalPaid, 900);
+  assert.equal(st.totalReturned, 400);
+  assert.equal(st.balance, -500);
+  assert.equal(st.unappliedPayment, 500);
+});
+
+test("legacy charge/Return is treated exactly like a return", () => {
+  setDeferralState({});
+  const st = calculateLedgerState([
+    payment("p",900),
+    { entryId:"r", type:"charge", amount:400, note:"Return" }
+  ],"C9");
+  assert.equal(st.totalCharged, 0);
+  assert.equal(st.totalReturned, 400);
+  assert.equal(st.balance, -500);
+});
+
+
 test("a sanitation fee flagged deferred is out of the balance", () => {
   setDeferralState({});
   const st = calculateLedgerState([{ entryId:"s", type:"sanitationFee", amount:150, deferred:true }],"C9");
