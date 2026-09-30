@@ -3,13 +3,15 @@
 // install/activate a fresh worker. If it's left stale, already-installed
 // PWAs keep serving whatever was cached under the old name indefinitely
 // (this has silently happened before: see the v1.25.6 and v1.28.0 fixes).
-const CACHE_NAME = 'nsnvc-tracker-v1.35.4';
+const CACHE_NAME = 'nsnvc-tracker-v1.35.5';
 const urlsToCache = [
   './',
   './index.html',
   './manifest.json',
   './ledger.js',
-  './store.js'
+  './store.js',
+  './util.js',
+  './cache.js'
 ];
 
 self.addEventListener('install', event => {
