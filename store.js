@@ -823,7 +823,7 @@ export function makeFirebaseStore({ auth, db, fs, au }, host){
     },
     async setDeferredPeriods(periods){
       const next=Array.isArray(periods) ? periods.slice() : [];
-      const updatedAt={...deferredPeriodUpdatedAt};
+      const updatedAt={...(host.deferredPeriodUpdatedAt || {})};
       // Preserve a period that has no timestamp as 0 instead of stamping it
       // "now". Stamping here made a rename (or a legacy load) look like a fresh
       // defer, which silently overrode per-person restores under that period.
