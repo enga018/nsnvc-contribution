@@ -130,6 +130,7 @@ import {
 } from "./ledger.js";
 import { makeLocalStore, makeFirebaseStore } from "./store.js";
 import { createDashboardCache } from "./cache.js";
+import { createAppState } from "./state.js";
 
 // Loads the Firebase SDK and initialises Auth + Firestore. This is app startup
 // glue, so it lives here rather than in store.js. (It was accidentally left in
@@ -292,11 +293,6 @@ let deferredPeriodOverrides={};
 // defer action) and handed to the ledger engine, which resolves deferral from
 // it. `nextDeferTimestamp` provides strictly-increasing stamps so "latest wins"
 // is never decided by a same-millisecond tie.
-let deferClock=0;
-function nextDeferTimestamp(previous=0){
-  deferClock=Math.max(Date.now(), deferClock+1, (Number(previous)||0)+1);
-  return deferClock;
-}
 function syncDeferralStateToEngine(){
   setDeferralState({ deferredPeriods, deferredPeriodUpdatedAt, deferredPeriodOverrides });
 }
@@ -326,75 +322,7 @@ function setCitizenChargeOverride(next, citizenId, entry, value){
   else delete next[citizenId];
 }
 /* ---------- Per-citizen stats memoization ----------
-   getEffectiveBalance/getDeferredAmount/statusOf run up to ~10× per household
-   per dashboard render (stats, filter tabs, list filtering, card HTML). The
-   expensive part — calculateLedgerState over the ledger — is pure for a given
-   citizen snapshot and the current period/defer/override state, so results are
-   cached against a small fingerprint:
-     - citizen id
-     - whether a ledger is attached (the no-ledger path reads c.balance)
-     - c.balance for that fallback path
-     - statsRevision, bumped wherever ledgerCache or the period/deferral/
-       override state changes (the same sites that already null
-       periodStatsCache).
-   Because the fingerprint includes c.balance, a fresh Firestore snapshot with
-   a new balance is never served stale even when statsRevision has not moved.
-   In-place ledger mutations (deleteEntry/editEntry) keep the same array
-   reference but bump statsRevision, so cached numbers are invalidated there
-   too. */
-let statsRevision=0;
-const statsMemo=new Map();
-function invalidateStatsMemo(){
-  statsRevision++;
-  // Bound memory usage across many revisions (e.g. bulk imports).
-  if(statsMemo.size>5000) statsMemo.clear();
-}
-function statsMemoEntry(c){
-  if(!c || c.id==null) return null;
-  const key = Array.isArray(c.ledger)
-    ? "L|"+statsRevision+"|"+c.id
-    : "B|"+statsRevision+"|"+c.id+"|"+(c.balance!=null?c.balance:0);
-  let rec=statsMemo.get(key);
-  if(!rec){ rec={balance:null,deferred:null}; statsMemo.set(key,rec); }
-  return rec;
-}
-function statusOf(c){
-  const bal = getEffectiveBalance(c);
-  if(bal<=0) return "paid";
-  if((c.totalPaid||0)>0) return "partial";
-  return "due";
-}
-function getEffectiveBalance(c){
-  // When a ledger is attached, it is always authoritative. This is the same
-  // calculation used by the person account view, so dashboard status cannot disagree with the household's actual account.
-  const rec=statsMemoEntry(c);
-  if(rec && rec.balance!==null) return rec.balance;
-  let value;
-  if(c && Array.isArray(c.ledger)){
-    value = calculateLedgerState(c.ledger, c.id).balance;
-  }else{
-    // The live citizen snapshot may not include a ledger yet. In that case use
-    // the stored summary when no period/override state requires live ledgers.
-    value = Number(c && c.balance != null ? c.balance : 0);
-  }
-  if(rec) rec.balance=value;
-  return value;
-}
-function getDeferredAmount(c){
-  const rec=statsMemoEntry(c);
-  if(rec && rec.deferred!==null) return rec.deferred;
-  let value=0;
-  if(c && Array.isArray(c.ledger)){
-    // Informational only. Deferred charges never participate in balance.
-    value = c.ledger.reduce((sum,e)=>{
-      if(!e || (e.type!=="charge" && e.type!=="sanitationFee")) return sum;
-      const deferred=isPeriodDeferredForCitizen(e,c.id);
-      return sum + (deferred ? Math.max(0,Number(e.amount)||0) : 0);
-    },0);
-  }
-  if(rec) rec.deferred=value;
-  return value;
-}
+   Stats/account helpers are owned by state.js in Stage 3 Step 3. */
 const statusLabel = {paid:"Cleared", partial:"Partly paid", due:"Due"};
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 const DATE_DISPLAY_CUTOFF = "2026-07-01";
@@ -441,6 +369,9 @@ let dashboardRefreshSeq=0, dashboardRefreshTimer=null, cacheRefreshTimer=null;
 let adminFilter="owing", adminShown=20;
 const ADMIN_STEP=20;
 let adminFilteredList=[]; // the currently filtered citizen list, for "show more"
+
+const appState = createAppState();
+const { invalidateStatsMemo, getEffectiveBalance, getDeferredAmount, statusOf, nextDeferTimestamp } = appState;
 
 const dashboardCache = createDashboardCache({
   get ledgerCache(){ return ledgerCache; },
