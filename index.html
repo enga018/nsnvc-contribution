@@ -512,6 +512,7 @@ function entryLabel(e){
   }
   if(e.type==="forgive") return "Waived";
   if(e.type==="sanitationFee") return "Sanitation Fee";
+  if(e.type==="return" || (e.type==="charge" && String(e.note||"").trim()==="Return")) return "Return";
   return prettyPeriod(e.note) || "Contribution";
 }
 function suffixOf(s){ s=String(s||"").trim(); const i=s.lastIndexOf("/"); return (i>=0?s.slice(i+1):s).trim().toLowerCase(); }
@@ -2098,13 +2099,14 @@ function closeCitizenDetail(){
 function renderEntryRow(entry, editing, citizenId){
   const isPayment = entry.type==="payment";
   const isForgive = entry.type==="forgive";
+  const isReturn = entry.type==="return" || (entry.type==="charge" && String(entry.note||"").trim()==="Return");
   const period=String(entry.note||"").trim();
   const override = getCitizenChargeOverride(citizenId, entry);
   const globalDeferred = entry.type==="charge" && deferredPeriods.includes(period);
   const isDeferred = entry.type==="charge" && isPeriodDeferredForCitizen(entry, citizenId);
   const label = entryLabel(entry);
-  const amtClass = isPayment || isForgive ? "payment" : "charge";
-  const amtSign = isPayment || isForgive ? "− " : "+ ";
+  const amtClass = isPayment || isForgive || isReturn ? "payment" : "charge";
+  const amtSign = isPayment || isForgive ? "− " : isReturn ? "↩ " : "+ ";
   const rowClass = "row" + (isDeferred ? " deferred" : "");
 
   const actions = editing ? `<span class="actions">
@@ -2115,7 +2117,7 @@ function renderEntryRow(entry, editing, citizenId){
   let deferToggle = '';
   // Defer / restore switch appears only in edit mode — the normal account view
   // stays clean, and the row's edit actions and the switch share the editing UI.
-  if(entry.type==="charge" && editing){
+  if(entry.type==="charge" && !isReturn && editing){
     const checked = isDeferred ? 'checked' : '';
     const labelText = isDeferred ? "Restore" : "Defer";
     deferToggle = `<label class="switch" data-id="${entry.entryId}" style="margin-left:8px">
@@ -2190,8 +2192,8 @@ async function renderCitizenDetail(id){
     // does not contain the full ledger. The detail page has the authoritative
     // ledger already, so always calculate the displayed balance from it.
     const state = calculateLedgerState(entries, id);
-    // This is the actual remaining balance: active charges minus all
-    // payments and waivers. Deferred charges are excluded by the engine.
+    // This is the actual remaining balance: active charges minus payments,
+    // plus recorded returns and minus waivers. Deferred charges are excluded.
     const bal = state.balance;
     const deferred = getDeferredAmount({...c, ledger: entries});
     const allSorted = sortLedgerEntries(entries, true);
@@ -2448,7 +2450,14 @@ async function handleReturnSubmit(id){
   if(!(await confirmAction(`Record a return of ${fmt(amount)} for this citizen?`))) return;
   $("returnSubmit").disabled=true;
   try{
-    await store.addEntry(id, "charge", amount, note, date);
+    const entries = ledgerCache.get(id) || await store.getLedger(id) || [];
+    const currentBalance = calculateLedgerState(entries, id).balance;
+    const availableOverpayment = Math.max(0, -currentBalance);
+    if(amount > availableOverpayment){
+      toast(`Return cannot exceed the current overpayment of ${fmt(availableOverpayment)}`);
+      return;
+    }
+    await store.addEntry(id, "return", amount, note, date);
     clearOperationErrors();
     toast("Return recorded");
     closeSheet();
@@ -2464,7 +2473,7 @@ function openReturnSheet(id, bal){
   const overpaidAmt = bal<0 ? Math.abs(bal) : 0;
   openSheet("Record return", `
     <div class="field"><label>Amount returned (${CURRENCY})</label>
-      <input id="returnAmt" inputmode="decimal" placeholder="0" value="${overpaidAmt>0?overpaidAmt:""}"></div>
+      <input id="returnAmt" inputmode="decimal" placeholder="0" max="${overpaidAmt}" value="${overpaidAmt>0?overpaidAmt:""}"></div>
     <div class="field"><label>Note</label>
       <input id="returnNote" value="Return"></div>
     <div class="field"><label>Date</label>
