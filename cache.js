@@ -1,13 +1,25 @@
 /* =====================================================================
    Persistent dashboard cache (IndexedDB).
-   Stage 3 Step 2: cache persistence is isolated from the DOM.
+   Stage 3 Step 3B: cache persistence reads/writes shared state directly.
    ===================================================================== */
+
+import {
+  ledgerCache,
+  ledgerCacheSyncAt,
+  deferredPeriods,
+  deferredPeriodOverrides,
+  rawCitizens,
+  setPeriodStatsCache,
+  setRawCitizens,
+  setAllCitizens,
+  invalidateStatsMemo
+} from "./state.js";
 
 const DASHBOARD_CACHE_DB = "nsnvc-dashboard-cache";
 const DASHBOARD_CACHE_VERSION = 1;
 const DASHBOARD_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-export function createDashboardCache(host){
+export function createDashboardCache(){
   let dashboardCacheReady = null;
 
   function openDashboardCache(){
@@ -65,7 +77,7 @@ export function createDashboardCache(host){
             id,
             entries:entries||[],
             cachedAt,
-            syncAt:host.firestoreTimeMs((citizens||[]).find(c=>c.id===id)?.updatedAt)||cachedAt
+            syncAt:(citizens||[]).find(c=>c.id===id)?.updatedAt || cachedAt
           });
         }
       }catch(err){
@@ -80,28 +92,29 @@ export function createDashboardCache(host){
       if(!cached) return false;
 
       if(cached.citizens.length){
-        host.rawCitizens=cached.citizens.map(({cachedAt,...c})=>c);
-        host.allCitizens=host.rawCitizens.slice();
+        const citizens=cached.citizens.map(({cachedAt,...c})=>c);
+        setRawCitizens(citizens);
+        setAllCitizens(citizens.slice());
       }
 
       if(cached.ledgers.length){
         for(const item of cached.ledgers){
-          host.ledgerCache.set(item.id,item.entries||[]);
-          host.ledgerCacheSyncAt.set(item.id,Number(item.syncAt||item.cachedAt||0));
+          ledgerCache.set(item.id,item.entries||[]);
+          ledgerCacheSyncAt.set(item.id,Number(item.syncAt||item.cachedAt||0));
         }
-        host.periodStatsCache=null;
-        host.invalidateStatsMemo();
+        setPeriodStatsCache(null);
+        invalidateStatsMemo();
       }
 
       const needsLedger = Boolean(
-        host.deferredPeriods.length ||
-        Object.keys(host.deferredPeriodOverrides).length
+        deferredPeriods.length ||
+        Object.keys(deferredPeriodOverrides).length
       );
-      if(host.rawCitizens.length && needsLedger && cached.ledgers.length){
-        host.allCitizens=host.rawCitizens.map(c=>({...c,ledger:host.ledgerCache.get(c.id)||[]}));
+      if(rawCitizens.length && needsLedger && cached.ledgers.length){
+        setAllCitizens(rawCitizens.map(c=>({...c,ledger:ledgerCache.get(c.id)||[]})));
       }
 
-      return host.allCitizens.length > 0;
+      return allCitizens.length > 0;
     }catch(err){
       console.warn("Failed to hydrate dashboard cache:",err);
     }
