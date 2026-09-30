@@ -140,6 +140,7 @@ export function calculateLedgerState(entries, citizenId){
   // individual periods; timing does not matter and overpayment is allowed.
   let totalCharged=0;
   let totalPaid=0;
+  let totalReturned=0;
   let totalWaived=0;
   let deferredRemaining=0;
   const owed=[];
@@ -150,6 +151,11 @@ export function calculateLedgerState(entries, citizenId){
 
     if(e.type==="payment"){
       totalPaid += amt;
+      continue;
+    }
+
+    if(e.type==="return" || (e.type==="charge" && String(e.note||"").trim()==="Return")){
+      totalReturned += amt;
       continue;
     }
 
@@ -187,12 +193,15 @@ export function calculateLedgerState(entries, citizenId){
   }
 
   const activeRemaining=owed.reduce((sum,item)=>sum+item.remaining,0);
-  const rawBalance=activeRemaining-totalPaid;
+  // A return refunds part of an unapplied payment, moving the balance back
+  // toward zero. A return can never create a new contribution charge.
+  const rawBalance=activeRemaining-totalPaid+totalReturned;
   const balance=rawBalance;
 
   return {
     totalCharged,
     totalPaid,
+    totalReturned,
     totalWaived,
     appliedWaiver:totalWaived-waiverCredit,
     deferredRemaining,
@@ -222,12 +231,13 @@ export function getOwedBreakdown(entries, citizenId){
 }
 
 export function recalcFromLedger(entries, citizenId){
-  let grossCharges=0, totalPaid=0, totalWaived=0;
+  let grossCharges=0, totalPaid=0, totalReturned=0, totalWaived=0;
   for(const e of entries){
     if(!e || typeof e.amount === 'undefined') continue;
     const amt=Number(e.amount)||0;
     if(e.type==="charge" || e.type==="sanitationFee") grossCharges+=amt;
     else if(e.type==="payment") totalPaid+=amt;
+    else if(e.type==="return" || (e.type==="charge" && String(e.note||"").trim()==="Return")) totalReturned+=amt;
     else if(e.type==="forgive") totalWaived+=amt;
   }
   const allocation=allocateLedgerPayments(entries, citizenId);
