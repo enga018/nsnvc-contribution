@@ -83,21 +83,20 @@ in `store.js`; Firebase bootstrap lives in `firebase.js`.
 
 ### Shared state (`state.js`)
 
-```
-store            // the active data store (local or firebase)
-loggedIn, isLocalMode
-citizensUnsub    // Firestore onSnapshot unsubscribe
-allCitizens      // rows used for rendering (may carry `.ledger`)
-rawCitizens      // the raw subscriber list (no `.ledger`)
-ledgerCache      // Map<citizenId, entries[]>
-periodStatsCache // memoised { periods, stats }
-statsMemo / statsRevision  // memoised per-citizen balance/deferred
-excludedPeriods  // REMOVED — do not reintroduce
+`state.js` owns the shared mutable state used across modules. UI-local state such
+as `store`, login state, filters, and rendering state remains in `index.html`.
+
+```js
+ledgerCache, ledgerCacheSyncAt
+periodStatsCache
 deferredPeriods, deferredPeriodUpdatedAt, deferredPeriodOverrides
-adminFilter, adminShown, adminFilteredList
-// The old dashboard period selector/state was removed in v1.34.x.
-// `periodFilter` remains only where required by reporting/export logic.
+rawCitizens, allCitizens
+fullLedgerSnapshotAt, fullLedgerSnapshotCount
+syncPendingWrites
+statsMemo / statsRevision
 ```
+
+Do not reintroduce the obsolete `excludedPeriods` state or a `storeHost` boundary.
 
 ---
 
@@ -591,17 +590,50 @@ done slowly.
 5. `firebase.js` — bootstrap extracted from `index.html`. ✅
 6. `sw.js` / `VERSION` / footer — precache, cache bump, full CI and browser verification. ✅
 
-**Later (separate, not part of this stage):** the ~36 `render*`/`build*`/
-`attach*`/`open*` functions + event wiring still live in `index.html`, sliced
-lowest-risk-first (pure formatters → sheet HTML builders → DOM mutation). Keep
-any render path working when a `store.*` call fails — reuse the blocking
-failure screen (§7) rather than inventing another.
-
+**Next UI phase (separate from Stage 3):** the remaining `render*`/`build*`/
+`attach*`/`open*` functions and event wiring stay in `index.html` initially.
+Extract them lowest-risk-first (pure formatters → sheet HTML builders → DOM
+mutation), one coherent change at a time with the full checks between changes.
+Do not combine this phase with Android packaging.
 
 
 ---
 
-## 9. Git conventions
+## 9. Next steps
+
+### 9.1 Android installable app — TWA (separate step)
+
+The current application is a working PWA deployed on GitHub Pages. A future
+step is to package that PWA as an **Android Trusted Web Activity (TWA)**.
+
+**Status: planned — not started.**
+
+Scope for the TWA step:
+- Package the existing production PWA; do not rewrite the ledger/store/state
+  architecture for Android packaging.
+- Keep Firebase Authentication and Firestore as the existing backend.
+- Produce an installable Android APK (and, if useful later, an AAB) that opens
+  the production PWA.
+- Configure the Android package, app name/icon, Digital Asset Links, signing,
+  and release workflow.
+- Verify login, dashboard, person account, defer/payment actions, exports,
+  backup/restore, offline behavior, and service-worker/cache behavior on a
+  physical Android device.
+
+TWA packaging is intentionally a separate step from the Stage 3 refactor and
+from the future `index.html` UI extraction.
+
+### 9.2 Stale PR cleanup
+
+**PR #24 (`fix: exclude Return from period lists`) was closed on 2026-09-30 as
+superseded.** Its two-line change targeted the old data model where a Return
+was stored as `type: "charge"` with `note: "Return"`. The current ledger model
+uses a dedicated Return transaction type, and the later Return/period cleanup
+work superseded this PR. Do not reopen or merge PR #24.
+
+---
+
+## 10. Git conventions
 
 - `main` is the deploy branch; pushing to it triggers Pages and the version check.
 - Commit messages here use a short `type: summary` line (`feat:`, `fix:`,
