@@ -53,5 +53,6 @@ classicMatches.forEach((_, i) => syntaxCheck(join(dir, `classic${i}.js`), `class
 // Also verify the engine module parses.
 syntaxCheck(join(root, "ledger.js"), "ledger.js");
 syntaxCheck(join(root, "store.js"), "store.js");
+syntaxCheck(join(root, "firebase.js"), "firebase.js");
 
 console.log("All inline scripts parse.");
