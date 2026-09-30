@@ -2453,7 +2453,7 @@ async function doExportPdf(){
         doc.text(jobPrefix, jobX, y);
         jobX += doc.getTextWidth(jobPrefix);
         if(boldNumber){
-          doc.setFont(undefined, "bold");
+          doc.setFont("helvetica", "bold");
           doc.text(boldNumber, jobX, y);
           jobX += doc.getTextWidth(boldNumber);
         }
