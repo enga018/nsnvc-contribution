@@ -2323,14 +2323,14 @@ async function doExportCsv(){
     // Firestore is not queried again when the ledger cache is complete.
     const picker = beginTextFileSave(filename, "text/csv");
     const data = await getExportData();
-    let csv = "Name, Job Card, Outstanding (₹), Payment History\\n";
+    let csv = "Name, Job Card, Outstanding (₹), Payment History\r\n";
     for(const c of data.citizens){
       const entries = data.ledgers[c.id] || [];
       const balance = calculateLedgerState(entries, c.id).balance;
       if(!(balance > 0)) continue;
       const payments = entries.filter(e=>e.type==="payment")
         .map(e=>entryLabel(e)+" "+fmt(e.amount)).join("; ");
-      csv += [csvCell(c.name),csvCell(c.jobCard),csvNumber(balance),csvCell(payments)].join(",")+"\\n";
+      csv += [csvCell(c.name),csvCell(c.jobCard),csvNumber(balance),csvCell(payments)].join(",")+"\r\n";
     }
     if(picker){
       await finishTextFileSave(picker, csv);
