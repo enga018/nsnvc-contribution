@@ -2445,7 +2445,7 @@ async function doExportPdf(){
       if(slashIndex >= 0){
         const jobPrefix = jobCardText.slice(0, slashIndex + 1);
         const afterSlash = jobCardText.slice(slashIndex + 1);
-        const numberMatch = afterSlash.match(/^\\d+/);
+        const numberMatch = afterSlash.match(/^\d+/);
         const boldNumber = numberMatch ? numberMatch[0] : "";
         const jobSuffix = afterSlash.slice(boldNumber.length);
         let jobX = margin;
