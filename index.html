@@ -2416,7 +2416,7 @@ async function doExportPdf(){
       if(y > doc.internal.pageSize.getHeight() - 36){ doc.addPage(); y = 20; }
 
       // Row 1: name followed immediately by the authoritative total remaining.
-      doc.setFont(undefined, "bold");
+      doc.setFont(undefined, "normal");
       doc.setFontSize(11);
       const amountW = doc.getTextWidth(r.amount);
       const nameMaxW = pageW - margin*2 - amountW - 8;
@@ -2466,6 +2466,7 @@ async function doExportPdf(){
       }
 
       if(r.charges){
+        doc.setFont(undefined, "normal");
         const chargeMaxW = 70;
         const chargeLines = doc.splitTextToSize(r.charges, chargeMaxW);
         doc.setTextColor(20, 20, 20);
@@ -2475,6 +2476,7 @@ async function doExportPdf(){
 
       // Row 3: payments (right, green)
       if(r.payments){
+        doc.setFont(undefined, "normal");
         rightY += 1;
         const payMaxW = 70;
         const payLines = doc.splitTextToSize(r.payments, payMaxW);
@@ -2486,6 +2488,7 @@ async function doExportPdf(){
       // Row 4: waived amount (right, grey). Waivers reduce the balance but
       // are not payments, so they are shown separately.
       if(r.waived){
+        doc.setFont(undefined, "normal");
         rightY += 1;
         const waivedMaxW = 70;
         const waivedLines = doc.splitTextToSize(r.waived, waivedMaxW);
