@@ -894,6 +894,10 @@ export function makeFirebaseStore({ auth, db, fs, au }){
       const periods=deferredState.periods.slice();
       const updatedAt={...deferredState.updatedAt};
       let deferredChanged=false;
+
+      // Invalidate the ledger cache so transaction history will refresh
+      // and show the renamed period, instead of serving stale entries.
+      invalidateLedgerCache();
       if(periods.includes(oldName)){
         const nextPeriods=periods.map(p=>p===oldName?newName:p);
         const deduped=[...new Set(nextPeriods)];
