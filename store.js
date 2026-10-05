@@ -250,19 +250,84 @@ export function makeLocalStore(){
     },
     async deleteAll(onProgress){data.citizens={};data.meta={periods:[],deferredUploads:[]};persist();notify();invalidateLedgerCache();if(onProgress)onProgress(1,1);},
     async renamePeriod(oldPeriod, newPeriod, onProgress){
-      let count=0;
-      for(const [id,c] of Object.entries(data.citizens)){
-        if(c.ledger){
-          for(const e of c.ledger){
-            if(e.type==="charge" && e.note===oldPeriod && String(e.note||"").trim()!=="Return"){
-              e.note=newPeriod;
-              count++;
+      // Rename the period label on every matching charge entry. Keep the
+      // in-memory ledger cache in sync immediately so Transaction History and
+      // Manage Periods show the new name without waiting for a citizen update.
+      let docs=[];
+      try{
+        const snap=await fs.getDocs(
+          fs.query(
+            fs.collectionGroup(db,"ledger"),
+            fs.where("type","==","charge"),
+            fs.where("note","==",oldPeriod)
+          )
+        );
+        docs=snap.docs;
+      }catch(err){
+        console.warn("Indexed period rename query failed; using fallback.", err);
+        const citizens=Array.isArray(rawCitizens)?rawCitizens:[];
+        const cacheComplete=citizens.length>0 && citizens.every(c=>Array.isArray(ledgerCache.get(c.id)));
+        if(cacheComplete){
+          for(const c of citizens){
+            for(const entry of ledgerCache.get(c.id)||[]){
+              if(entry.type==="charge" && entry.note===oldPeriod && String(entry.note||"").trim()!=="Return"){
+                docs.push({
+                  ref:fs.doc(db,"citizens",c.id,"ledger",entry.entryId),
+                  data:()=>entry
+                });
+              }
+            }
+          }
+        }else{
+          for(let i=0;i<citizens.length;i+=20){
+            const chunks=await Promise.all(citizens.slice(i,i+20).map(c=>fs.getDocs(fs.collection(db,"citizens",c.id,"ledger"))));
+            for(const snap of chunks){
+              for(const ld of snap.docs){
+                if(ld.data().type==="charge" && ld.data().note===oldPeriod && String(ld.data().note||"").trim()!=="Return") docs.push(ld);
+              }
             }
           }
         }
       }
-      persist(); notify();
-      if(onProgress) onProgress(count, count);
+
+      let batch=fs.writeBatch(db), ops=0, count=0;
+      const affectedIds=new Set();
+      const cacheUpdates=[];
+      const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
+
+      for(const ld of docs){
+        batch.update(ld.ref,{note:newPeriod});
+        if(++ops>=400) await flush();
+        count++;
+
+        const citizenRef=ld.ref.parent.parent;
+        const citizenId=citizenRef ? citizenRef.id : "";
+        if(citizenId) affectedIds.add(citizenId);
+        cacheUpdates.push({citizenId,entryId:ld.id||ld.ref.id});
+      }
+      await flush();
+
+      // Update cached ledgers immediately. This is essential because the
+      // period UI derives its names from ledger entry notes.
+      for(const {citizenId,entryId} of cacheUpdates){
+        if(!citizenId) continue;
+        const entries=ledgerCache.get(citizenId);
+        if(!Array.isArray(entries)) continue;
+        const entry=entries.find(e=>e.entryId===entryId);
+        if(entry) entry.note=newPeriod;
+      }
+
+      // A rename changes only labels, not amounts, but it changes the period
+      // index and every UI that derives period names from the ledger.
+      setPeriodStatsCache(null);
+      invalidateStatsMemo();
+      dashboardCache.writeDashboardCache([], Object.fromEntries(
+        [...affectedIds]
+          .filter(id=>Array.isArray(ledgerCache.get(id)))
+          .map(id=>[id,ledgerCache.get(id)])
+      ));
+      markSyncing();
+      if(onProgress) onProgress(count,count);
       return count;
     },
     async getDeferredPeriods(){
