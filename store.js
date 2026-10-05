@@ -813,11 +813,13 @@ export function makeFirebaseStore({ auth, db, fs, au }){
         const snap=await fs.getDocs(
           fs.query(
             fs.collectionGroup(db,"ledger"),
-            fs.where("type","==","charge"),
-            fs.where("note","==",oldName)
+            fs.where("type","==","charge")
           )
         );
-        docs=snap.docs;
+        docs=snap.docs.filter(ld=>{
+          const note=String(ld.data()?.note||"").trim();
+          return note===oldName && note!=="Return";
+        });
       }catch(err){
         console.warn("Indexed period rename query failed; using fallback.", err);
         const citizens=Array.isArray(rawCitizens)?rawCitizens:[];
