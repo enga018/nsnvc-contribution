@@ -169,7 +169,7 @@ covers the rules below.
   `{ totalCharged, totalPaid, totalWaived, appliedWaiver, deferredRemaining,
   owed, activeRemaining, unappliedPayment, balance }`, where
   `balance = activeRemaining − totalPaid`.
-- `allocateLedgerPayments` / `getOwedBreakdown` — FIFO allocation of payments
+- `allocateLedgerPayments` / `getOwedBreakdown` — waiver then payment allocation (active charges only, excluding deferred); used only for person-page owed breakdown
   to charges; exposes only active owed items.
 - `recalcFromLedger(entries, citizenId)` — the cached summary
   (`totalCharged`, `totalPaid`, `balance`, `deferredTotal`) written back to the
