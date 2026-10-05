@@ -1088,6 +1088,10 @@ setPeriodStatsCache(null);
     msg.innerHTML=`<div class="notice info" style="background:var(--green-soft);color:var(--green-dark)">Done — ${renamed} rename${renamed===1?"":"s"}.</div>`;
     toast("Periods updated");
     await refreshDashboard();
+    // Re-open Manage Periods to show the renamed periods and refresh the list.
+    // Without this, the old and new period names both appear.
+    closeSettings();
+    await openManagePeriods();
   }catch(err){
     console.error(err);
     msg.innerHTML='<div class="notice err">Failed to save.</div>';
