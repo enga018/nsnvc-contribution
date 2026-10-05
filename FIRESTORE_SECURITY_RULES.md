@@ -26,6 +26,21 @@ service cloud.firestore {
     match /meta/{doc} {
       allow read, write: if request.auth != null
         && request.auth.token.email == "YOUR_ADMIN_EMAIL";
+
+      // Collection-group queries for ledger and pending payments.
+      // The app reads ALL ledgers / pending payments in one query
+      // (store.js: collectionGroup("ledger"), collectionGroup("pendingPayments")).
+      // Firestore only allows a collection-group query when a rule matches the
+      // group itself, so these blocks are required.
+      match /{path=**}/ledger/{doc} {
+        allow read, write: if request.auth != null
+          && request.auth.token.email == "YOUR_ADMIN_EMAIL";
+      }
+
+      match /{path=**}/pendingPayments/{doc} {
+        allow read, write: if request.auth != null
+          && request.auth.token.email == "YOUR_ADMIN_EMAIL";
+      }
     }
   }
 }
