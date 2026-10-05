@@ -849,6 +849,19 @@ export function makeFirebaseStore({ auth, db, fs, au }){
       }
       await flush();
 
+      // Keep the persistent imported-period index in sync. Manage Periods
+      // reads this metadata, so changing ledger notes alone leaves the old
+      // period visible.
+      const importedPeriods=await this.getImportedPeriods();
+      const nextImportedPeriods=importedPeriods.map(p=>String(p||"").trim()===oldName?newName:p);
+      if(JSON.stringify(nextImportedPeriods)!==JSON.stringify(importedPeriods)){
+        await fs.setDoc(
+          fs.doc(db,"meta","imports"),
+          {periods:nextImportedPeriods},
+          {merge:true}
+        );
+      }
+
       // Migrate the global deferred-period metadata. Preserve the original
       // timestamp so renaming is not interpreted as a fresh defer action.
       const deferredState=normalizeDeferredPeriodState(await this.getDeferredPeriods());
