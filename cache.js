@@ -61,7 +61,8 @@ export function createDashboardCache(){
     });
   }
 
-  function writeDashboardCache(citizens, ledgers){
+  function writeDashboardCache(citizens, ledgers, options={}){
+    const forceRefreshIds=new Set(options.forceRefreshIds||[]);
     openDashboardCache().then(db=>{
       if(!db) return;
       try{
@@ -79,7 +80,7 @@ export function createDashboardCache(){
             id,
             entries:entries||[],
             cachedAt,
-            syncAt:firestoreTimeMs((citizens||[]).find(c=>c.id===id)?.updatedAt)||cachedAt
+            syncAt:forceRefreshIds.has(id) ? 0 : (firestoreTimeMs((citizens||[]).find(c=>c.id===id)?.updatedAt)||cachedAt)
           });
         }
       }catch(err){
