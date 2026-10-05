@@ -800,58 +800,122 @@ export function makeFirebaseStore({ auth, db, fs, au }){
       await flush();batch=fs.writeBatch(db);ops=0;for(const id of ["deferredPeriods","deferredPeriodOverrides","imports"]){batch.delete(fs.doc(db,"meta",id));if(++ops>=400)await flush();}await flush();invalidateLedgerCache();markSyncing();
     },
     async renamePeriod(oldPeriod, newPeriod, onProgress){
-      // Query only the charge entries belonging to this period. The previous
-      // implementation scanned every household's entire ledger before finding
-      // the matching entries, which made a simple rename unnecessarily slow.
+      const oldName=String(oldPeriod||"").trim();
+      const newName=String(newPeriod||"").trim();
+      if(!oldName || !newName || oldName===newName) return 0;
+
+      // Rename every ledger entry carrying the period label. The same
+      // operation also migrates all period-level deferral metadata so the
+      // old label cannot survive in Transaction History, Manage Periods,
+      // or deferral resolution.
       let docs=[];
       try{
         const snap=await fs.getDocs(
           fs.query(
             fs.collectionGroup(db,"ledger"),
             fs.where("type","==","charge"),
-            fs.where("note","==",oldPeriod)
+            fs.where("note","==",oldName)
           )
         );
         docs=snap.docs;
       }catch(err){
-        // Fallback for older/rules configurations where the compound query is
-        // rejected: use the in-memory ledger cache when complete, otherwise
-        // read ledgers in bounded parallel batches.
         console.warn("Indexed period rename query failed; using fallback.", err);
         const citizens=Array.isArray(rawCitizens)?rawCitizens:[];
-        const cacheComplete=citizens.length>0 && citizens.every(c=>Array.isArray(ledgerCache.get(c.id)));
-        if(cacheComplete){
-          for(const c of citizens){
-            for(const entry of ledgerCache.get(c.id)||[]){
-              if(entry.type==="charge" && entry.note===oldPeriod && String(entry.note||"").trim()!=="Return"){
-                docs.push({
-                  ref:fs.doc(db,"citizens",c.id,"ledger",entry.entryId),
-                  data:()=>entry
-                });
-              }
-            }
-          }
-        }else{
-          for(let i=0;i<citizens.length;i+=20){
-            const chunks=await Promise.all(citizens.slice(i,i+20).map(c=>fs.getDocs(fs.collection(db,"citizens",c.id,"ledger"))));
-            for(const snap of chunks){
-              for(const ld of snap.docs){
-                if(ld.data().type==="charge" && ld.data().note===oldPeriod && String(ld.data().note||"").trim()!=="Return") docs.push(ld);
-              }
+        for(let i=0;i<citizens.length;i+=20){
+          const slice=citizens.slice(i,i+20);
+          const chunks=await Promise.all(slice.map(c=>fs.getDocs(fs.collection(db,"citizens",c.id,"ledger"))));
+          for(const snap of chunks){
+            for(const ld of snap.docs){
+              const e=ld.data();
+              if(e.type==="charge" && String(e.note||"").trim()===oldName && String(e.note||"").trim()!=="Return") docs.push(ld);
             }
           }
         }
       }
 
       let batch=fs.writeBatch(db), ops=0, count=0;
+      const affectedIds=new Set();
+      const cacheUpdates=[];
       const flush=async()=>{ if(ops>0){ await batch.commit(); batch=fs.writeBatch(db); ops=0; } };
+
       for(const ld of docs){
-        batch.update(ld.ref,{note:newPeriod});
+        batch.update(ld.ref,{note:newName});
         if(++ops>=400) await flush();
         count++;
+        const citizenRef=ld.ref.parent.parent;
+        const citizenId=citizenRef ? citizenRef.id : "";
+        if(citizenId) affectedIds.add(citizenId);
+        cacheUpdates.push({citizenId,entryId:ld.id||ld.ref.id});
       }
       await flush();
-      invalidateLedgerCache();
+
+      // Migrate the global deferred-period metadata. Preserve the original
+      // timestamp so renaming is not interpreted as a fresh defer action.
+      const deferredState=normalizeDeferredPeriodState(await this.getDeferredPeriods());
+      const periods=deferredState.periods.slice();
+      const updatedAt={...deferredState.updatedAt};
+      let deferredChanged=false;
+      if(periods.includes(oldName)){
+        const nextPeriods=periods.map(p=>p===oldName?newName:p);
+        const deduped=[...new Set(nextPeriods)];
+        const oldAt=Number(updatedAt[oldName])||0;
+        const newAt=Number(updatedAt[newName])||0;
+        updatedAt[newName]=Math.max(oldAt,newAt);
+        delete updatedAt[oldName];
+        const nextMeta={periods:deduped,updatedAt};
+        await fs.setDoc(fs.doc(db,"meta","deferredPeriods"),nextMeta,{merge:true});
+        setDeferredPeriodUpdatedAt(updatedAt);
+        deferredChanged=true;
+      }else if(Object.keys(updatedAt).length){
+        setDeferredPeriodUpdatedAt(updatedAt);
+      }
+
+      // Migrate period-keyed per-citizen overrides. Entry-ID overrides are
+      // intentionally untouched because they are independent of the label.
+      const rawOverrides=await this.getDeferredPeriodOverrides();
+      const normalized=normalizeDeferredPeriodOverrides(rawOverrides).overrides;
+      let overridesChanged=false;
+      for(const citizenId of Object.keys(normalized)){
+        const map=normalized[citizenId];
+        if(!Object.prototype.hasOwnProperty.call(map,oldName)) continue;
+        const oldState=map[oldName];
+        const newState=map[newName];
+        if(newState){
+          const oldAt=Number(oldState?.at)||0;
+          const newAt=Number(newState?.at)||0;
+          if(oldAt>=newAt) map[newName]={value:Boolean(oldState.value),at:oldAt};
+        }else{
+          map[newName]={value:Boolean(oldState.value),at:Number(oldState.at)||0};
+        }
+        delete map[oldName];
+        overridesChanged=true;
+      }
+      if(overridesChanged){
+        await fs.setDoc(fs.doc(db,"meta","deferredPeriodOverrides"),normalized,{merge:false});
+        setDeferredPeriodOverrides(normalized);
+      }
+
+      // Update every relevant in-memory copy immediately.
+      for(const {citizenId,entryId} of cacheUpdates){
+        const entries=ledgerCache.get(citizenId);
+        if(!Array.isArray(entries)) continue;
+        const entry=entries.find(e=>e.entryId===entryId);
+        if(entry) entry.note=newName;
+      }
+      if(!deferredChanged){
+        setDeferredPeriodUpdatedAt({...updatedAt});
+      }
+      if(!overridesChanged){
+        setDeferredPeriodOverrides(normalized);
+      }
+
+      setPeriodStatsCache(null);
+      invalidateStatsMemo();
+      dashboardCache.writeDashboardCache([],Object.fromEntries(
+        [...affectedIds]
+          .filter(id=>Array.isArray(ledgerCache.get(id)))
+          .map(id=>[id,ledgerCache.get(id)])
+      ));
       markSyncing();
       if(onProgress) onProgress(count,count);
       return count;
