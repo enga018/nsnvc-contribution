@@ -626,7 +626,7 @@ async function login(){
   try{ await store.signIn(email, pass); }
   catch(err){
     const msg = err.code ? `${err.code}: ${err.message}` : err.message || "Login failed";
-    $("loginErr").innerHTML=`<div class="notice err">${msg}</div>`;
+    $("loginErr").innerHTML=`<div class="notice err">${esc(msg)}</div>`;
     console.error(err);
     btn.disabled=false;
   }
