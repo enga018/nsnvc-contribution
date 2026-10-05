@@ -3,7 +3,7 @@
 // install/activate a fresh worker. If it's left stale, already-installed
 // PWAs keep serving whatever was cached under the old name indefinitely
 // (this has silently happened before: see the v1.25.6 and v1.28.0 fixes).
-const CACHE_NAME = 'nsnvc-tracker-v1.35.8';
+const CACHE_NAME = 'nsnvc-tracker-v1.35.9';
 const urlsToCache = [
   './',
   './index.html',
@@ -38,21 +38,17 @@ self.addEventListener('fetch', event => {
   // handling; it was never intentionally cached before either.
   if (!isAppShell) return;
 
-  // Stale-while-revalidate: answer instantly from cache (fast, works
-  // offline on patchy connections — see README), but always also refetch
-  // in the background and update the cache for next time. A pure
-  // cache-first strategy meant this app shell could go stale under the
-  // *same* CACHE_NAME indefinitely unless someone remembered to bump the
-  // version string; this self-heals within one extra reopen instead.
+  // Network-first: always use the current deployed app shell when online.
+  // The previous stale-while-revalidate strategy returned the cached HTML/JS
+  // immediately, so a normal browser session could keep running an older app
+  // even after a new service worker had been deployed. Cache is only the
+  // offline fallback now.
   event.respondWith(
     caches.open(CACHE_NAME).then(cache =>
-      cache.match(event.request).then(cached => {
-        const network = fetch(event.request).then(response => {
-          if (response && response.ok) cache.put(event.request, response.clone());
-          return response;
-        }).catch(() => cached);
-        return cached || network;
-      })
+      fetch(event.request).then(response => {
+        if (response && response.ok) cache.put(event.request, response.clone());
+        return response;
+      }).catch(() => cache.match(event.request))
     )
   );
 });
