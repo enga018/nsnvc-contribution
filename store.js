@@ -851,6 +851,30 @@ export function makeFirebaseStore({ auth, db, fs, au }){
       }
       await flush();
 
+      // Mark affected households as changed as well as their ledger entries.
+      // Manage Periods refreshes ledgers using citizen.updatedAt; without this
+      // timestamp bump it can reload a stale pre-rename cache on the next open.
+      if(affectedIds.size){
+        let citizenBatch=fs.writeBatch(db), citizenOps=0;
+        const flushCitizens=async()=>{
+          if(citizenOps>0){
+            await citizenBatch.commit();
+            citizenBatch=fs.writeBatch(db);
+            citizenOps=0;
+          }
+        };
+        for(const citizenId of affectedIds){
+          citizenBatch.set(
+            fs.doc(db,"citizens",citizenId),
+            {updatedAt:fs.serverTimestamp()},
+            {merge:true}
+          );
+          citizenOps++;
+          if(citizenOps>=300) await flushCitizens();
+        }
+        await flushCitizens();
+      }
+
       // Keep the persistent imported-period index in sync. Manage Periods
       // reads this metadata, so changing ledger notes alone leaves the old
       // period visible.
@@ -916,6 +940,9 @@ export function makeFirebaseStore({ auth, db, fs, au }){
         if(!Array.isArray(entries)) continue;
         const entry=entries.find(e=>e.entryId===entryId);
         if(entry) entry.note=newName;
+        // Prevent the immediate Manage Periods refresh from treating the
+        // pre-rename citizen snapshot as newer than this in-memory ledger.
+        ledgerCacheSyncAt.set(citizenId,Date.now());
       }
       if(!deferredChanged){
         setDeferredPeriodUpdatedAt({...updatedAt});
