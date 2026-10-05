@@ -957,7 +957,7 @@ export function makeFirebaseStore({ auth, db, fs, au }){
         [...affectedIds]
           .filter(id=>Array.isArray(ledgerCache.get(id)))
           .map(id=>[id,ledgerCache.get(id)])
-      ));
+      ),{forceRefreshIds:[...affectedIds]});
       markSyncing();
       if(onProgress) onProgress(count,count);
       return count;
