@@ -19,7 +19,6 @@ import { firestoreTimeMs } from "./util.js";
 
 const DASHBOARD_CACHE_DB = "nsnvc-dashboard-cache";
 const DASHBOARD_CACHE_VERSION = 1;
-const DASHBOARD_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function createDashboardCache(){
   let dashboardCacheReady = null;
@@ -52,10 +51,11 @@ export function createDashboardCache(){
       const citizensReq=tx.objectStore("citizens").getAll();
       const ledgersReq=tx.objectStore("ledgers").getAll();
       tx.oncomplete=()=>{
-        const now=Date.now();
-        const citizens=citizensReq.result.filter(x=>now-(x.cachedAt||0)<=DASHBOARD_CACHE_MAX_AGE_MS);
-        const ledgers=ledgersReq.result.filter(x=>now-(x.cachedAt||0)<=DASHBOARD_CACHE_MAX_AGE_MS);
-        resolve({citizens,ledgers});
+        // Treat IndexedDB as a fast starting point, not as authoritative data.
+        // Do not discard useful snapshots just because the user has been away
+        // for more than a week. The live Firestore subscription replaces citizen
+        // summaries, and ledger sync timestamps let the store refresh changed data.
+        resolve({citizens:citizensReq.result,ledgers:ledgersReq.result});
       };
       tx.onerror=()=>resolve(null);
     });
