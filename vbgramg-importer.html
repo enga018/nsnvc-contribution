@@ -52,7 +52,7 @@ button,.btn{display:inline-flex;align-items:center;justify-content:center;border
 import { firebaseConfig } from "./firebase.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, writeBatch, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, writeBatch, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const $ = id => document.getElementById(id);
 const TRUSTED_FETCHER = "https://nsnvc-vbgramg-proxy.enga018.workers.dev/report";
@@ -145,6 +145,9 @@ async function parseAndRender(html,label) {
   message("Saved "+records.length+" active records to the council database. "+deletedSkipped+" deleted record(s) were excluded and not saved.","info");
 }
 async function saveImport(activeRecords,sourceUrl,deletedSkipped) {
+  const stateRef=doc(db,"vbgramgImportState","current");
+  const previousState=await getDoc(stateRef);
+  const previousImportId=previousState.exists()?previousState.data().activeImportId:null;
   const importRef=doc(collection(db,"vbgramgImports"));
   const importId=importRef.id;
   const recordsRef=collection(db,"vbgramgImports",importId,"records");
@@ -161,10 +164,26 @@ async function saveImport(activeRecords,sourceUrl,deletedSkipped) {
     importedByEmail:auth.currentUser?.email||null,
     importedAt:serverTimestamp(),status:"complete"
   });
-  await setDoc(doc(db,"vbgramgImportState","current"),{
+  // Switch the pointer only after every active record has been written.
+  await setDoc(stateRef,{
     activeImportId:importId,sourceUrl,recordCount:activeRecords.length,
     deletedSkipped,updatedAt:serverTimestamp()
   });
+  // Remove the previous snapshot after the new one is active, so records that
+  // have since become deleted are not retained in old import snapshots.
+  if(previousImportId && previousImportId!==importId) {
+    try {
+      const oldRecords=await getDocs(collection(db,"vbgramgImports",previousImportId,"records"));
+      for(let offset=0;offset<oldRecords.docs.length;offset+=400) {
+        const batch=writeBatch(db);
+        for(const oldRecord of oldRecords.docs.slice(offset,offset+400)) batch.delete(oldRecord.ref);
+        await batch.commit();
+      }
+      await deleteDoc(doc(db,"vbgramgImports",previousImportId));
+    } catch(cleanupError) {
+      console.warn("New VB-GRAMG import is active, but cleanup of the previous snapshot failed.",cleanupError);
+    }
+  }
   return importId;
 }
 async function loadSavedImport() {
