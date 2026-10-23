@@ -3,10 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 android {
-    namespace = "in.enga018.nsnvc.vbgramg"
+    namespace = "com.enga018.nsnvc.vbgramg"
     compileSdk = 35
     defaultConfig {
-        applicationId = "in.enga018.nsnvc.vbgramg"
+        applicationId = "com.enga018.nsnvc.vbgramg"
         minSdk = 23
         targetSdk = 35
         versionCode = 1
