@@ -61,7 +61,6 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 let records = [];
-let activeImportId = null;
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function message(text, kind="info"){ $("message").innerHTML = '<div class="notice '+kind+'">'+esc(text)+'</div>'; }
 onAuthStateChanged(auth, user => {
@@ -131,9 +130,8 @@ async function parseAndRender(html,label) {
     const slash=jobCard.lastIndexOf("/");
     output.push({serial:output.length+1,jobCard,jcNo:slash>=0?jobCard.slice(slash+1).trim():jobCard,household,applicant,applicantNo:occurrence,uniqueId:jobCard+"/"+occurrence,status,deleted:false});
   }
-  if(!output.length) throw new Error("No active records found using the existing importer column rules. No saved import was changed.");
+  if(!output.length) throw new Error("No active records found using the existing importer column rules. Nothing was saved.");
   records=output;
-  activeImportId=null;
   $("totalCount").textContent=records.length.toLocaleString("en-IN");
   $("activeCount").textContent=records.length.toLocaleString("en-IN");
   $("deletedCount").textContent=deletedSkipped.toLocaleString("en-IN");
