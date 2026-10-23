@@ -43,7 +43,7 @@ button,.btn{display:inline-flex;align-items:center;justify-content:center;border
       <p class="muted">Only active records are stored. Deleted records are excluded before saving.</p>
       <div id="recordTable" class="table-wrap"></div>
       <div class="actions"><button id="backBtn" type="button">Back to URL</button><button id="exportBtn" type="button">Export visible CSV</button></div>
-      <p class="muted">Saved in a separate Firestore collection for authorised council users. The contribution tracker and ledger are not modified.</p>
+      <p class="muted">Saved in the dedicated Supabase project for authorised council users. The contribution tracker and ledger are not modified.</p>
     </section>
   </div>
 </main>
@@ -135,7 +135,7 @@ async function parseAndRender(html,label) {
     output.push({serial:output.length+1,jobCard,jcNo:slash>=0?jobCard.slice(slash+1).trim():jobCard,household,applicant,applicantNo:occurrence,uniqueId:jobCard+"/"+occurrence,status,deleted:false});
   }
   if(!output.length) throw new Error("No active records found using the existing importer column rules. No saved import was changed.");
-  message("Saving "+output.length+" active records to the council database…","warn");
+  message("Saving "+output.length+" active records to Supabase…","warn");
   let importId;
   try {
     importId=await saveImport(output,label,deletedSkipped);
