@@ -120,7 +120,7 @@ async function parseAndRender(html,label) {
   let previousHousehold = "", deletedSkipped = 0;
   for(let i=2;i<table.rows.length;i++) {
     const cells = [...table.rows[i].cells].map(cell=>(cell.innerText||cell.textContent||"").trim());
-    if(!cells[0] || !/^\\d+(?:\\.\\d+)?$/.test(cells[0])) continue;
+    if(!cells[0] || !/^\d+(?:\.\d+)?$/.test(cells[0])) continue;
     const jobCard=cells[8]||"";
     let household=cells[1]||"";
     if(household) previousHousehold=household; else household=previousHousehold;
