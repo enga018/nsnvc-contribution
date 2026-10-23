@@ -43,6 +43,8 @@ button,.btn{display:inline-flex;align-items:center;justify-content:center;border
       <p class="muted">Only the existing New Serchhip North URL is preconfigured. For another block or village, paste the exact Registration Application Register URL from the official portal below; the importer will not guess location codes.</p>
       <div class="field"><label for="sourceUrl">VB-GRAMG registration page URL</label><input id="sourceUrl" type="url" value="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html"></div>
       <div class="actions"><button id="fetchBtn">Load Records</button><a class="btn secondary" id="openSource" href="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html" target="_blank" rel="noopener">Open source page</a></div>
+      <div class="field" style="margin-top:12px"><label for="fetcherUrl">Optional server-side fetcher endpoint</label><input id="fetcherUrl" type="url" placeholder="https://your-worker.example.workers.dev"></div>
+      <p class="muted">If direct browser fetching fails, the importer can try this endpoint. It must be a trusted endpoint configured to retrieve only the fixed New Serchhip North report. See <code>vbgramg-fetcher/worker.js</code> in the repository. Do not enter an unknown public proxy.</p>
       <div class="field" style="margin-top:14px"><label for="htmlFile">Or import a saved webpage (.html/.htm)</label><input id="htmlFile" type="file" accept=".html,.htm,text/html"></div>
       <div id="message" aria-live="polite"></div>
     </section>
@@ -110,13 +112,27 @@ $("fetchBtn").addEventListener("click", async () => {
   const url = $("sourceUrl").value.trim();
   if(!/^https:\/\//i.test(url)){ message("Enter a valid HTTPS source URL.", "err"); return; }
   $("fetchBtn").disabled = true; message("Fetching source page…");
+  let html = "";
+  let loadedFrom = "";
   try{
-    const response = await fetch(url, {cache:"no-store"});
-    if(!response.ok) throw new Error("Website returned HTTP "+response.status+".");
-    const html = await response.text();
-    parseAndRender(html, url);
+    try {
+      const response = await fetch(url, {cache:"no-store", credentials:"omit"});
+      if(!response.ok) throw new Error("Direct request returned HTTP "+response.status+".");
+      html = await response.text();
+      loadedFrom = "direct browser request";
+    } catch(directError) {
+      const fetcher = $("fetcherUrl").value.trim();
+      if(fetcher && url !== "https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html") throw new Error("The configured fetcher is restricted to the fixed New Serchhip North report URL. Restore that exact URL before using the fetcher.");
+      if(!fetcher) throw new Error("Direct request failed ("+(directError?.message || String(directError))+"). If this is a CORS restriction, deploy the repository's trusted server-side fetcher and enter its endpoint above. HTTP 401/403 from the official site may require a valid session and cannot be fixed by CORS alone.");
+      if(!/^https:\/\//i.test(fetcher)) throw new Error("Fetcher endpoint must use HTTPS.");
+      const proxyResponse = await fetch(fetcher, {method:"GET", cache:"no-store", credentials:"omit"});
+      if(!proxyResponse.ok) throw new Error("Fetcher endpoint returned HTTP "+proxyResponse.status+".");
+      html = await proxyResponse.text();
+      loadedFrom = "configured server-side fetcher";
+    }
+    parseAndRender(html, url + " (" + loadedFrom + ")");
   }catch(err){
-    message("The browser could not fetch this page directly. The government site may block cross-origin requests.\n\nNext step: open the source page, save/download the webpage as an HTML file, then upload it below.\n\nDetails: "+(err && err.message ? err.message : String(err)), "warn");
+    message("Could not retrieve the official report.\n\n"+(err && err.message ? err.message : String(err))+"\n\nNo tracker data was changed.", "err");
   }finally{$("fetchBtn").disabled = false;}
 });
 $("htmlFile").addEventListener("change", async event => {
