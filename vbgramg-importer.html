@@ -95,6 +95,18 @@ $("fetchBtn").addEventListener("click", async () => {
         html = body;
         break;
       } catch(error) {
+        diagnostics.push("Attempt "+attempt+": "+(error?.message||String(error)));
+        if(attempt<3) {
+          message("Attempt "+attempt+" failed. Retrying…","warn");
+          await new Promise(resolve=>setTimeout(resolve,700*attempt));
+        }
+      }
+    }
+    if(!html) throw new Error("Unable to load report after 3 attempts.\n"+diagnostics.join("\n"));
+    await parseAndRender(html,url);
+    $("importPanel").classList.add("hidden");
+    $("results").classList.remove("hidden");
+  } catch(error) {
     const code=error?.code ? " ["+error.code+"]" : "";
     const detail=(error?.message||String(error))+code;
     message((error?.stage==="firestore" ? "The report was retrieved, but saving the import failed." : "Could not retrieve or process the report.")+"\n"+detail+"\n\nThe contribution tracker and ledger were not modified. The importer will keep the previous active snapshot if it was already saved. If Firestore rejected cleanup, an unused partial snapshot may remain; check the browser console and Firestore before retrying.","err");
