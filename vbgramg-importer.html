@@ -266,10 +266,6 @@ $("processFileBtn").addEventListener("click", async () => {
     $("processFileBtn").disabled = false;
   }
 });
-$("reloadReportBtn").addEventListener("click",()=>{
-  const frame=$("officialReportFrame");
-  frame.src="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html";
-});
 $("search").addEventListener("input",renderTable);
 $("backBtn").addEventListener("click",()=>{$("results").classList.add("hidden");$("importPanel").classList.remove("hidden");records=[]; $("recordTable").innerHTML=""; message("Temporary results cleared from this page. Load Records to fetch them again.");});
 $("exportBtn").addEventListener("click",()=>{
