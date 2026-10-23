@@ -23,6 +23,23 @@ service cloud.firestore {
       }
     }
 
+    // Separate VB-GRAMG import snapshots; isolated from citizen and ledger data.
+    match /vbgramgImports/{importId} {
+      allow read, write: if request.auth != null
+        && request.auth.token.email == "YOUR_ADMIN_EMAIL";
+
+      match /records/{recordId} {
+        allow read, write: if request.auth != null
+          && request.auth.token.email == "YOUR_ADMIN_EMAIL";
+      }
+    }
+
+    // Pointer to the latest complete active-only VB-GRAMG import.
+    match /vbgramgImportState/{doc} {
+      allow read, write: if request.auth != null
+        && request.auth.token.email == "YOUR_ADMIN_EMAIL";
+    }
+
     match /meta/{doc} {
       allow read, write: if request.auth != null
         && request.auth.token.email == "YOUR_ADMIN_EMAIL";
@@ -46,7 +63,7 @@ service cloud.firestore {
 }
 ```
 
-These rules cover citizen documents, their ledger/pending-payment subcollections, and the `meta` documents used by the app.
+These rules cover citizen documents, their ledger/pending-payment subcollections, the `meta` documents used by the app, and the isolated VB-GRAMG import snapshot collections (`vbgramgImports` and `vbgramgImportState`). Publish these additions in Firebase Console before using the updated importer; a GitHub change alone does not deploy Firestore rules.
 
 ## Important
 
