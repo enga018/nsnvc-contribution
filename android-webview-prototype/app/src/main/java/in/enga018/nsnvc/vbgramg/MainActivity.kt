@@ -1,4 +1,4 @@
-package in.enga018.nsnvc.vbgramg
+package com.enga018.nsnvc.vbgramg
 
 import android.app.Activity
 import android.app.AlertDialog
