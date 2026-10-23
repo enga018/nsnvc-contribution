@@ -95,19 +95,9 @@ $("fetchBtn").addEventListener("click", async () => {
         html = body;
         break;
       } catch(error) {
-        diagnostics.push("Attempt "+attempt+": "+(error?.message||String(error)));
-        if(attempt<3) {
-          message("Attempt "+attempt+" failed. Retrying…","warn");
-          await new Promise(resolve=>setTimeout(resolve,700*attempt));
-        }
-      }
-    }
-    if(!html) throw new Error("Unable to load report after 3 attempts.\n"+diagnostics.join("\n"));
-    await parseAndRender(html,url);
-    $("importPanel").classList.add("hidden");
-    $("results").classList.remove("hidden");
-  } catch(error) {
-    message("Could not retrieve the report.\n"+(error?.message||String(error))+"\n\nNo tracker data was changed.","err");
+    const code=error?.code ? " ["+error.code+"]" : "";
+    const detail=(error?.message||String(error))+code;
+    message((error?.stage==="firestore" ? "The report was retrieved, but saving the import failed." : "Could not retrieve or process the report.")+"\\n"+detail+"\\n\\nThe contribution tracker and ledger were not modified. The importer will keep the previous active snapshot if it was already saved. If Firestore rejected cleanup, an unused partial snapshot may remain; check the browser console and Firestore before retrying.","err");
   } finally { $("fetchBtn").disabled=false; }
 });
 async function parseAndRender(html,label) {
@@ -144,6 +134,16 @@ async function parseAndRender(html,label) {
   renderTable();
   message("Saved "+records.length+" active records to the council database. "+deletedSkipped+" deleted record(s) were excluded and not saved.","info");
 }
+async function deleteImportSnapshot(importId) {
+  if(!importId) return;
+  const recordsSnap=await getDocs(collection(db,"vbgramgImports",importId,"records"));
+  for(let offset=0;offset<recordsSnap.docs.length;offset+=400) {
+    const batch=writeBatch(db);
+    for(const record of recordsSnap.docs.slice(offset,offset+400)) batch.delete(record.ref);
+    await batch.commit();
+  }
+  await deleteDoc(doc(db,"vbgramgImports",importId));
+}
 async function saveImport(activeRecords,sourceUrl,deletedSkipped) {
   const stateRef=doc(db,"vbgramgImportState","current");
   const previousState=await getDoc(stateRef);
@@ -151,37 +151,57 @@ async function saveImport(activeRecords,sourceUrl,deletedSkipped) {
   const importRef=doc(collection(db,"vbgramgImports"));
   const importId=importRef.id;
   const recordsRef=collection(db,"vbgramgImports",importId,"records");
-  for(let offset=0;offset<activeRecords.length;offset+=400) {
-    const batch=writeBatch(db);
-    for(const record of activeRecords.slice(offset,offset+400)) {
-      batch.set(doc(recordsRef,String(record.serial).padStart(6,"0")),record);
+  let activated=false;
+  try {
+    for(let offset=0;offset<activeRecords.length;offset+=400) {
+      const batch=writeBatch(db);
+      for(const record of activeRecords.slice(offset,offset+400)) {
+        batch.set(doc(recordsRef,String(record.serial).padStart(6,"0")),record);
+      }
+      await batch.commit();
     }
-    await batch.commit();
+
+    // Verify the staged snapshot before making it the active import.
+    const verification=await getDocs(recordsRef);
+    if(verification.size!==activeRecords.length) {
+      throw new Error("Firestore verification failed: expected "+activeRecords.length+" records but found "+verification.size+". The previous active import was retained.");
+    }
+
+    await setDoc(importRef,{
+      sourceUrl,recordCount:activeRecords.length,deletedSkipped,
+      importedBy:auth.currentUser?.uid||null,
+      importedByEmail:auth.currentUser?.email||null,
+      importedAt:serverTimestamp(),status:"complete"
+    });
+
+    // The pointer is switched only after all records and metadata are confirmed.
+    await setDoc(stateRef,{
+      activeImportId:importId,sourceUrl,recordCount:activeRecords.length,
+      deletedSkipped,updatedAt:serverTimestamp()
+    });
+    activated=true;
+  } catch(error) {
+    // Best-effort rollback of an unactivated snapshot. Never delete the
+    // snapshot if the current pointer already refers to it (ambiguous network failure).
+    try {
+      const latestState=await getDoc(stateRef);
+      const pointsToNew=latestState.exists() && latestState.data().activeImportId===importId;
+      if(pointsToNew) activated=true;
+      if(!activated) await deleteImportSnapshot(importId);
+    } catch(cleanupError) {
+      console.warn("VB-GRAMG import failed and cleanup of its unused partial snapshot also failed.",cleanupError);
+    }
+    error.stage="firestore";
+    throw error;
   }
-  await setDoc(importRef,{
-    sourceUrl,recordCount:activeRecords.length,deletedSkipped,
-    importedBy:auth.currentUser?.uid||null,
-    importedByEmail:auth.currentUser?.email||null,
-    importedAt:serverTimestamp(),status:"complete"
-  });
-  // Switch the pointer only after every active record has been written.
-  await setDoc(stateRef,{
-    activeImportId:importId,sourceUrl,recordCount:activeRecords.length,
-    deletedSkipped,updatedAt:serverTimestamp()
-  });
-  // Remove the previous snapshot after the new one is active, so records that
-  // have since become deleted are not retained in old import snapshots.
+
+  // Clean the previous snapshot only after the new snapshot is active.
   if(previousImportId && previousImportId!==importId) {
     try {
-      const oldRecords=await getDocs(collection(db,"vbgramgImports",previousImportId,"records"));
-      for(let offset=0;offset<oldRecords.docs.length;offset+=400) {
-        const batch=writeBatch(db);
-        for(const oldRecord of oldRecords.docs.slice(offset,offset+400)) batch.delete(oldRecord.ref);
-        await batch.commit();
-      }
-      await deleteDoc(doc(db,"vbgramgImports",previousImportId));
+      await deleteImportSnapshot(previousImportId);
     } catch(cleanupError) {
       console.warn("New VB-GRAMG import is active, but cleanup of the previous snapshot failed.",cleanupError);
+      message("The new import is active, but cleanup of the previous snapshot failed. The saved records are available; an older snapshot may remain in Firestore.","warn");
     }
   }
   return importId;
