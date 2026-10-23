@@ -125,7 +125,7 @@ $("fetchBtn").addEventListener("click", async () => {
       const fetcher = $("fetcherUrl").value.trim();
       if(url !== "https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html") throw new Error("Automatic loading is available only for the preconfigured New Serchhip North report. Use a saved webpage for other locations.");
       if(fetcher !== TRUSTED_FETCHER) throw new Error("The automatic report service configuration is unavailable. Refresh the page or upload a saved webpage.");
-      if(!fetcher) throw new Error("Direct request failed ("+(directError?.message || String(directError))+"). The trusted NSNVC Worker endpoint is required for the fallback. HTTP 401/403 from the official site may require a valid session and cannot be fixed by CORS alone.");
+      if(!fetcher) throw new Error("Direct loading failed ("+(directError?.message || String(directError))+"). The automatic report service is not configured. Refresh the page or upload a saved webpage.");
       const proxyResponse = await fetch(fetcher, {method:"GET", cache:"no-store", credentials:"omit"});
       if(!proxyResponse.ok) throw new Error("The automatic report service returned HTTP "+proxyResponse.status+". You can retry or upload a saved webpage.");
       html = await proxyResponse.text();
