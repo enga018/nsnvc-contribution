@@ -237,10 +237,10 @@ function parseWithJavaScript(html) {
   const output = [];
   let previousHousehold = "";
   let deletedSkipped = 0;
-  const numericSerial = /^\\d+(?:\\.\\d+)?$/;
+  const numericSerial = /^\d+(?:\\.\d+)?$/;
   for (let i = 2; i < table.rows.length; i++) {
     const row = table.rows[i];
-    const cells = Array.from(row.cells, cell => (cell.innerText || cell.textContent || "").replace(/\\s+/g, " ").trim());
+    const cells = Array.from(row.cells, cell => (cell.innerText || cell.textContent || "").replace(/\s+/g, " ").trim());
     if (!cells.length || !cells[0] || !numericSerial.test(cells[0])) continue;
     const jobCard = cells[8] || "";
     let household = cells[1] || "";
