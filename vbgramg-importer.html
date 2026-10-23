@@ -28,7 +28,11 @@ button,.btn{display:inline-flex;align-items:center;justify-content:center;border
   <div id="app" class="hidden">
     <section id="importPanel" class="card">
       <div class="field"><label for="sourceUrl">VB-GRAMG registration page URL</label><input id="sourceUrl" type="url" value="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html" autocomplete="url" spellcheck="false"></div>
-      <div class="actions"><button id="fetchBtn">Load Records</button></div>
+      <div class="actions"><button id="fetchBtn">Fetch Official Report</button></div>
+      <hr style="border:0;border-top:1px solid var(--border);margin:16px 0">
+      <div class="field"><label for="reportFile">Or process a saved official report with Python</label><input id="reportFile" type="file" accept=".html,.htm,text/html"></div>
+      <div class="actions"><button id="processFileBtn" type="button">Process HTML with Python</button></div>
+      <p class="muted">Python runs inside this browser using Pyodide. Choose a saved HTML report if automatic retrieval is blocked. The report itself is processed locally; it is not uploaded to a server. The Python runtime is loaded from a CDN on first use.</p>
       <div id="message" aria-live="polite"></div>
     </section>
     <section id="results" class="card hidden">
@@ -61,6 +65,109 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 let records = [];
+let pyodidePromise = null;
+const PYTHON_CODE = String.raw`
+import json
+from html.parser import HTMLParser
+
+class ReportParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tables = []
+        self.table_stack = []
+        self.row = None
+        self.cell = None
+        self.current_table_rows = None
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if tag == "table":
+            table = []
+            self.tables.append(table)
+            self.table_stack.append(table)
+        elif tag == "tr" and self.table_stack:
+            self.row = []
+        elif tag in ("td", "th") and self.row is not None:
+            self.cell = []
+
+    def handle_data(self, data):
+        if self.cell is not None:
+            self.cell.append(data)
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag in ("td", "th") and self.cell is not None and self.row is not None:
+            self.row.append(" ".join("".join(self.cell).split()))
+            self.cell = None
+        elif tag == "tr" and self.row is not None and self.table_stack:
+            self.table_stack[-1].append(self.row)
+            self.row = None
+            self.cell = None
+        elif tag == "table" and self.table_stack:
+            self.table_stack.pop()
+
+def parse_report(html):
+    parser = ReportParser()
+    parser.feed(html)
+    tables = parser.tables
+    if not tables:
+        raise ValueError("No HTML tables were found in this file.")
+    table = tables[4] if len(tables) > 4 and len(tables[4]) > 10 else max(tables, key=len)
+    if len(table) < 3:
+        raise ValueError("The selected table has too few rows to be a registration report.")
+    counts = {}
+    output = []
+    previous_household = ""
+    deleted_skipped = 0
+    for cells in table[2:]:
+        if len(cells) == 0 or not cells[0] or not __import__("re").fullmatch(r"\d+(?:\.\d+)?", cells[0]):
+            continue
+        job_card = cells[8] if len(cells) > 8 else ""
+        household = cells[1] if len(cells) > 1 else ""
+        if household:
+            previous_household = household
+        else:
+            household = previous_household
+        applicant = cells[3] if len(cells) > 3 else ""
+        status = cells[10] if len(cells) > 10 else ""
+        if not job_card:
+            continue
+        if "deleted" in status.lower():
+            deleted_skipped += 1
+            continue
+        counts[job_card] = counts.get(job_card, 0) + 1
+        occurrence = counts[job_card]
+        slash = job_card.rfind("/")
+        jc_no = job_card[slash + 1:].strip() if slash >= 0 else job_card
+        output.append({
+            "serial": len(output) + 1,
+            "jobCard": job_card,
+            "jcNo": jc_no,
+            "household": household,
+            "applicant": applicant,
+            "applicantNo": occurrence,
+            "uniqueId": job_card + "/" + str(occurrence),
+            "status": status,
+            "deleted": False
+        })
+    if not output:
+        raise ValueError("No active records matched the expected report columns. Check that you selected the official registration HTML.")
+    return {"records": output, "deletedSkipped": deleted_skipped, "tableCount": len(tables), "selectedRowCount": len(table)}
+`;
+async function parseWithPython(html) {
+  if (!pyodidePromise) {
+    pyodidePromise = (async () => {
+      const { loadPyodide } = await import("https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.mjs");
+      const runtime = await loadPyodide();
+      await runtime.runPythonAsync(PYTHON_CODE);
+      return runtime;
+    })();
+  }
+  const runtime = await pyodidePromise;
+  runtime.globals.set("report_html", html);
+  const result = await runtime.runPythonAsync("json.dumps(parse_report(report_html))");
+  return JSON.parse(result);
+}
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function message(text, kind="info"){ $("message").innerHTML = '<div class="notice '+kind+'">'+esc(text)+'</div>'; }
 onAuthStateChanged(auth, user => {
@@ -110,35 +217,17 @@ $("fetchBtn").addEventListener("click", async () => {
   } finally { $("fetchBtn").disabled=false; }
 });
 async function parseAndRender(html,label) {
-  const reportDoc = new DOMParser().parseFromString(html,"text/html");
-  const tables = [...reportDoc.querySelectorAll("table")];
-  if(!tables.length) throw new Error("No HTML table found in the report.");
-  const table = tables[4] && tables[4].rows.length>10 ? tables[4] : tables.reduce((best,t)=>t.rows.length>best.rows.length?t:best,tables[0]);
-  if(table.rows.length<3) throw new Error("The selected table has too few rows.");
-  const counts = new Map(), output = [];
-  let previousHousehold = "", deletedSkipped = 0;
-  for(let i=2;i<table.rows.length;i++) {
-    const cells = [...table.rows[i].cells].map(cell=>(cell.innerText||cell.textContent||"").trim());
-    if(!cells[0] || !/^\d+(?:\.\d+)?$/.test(cells[0])) continue;
-    const jobCard=cells[8]||"";
-    let household=cells[1]||"";
-    if(household) previousHousehold=household; else household=previousHousehold;
-    const applicant=cells[3]||"", status=cells[10]||"";
-    if(!jobCard) continue;
-    if(status.toLowerCase().includes("deleted")) { deletedSkipped++; continue; }
-    const occurrence=(counts.get(jobCard)||0)+1; counts.set(jobCard,occurrence);
-    const slash=jobCard.lastIndexOf("/");
-    output.push({serial:output.length+1,jobCard,jcNo:slash>=0?jobCard.slice(slash+1).trim():jobCard,household,applicant,applicantNo:occurrence,uniqueId:jobCard+"/"+occurrence,status,deleted:false});
-  }
-  if(!output.length) throw new Error("No active records found using the existing importer column rules. Nothing was saved.");
-  records=output;
+  message("Starting the in-browser Python engine…");
+  const parsed = await parseWithPython(html);
+  records = parsed.records;
+  const deletedSkipped = parsed.deletedSkipped;
   $("totalCount").textContent=records.length.toLocaleString("en-IN");
   $("activeCount").textContent=records.length.toLocaleString("en-IN");
   $("deletedCount").textContent=deletedSkipped.toLocaleString("en-IN");
-  $("sourceInfo").textContent="Source: "+label+" · Temporary in-page results · "+deletedSkipped.toLocaleString("en-IN")+" deleted record(s) skipped";
+  $("sourceInfo").textContent="Source: "+label+" · Python / Pyodide · Temporary in-page results · "+deletedSkipped.toLocaleString("en-IN")+" deleted record(s) skipped";
   $("search").value="";
   renderTable();
-  message("Displayed "+records.length+" active records in this page. "+deletedSkipped+" deleted record(s) were skipped. Nothing was written to any database.","info");
+  message("Python processed "+records.length+" active records from "+parsed.selectedRowCount+" rows. "+deletedSkipped+" deleted record(s) were skipped. Nothing was written to any database.","info");
 }
 function getShown() {
   const queryText=$("search").value.trim().toLowerCase();
@@ -151,6 +240,24 @@ function renderTable() {
     shown.map(r=>'<tr class="'+(r.deleted?'deleted':'')+'"><td>'+r.serial+'</td><td>'+esc(r.jobCard)+'</td><td>'+esc(r.jcNo)+'</td><td>'+esc(r.household)+'</td><td>'+esc(r.applicant)+'</td><td>'+r.applicantNo+'</td><td class="id">'+esc(r.uniqueId)+'</td><td><span class="status '+(r.deleted?'deleted':'active')+'">'+(r.deleted?'Deleted':'Active')+'</span>'+(r.status?' <span class="muted">'+esc(r.status)+'</span>':'')+'</td></tr>').join("")+
     '</tbody></table>';
 }
+$("processFileBtn").addEventListener("click", async () => {
+  const file = $("reportFile").files && $("reportFile").files[0];
+  if (!file) { message("Choose a saved .html or .htm registration report first.", "warn"); return; }
+  if (!/\.html?$/i.test(file.name) && file.type !== "text/html") { message("Please choose an HTML report file.", "err"); return; }
+  $("processFileBtn").disabled = true;
+  $("results").classList.add("hidden");
+  try {
+    message("Reading the selected file and loading Python if needed…");
+    const html = await file.text();
+    await parseAndRender(html, "Local file: " + file.name);
+    $("importPanel").classList.add("hidden");
+    $("results").classList.remove("hidden");
+  } catch (error) {
+    message("Python could not process this file.\n" + (error?.message || String(error)) + "\n\nNo tracker data was changed.", "err");
+  } finally {
+    $("processFileBtn").disabled = false;
+  }
+});
 $("search").addEventListener("input",renderTable);
 $("backBtn").addEventListener("click",()=>{$("results").classList.add("hidden");$("importPanel").classList.remove("hidden");records=[]; $("recordTable").innerHTML=""; message("Temporary results cleared from this page. Load Records to fetch them again.");});
 $("exportBtn").addEventListener("click",()=>{
