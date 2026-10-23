@@ -125,6 +125,7 @@ $("fetchBtn").addEventListener("click", async () => {
     // successful HTTP responses that are actually error pages without a report table.
     const maxAttempts = 3;
     let lastProblem = "";
+    const attemptDiagnostics = [];
     for(let attempt = 1; attempt <= maxAttempts; attempt++){
       try{
         const response = await fetch(TRUSTED_FETCHER, {
@@ -133,6 +134,19 @@ $("fetchBtn").addEventListener("click", async () => {
           credentials:"omit"
         });
         const responseText = await response.text();
+        const contentType = response.headers.get("content-type") || "(not provided)";
+        const trimmed = responseText.trimStart();
+        const controlCount = (responseText.match(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g) || []).length;
+        const format = !responseText.length ? "empty" :
+          controlCount > Math.max(4, responseText.length * 0.02) ? "binary-like text" :
+          /^<!doctype\s+html|^<html/i.test(trimmed) ? "HTML" :
+          /^[{[]/.test(trimmed) ? "JSON-like" :
+          trimmed.startsWith("<") ? "markup-like" : "plain/unknown text";
+        const responseMeta = "attempt "+attempt+"/"+maxAttempts+
+          "; HTTP "+response.status+
+          "; content-type="+contentType+
+          "; chars="+responseText.length+
+          "; format="+format;
         if(!response.ok){
           let detail = "";
           try {
@@ -140,25 +154,29 @@ $("fetchBtn").addEventListener("click", async () => {
             detail = data && data.upstream_status ? " (official server status "+data.upstream_status+")" :
               data && data.error ? ": "+String(data.error).slice(0,160) : "";
           } catch {}
-          throw new Error("Worker returned HTTP "+response.status+detail+".");
+          throw new Error(responseMeta+"; Worker error"+detail+".");
         }
         const doc = new DOMParser().parseFromString(responseText, "text/html");
-        if(!doc.querySelector("table")){
+        const tableCount = doc.querySelectorAll("table").length;
+        if(!tableCount){
           const title = (doc.title || "").trim() || "(no page title)";
-          throw new Error("Worker response contained no HTML table (page title: "+title+").");
+          const bodyTextLength = (doc.body?.textContent || "").replace(/\s+/g, " ").trim().length;
+          throw new Error(responseMeta+"; tables=0; title="+title+"; readable-body-chars="+bodyTextLength+".");
         }
         html = responseText;
+        loadedFrom = "Cloudflare Worker, "+responseMeta+", tables="+tableCount;
         lastProblem = "";
         break;
       }catch(fetchError){
         lastProblem = fetchError && fetchError.message ? fetchError.message : String(fetchError);
+        attemptDiagnostics.push(lastProblem);
         if(attempt < maxAttempts){
           message("Worker fetch attempt "+attempt+" of "+maxAttempts+" failed: "+lastProblem+" Retrying…", "warn");
           await new Promise(resolve => setTimeout(resolve, 700 * attempt));
         }
       }
     }
-    if(!html) throw new Error("Worker fetch failed after "+maxAttempts+" attempts. Last result: "+lastProblem+" You can retry later or upload a saved webpage.");
+    if(!html) throw new Error("Worker fetch failed after "+maxAttempts+" attempts. Attempt pattern: "+attemptDiagnostics.join(" || ")+" You can retry later or upload a saved webpage.");
     parseAndRender(html, url + " (" + loadedFrom + ")");
   }catch(err){
     message("Could not retrieve the official report.\n\n"+(err && err.message ? err.message : String(err))+"\n\nNo tracker data was changed.", "err");
