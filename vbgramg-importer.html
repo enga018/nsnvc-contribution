@@ -86,7 +86,15 @@ $("fetchBtn").addEventListener("click", async () => {
         const contentType = response.headers.get("content-type") || "(not provided)";
         if(!response.ok) {
           let detail = "";
-          try { const data = JSON.parse(body); detail = data?.error ? ": "+String(data.error).slice(0,160) : ""; } catch {}
+          try {
+            const data = JSON.parse(body);
+            const parts = [];
+            if(data?.error) parts.push("error="+String(data.error).slice(0,180));
+            for(const key of ["upstream_status","upstreamStatus","upstream_status_text","upstream_error","details","detail","cause"]) {
+              if(data?.[key] !== undefined && data[key] !== null && data[key] !== "") parts.push(key+"="+String(data[key]).slice(0,180));
+            }
+            detail = parts.length ? "; "+parts.join("; ") : "";
+          } catch {}
           throw new Error("HTTP "+response.status+"; content-type="+contentType+"; "+body.length+" characters"+detail);
         }
         const doc = new DOMParser().parseFromString(body,"text/html");
