@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
+<meta name="theme-color" content="#1b4d3e">
+<title>VB-GRAMG Importer · NSNVC</title>
+<style>
+:root{--green:#1b4d3e;--green-dark:#143a2f;--paper:#f7f6f2;--surface:#fff;--ink:#1c2724;--muted:#6b7672;--border:#e3e1d8;--red:#b91c1c;--orange:#b45309}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+header{background:var(--green);color:#fff;padding:15px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}header b{display:block;font-size:16px}header small{opacity:.8}header a{color:#fff}
+main{max-width:1050px;margin:auto;padding:18px 14px 50px}.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px}
+h2{font-size:17px;margin:0 0 12px}.muted{color:var(--muted);font-size:13px}.field{margin-bottom:10px}.field label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:5px}.field input{width:100%;padding:11px;border:1px solid #cfd0c7;border-radius:9px;font:inherit}
+button,.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:9px;background:var(--green);color:#fff;padding:11px 14px;font:600 14px inherit;text-decoration:none;cursor:pointer;min-height:40px}button.secondary,.btn.secondary{background:#fff;color:var(--green);border:1px solid var(--green)}button:disabled{opacity:.55;cursor:wait}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.notice{padding:12px;border-radius:9px;margin-top:10px;font-size:13px;white-space:pre-wrap}.notice.info{background:#e8efe9;color:#143a2f}.notice.err{background:#fdeaea;color:#7a1d1d}.notice.warn{background:#fff4dd;color:#7a5a12}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0}.stat{padding:10px;background:#f7f6f2;border-radius:9px}.stat strong{display:block;font-size:22px}.stat span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.tools input{flex:1;min-width:180px;padding:10px;border:1px solid #cfd0c7;border-radius:9px;font:inherit}.selection-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0 12px}.selection-tools .muted{margin-right:auto}td.select-cell,th.select-cell{text-align:center;width:42px;padding:8px}input.record-check,input#selectVisible{width:18px;height:18px;accent-color:var(--green);cursor:pointer}.filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.filters button{background:#f0f0eb;color:var(--ink);border:1px solid var(--border);padding:8px 11px}.filters button.active{background:var(--green);color:#fff}
+.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px}table{width:100%;border-collapse:collapse;min-width:760px;background:#fff}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top}th{background:#e8efe9;position:sticky;top:0;z-index:1;font-size:11px;text-transform:uppercase;letter-spacing:.3px}tr.deleted td{background:#fff1f1}td.id{font-family:ui-monospace,SFMono-Regular,monospace;white-space:nowrap}.status{display:inline-block;border-radius:99px;padding:3px 8px;font-size:11px;font-weight:700}.status.active{background:#e6f4ea;color:#166534}.status.deleted{background:#fdeaea;color:#991b1b}
+.hidden{display:none!important}.empty{text-align:center;padding:24px;color:var(--muted)}footer{text-align:center;color:var(--muted);font-size:12px;padding:18px}
+@media(max-width:540px){main{padding:12px 10px 36px}.card{padding:13px}.stats{gap:5px}.stat{padding:8px}.stat strong{font-size:19px}.actions button,.actions a{flex:1}.tools input{min-width:100%}}
+</style>
+</head>
+<body>
+<header><div><b>VB-GRAMG Importer</b><small>New Serchhip North · Registration records</small></div><a href="./index.html">Back to tracker</a></header>
+<main>
+  <section id="authWait" class="card"><b>Checking council login…</b><p class="muted">This page uses the same Firebase login as the contribution tracker.</p></section>
+  <section id="authDenied" class="card hidden"><h2>Council login required</h2><p>Log in to the NSNVC tracker first, then open this importer again.</p><a class="btn" href="./index.html">Open tracker login</a></section>
+  <div id="app" class="hidden">
+    <section class="card">
+      <h2>1. Load VB-GRAMG data</h2>
+      <p class="muted">Configured for Serchhip district, Mizoram. Choose the block and enter the target Panchayat/village and financial year. The URL stays editable because the portal's report URL uses its own code pattern, which should not be guessed from LGD codes.</p>
+      <div class="stats" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+        <div class="field"><label for="stateName">State / State code</label><input id="stateName" value="Mizoram (15)" readonly></div>
+        <div class="field"><label for="districtName">District / District code</label><input id="districtName" value="Serchhip (05)" readonly></div>
+      </div>
+      <div class="stats" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+        <div class="field"><label for="blockName">Rural Development Block</label><select id="blockName" style="width:100%;padding:11px;border:1px solid #cfd0c7;border-radius:9px;font:inherit"><option value="Serchhip" selected>Serchhip</option><option value="East Lungdar">East Lungdar</option><option value="Other block">Other block / manual URL</option></select></div>
+        <div class="field"><label for="villageChoice">Village / Gram Panchayat</label><select id="villageChoice" style="width:100%;padding:11px;border:1px solid #cfd0c7;border-radius:9px;font:inherit"><option value="New Serchhip North" selected>New Serchhip North</option><option value="other">Other village / manual URL</option></select></div>
+      </div>
+      <div id="otherVillageWrap" class="field hidden"><label for="villageName">Village name</label><input id="villageName" placeholder="Enter village / Gram Panchayat name" autocomplete="off"></div>
+      <div class="field"><label for="financialYear">Financial year</label><select id="financialYear" style="width:100%;padding:11px;border:1px solid #cfd0c7;border-radius:9px;font:inherit"><option value="2026-27" selected>2026–27</option><option value="2025-26">2025–26</option><option value="2024-25">2024–25</option><option value="2023-24">2023–24</option></select></div>
+      <div class="actions"><button id="applySettingsBtn" class="secondary">Apply location & year</button></div>
+      <p class="muted">Only the existing New Serchhip North URL is preconfigured. For another block or village, paste the exact Registration Application Register URL from the official portal below; the importer will not guess location codes.</p>
+      <div class="field"><label for="sourceUrl">VB-GRAMG registration page URL</label><input id="sourceUrl" type="url" value="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html"></div>
+      <div class="actions"><button id="fetchBtn">Load Records</button><a class="btn secondary" id="openSource" href="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html" target="_blank" rel="noopener">Open source page</a></div>
+      <div class="field" style="margin-top:14px"><label for="htmlFile">Or import a saved webpage (.html/.htm)</label><input id="htmlFile" type="file" accept=".html,.htm,text/html"></div>
+      <div id="message" aria-live="polite"></div>
+    </section>
+    <section id="results" class="card hidden">
+      <h2>2. Imported registration records</h2>
+      <p class="muted">Rules retained from the VBA: skip the first two table rows, keep rows with a numeric first cell, extract the same source columns, and generate occurrence IDs for repeated job cards.</p>
+      <div class="stats">
+        <div class="stat"><span>Total records</span><strong id="totalCount">0</strong></div>
+        <div class="stat"><span>Active</span><strong id="activeCount">0</strong></div>
+        <div class="stat"><span>Deleted</span><strong id="deletedCount">0</strong></div>
+      </div>
+      <div class="tools"><input id="search" type="search" placeholder="Search job card, household or applicant"></div>
+      <div class="selection-tools"><label class="muted"><input id="selectVisible" type="checkbox"> Select all visible</label><button class="secondary" id="clearSelectionBtn">Clear selection</button><button id="exportSelectedBtn">Export selected (0)</button><button class="secondary" id="exportBtn">Export visible CSV</button></div>
+      <p class="muted">Selection is temporary and stays in this browser session. Export selected applicants to keep a copy. Nothing is added to or changed in the contribution tracker.</p>
+      <div class="filters" id="filters">
+        <button class="active" data-filter="active">Active</button><button data-filter="deleted">Deleted</button><button data-filter="all">All records</button>
+      </div>
+      <div id="recordTable" class="table-wrap"></div>
+    </section>
+  </div>
+</main>
+<footer>VB-GRAMG Importer · Separate from contribution ledger</footer>
+<script type="module">
+import { firebaseConfig } from "./firebase.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+const $ = id => document.getElementById(id);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+let records = [];
+let activeFilter = "active";
+let sourceLabel = "";
+const selectedIds = new Set();
+const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function message(text, kind="info"){ $("message").innerHTML = '<div class="notice '+kind+'">'+esc(text)+'</div>'; }
+onAuthStateChanged(auth, user => {
+  $("authWait").classList.add("hidden");
+  if(user){ $("authDenied").classList.add("hidden"); $("app").classList.remove("hidden"); }
+  else { $("app").classList.add("hidden"); $("authDenied").classList.remove("hidden"); }
+});
+$("sourceUrl").addEventListener("input", () => { $("openSource").href = $("sourceUrl").value.trim(); });
+$("villageChoice").addEventListener("change", () => {
+  $("otherVillageWrap").classList.toggle("hidden", $("villageChoice").value !== "other");
+});
+$("applySettingsBtn").addEventListener("click", () => {
+  const block = $("blockName").value;
+  const village = $("villageChoice").value === "other" ? $("villageName").value.trim() : $("villageChoice").value;
+  const year = $("financialYear").value;
+  if (block === "Serchhip" && village === "New Serchhip North") {
+    const current = $("sourceUrl").value.trim();
+    if (!current) { message("The source URL is empty. Paste the exact Registration Application Register URL from the portal.", "err"); return; }
+    if (!/eng\\d{4}\\.html$/i.test(current)) {
+      message("The URL does not end in the expected engYYZZ.html pattern. Open the official portal and paste the exact page URL; it was not changed.", "warn"); return;
+    }
+    const suffix = "eng" + year.slice(2,4) + year.slice(5,7) + ".html";
+    $("sourceUrl").value = current.replace(/eng\\d{4}\\.html$/i, suffix);
+    $("openSource").href = $("sourceUrl").value;
+    message("Applied Serchhip · New Serchhip North · FY " + year + ". Review the URL, then tap Load Records. The village code was kept unchanged; only the financial-year suffix was changed.", "info");
+  } else {
+    message("Location selected: " + block + " · " + (village || "village not entered") + " · FY " + year + ". For this location, paste the exact Registration Application Register URL from the official VB-GRAMG portal. No code has been guessed.", "warn");
+  }
+});
+$("fetchBtn").addEventListener("click", async () => {
+  const url = $("sourceUrl").value.trim();
+  if(!/^https:\/\//i.test(url)){ message("Enter a valid HTTPS source URL.", "err"); return; }
+  $("fetchBtn").disabled = true; message("Fetching source page…");
+  try{
+    const response = await fetch(url, {cache:"no-store"});
+    if(!response.ok) throw new Error("Website returned HTTP "+response.status+".");
+    const html = await response.text();
+    parseAndRender(html, url);
+  }catch(err){
+    message("The browser could not fetch this page directly. The government site may block cross-origin requests.\n\nNext step: open the source page, save/download the webpage as an HTML file, then upload it below.\n\nDetails: "+(err && err.message ? err.message : String(err)), "warn");
+  }finally{$("fetchBtn").disabled = false;}
+});
+$("htmlFile").addEventListener("change", async event => {
+  const file = event.target.files && event.target.files[0];
+  if(!file) return;
+  try{ parseAndRender(await file.text(), file.name); }
+  catch(err){ message("Could not read that file: "+(err.message||err), "err"); }
+});
+function parseAndRender(html, label){
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const tables = [...doc.querySelectorAll("table")];
+  if(!tables.length) throw new Error("No HTML table found. Make sure you saved the full registration page, not a shortcut or screenshot.");
+  let table = tables[4] && tables[4].rows.length > 10 ? tables[4] : tables.reduce((best, t) => t.rows.length > best.rows.length ? t : best, tables[0]);
+  if(table.rows.length < 3) throw new Error("The selected table has too few rows.");
+  const counts = new Map();
+  const output = [];
+  let previousHousehold = "";
+  // VBA dataStart = 3 (third table row); use source column positions as in the macro.
+  for(let i=2; i<table.rows.length; i++){
+    const cells = [...table.rows[i].cells].map(cell => (cell.innerText || cell.textContent || "").trim());
+    const first = cells[0] || "";
+    if(!first || !/^\d+(?:\.\d+)?$/.test(first)) continue;
+    const jobCard = cells[8] || "";
+    let household = cells[1] || "";
+    if (household) previousHousehold = household;
+    else household = previousHousehold;
+    const applicant = cells[3] || "";
+    const status = cells[10] || "";
+    if(!jobCard) continue;
+    const occurrence = (counts.get(jobCard) || 0) + 1;
+    counts.set(jobCard, occurrence);
+    const slash = jobCard.lastIndexOf("/");
+    output.push({
+      serial: output.length+1,
+      jobCard,
+      jcNo: slash >= 0 ? jobCard.slice(slash+1).trim() : jobCard,
+      household,
+      applicant,
+      applicantNo: occurrence,
+      uniqueId: jobCard+"/"+occurrence,
+      status,
+      deleted: status.toLowerCase().includes("deleted")
+    });
+  }
+  if(!output.length) throw new Error("No valid records found with the VBA's column rules. The page layout may have changed.");
+  records = output; sourceLabel = label; activeFilter = "active"; selectedIds.clear();
+  $("totalCount").textContent = records.length.toLocaleString("en-IN");
+  $("activeCount").textContent = records.filter(r=>!r.deleted).length.toLocaleString("en-IN");
+  $("deletedCount").textContent = records.filter(r=>r.deleted).length.toLocaleString("en-IN");
+  $("results").classList.remove("hidden");
+  $("filters").querySelectorAll("button").forEach(b=>b.classList.toggle("active", b.dataset.filter===activeFilter));
+  $("search").value = "";
+  const villageLabel = $("villageChoice").value === "other" ? ($("villageName").value.trim() || "other village") : $("villageChoice").value;
+  message("Loaded "+records.length+" records from "+label+". Selected location: "+$("blockName").value+" · "+villageLabel+" · FY "+$("financialYear").value+". No records were written to the contribution tracker.", "info");
+  renderTable();
+}
+function renderTable(){
+  const query = $("search").value.trim().toLowerCase();
+  const shown = records.filter(r => (activeFilter==="all" || (activeFilter==="deleted" ? r.deleted : !r.deleted)) &&
+    [r.jobCard,r.jcNo,r.household,r.applicant,r.uniqueId,r.status].some(v=>String(v).toLowerCase().includes(query)));
+  $("exportSelectedBtn").textContent = "Export selected ("+selectedIds.size+")";
+  $("selectVisible").checked = shown.length > 0 && shown.every(r => selectedIds.has(r.uniqueId));
+  $("selectVisible").indeterminate = shown.some(r => selectedIds.has(r.uniqueId)) && !shown.every(r => selectedIds.has(r.uniqueId));
+  if(!shown.length){ $("recordTable").innerHTML = '<div class="empty">No records match this filter/search.</div>'; return; }
+  $("recordTable").innerHTML = '<table><thead><tr><th class="select-cell">Pick</th><th>Sl. No.</th><th>Job Card Number</th><th>JC No.</th><th>Head of Household</th><th>Applicant Name</th><th>Applicant No.</th><th>Unique ID</th><th>Status</th></tr></thead><tbody>'+
+    shown.map(r=>'<tr class="'+(r.deleted?'deleted':'')+'"><td class="select-cell"><input class="record-check" type="checkbox" data-id="'+esc(r.uniqueId)+'" aria-label="Select '+esc(r.applicant || r.uniqueId)+'"'+(selectedIds.has(r.uniqueId)?' checked':'')+'></td><td>'+r.serial+'</td><td>'+esc(r.jobCard)+'</td><td>'+esc(r.jcNo)+'</td><td>'+esc(r.household)+'</td><td>'+esc(r.applicant)+'</td><td>'+r.applicantNo+'</td><td class="id">'+esc(r.uniqueId)+'</td><td><span class="status '+(r.deleted?'deleted':'active')+'">'+(r.deleted?'Deleted':'Active')+'</span>'+(r.status?' <span class="muted">'+esc(r.status)+'</span>':'')+'</td></tr>').join("")+
+    '</tbody></table>';
+}
+$("filters").addEventListener("click", e => {
+  const button = e.target.closest("button[data-filter]");
+  if(!button) return;
+  activeFilter = button.dataset.filter;
+  $("filters").querySelectorAll("button").forEach(b=>b.classList.toggle("active", b===button));
+  renderTable();
+});
+$("search").addEventListener("input", renderTable);
+$("recordTable").addEventListener("change", event => {
+  const checkbox = event.target.closest("input.record-check");
+  if(!checkbox) return;
+  if(checkbox.checked) selectedIds.add(checkbox.dataset.id); else selectedIds.delete(checkbox.dataset.id);
+  renderTable();
+});
+$("selectVisible").addEventListener("change", () => {
+  const query = $("search").value.trim().toLowerCase();
+  const shown = records.filter(r => (activeFilter==="all" || (activeFilter==="deleted" ? r.deleted : !r.deleted)) &&
+    [r.jobCard,r.jcNo,r.household,r.applicant,r.uniqueId,r.status].some(v=>String(v).toLowerCase().includes(query)));
+  for(const r of shown){ if($("selectVisible").checked) selectedIds.add(r.uniqueId); else selectedIds.delete(r.uniqueId); }
+  renderTable();
+});
+$("clearSelectionBtn").addEventListener("click", () => { selectedIds.clear(); renderTable(); });
+function exportRecords(rows, filename){
+  const header = ["Sl. No.","Job Card Number","JC No.","Head of Household","Name of Applicant","Applicant No.","Unique ID","Status"];
+  const csvCell = v => '"'+String(v??"").replace(/"/g,'""')+'"';
+  const csv = [header, ...rows.map(r=>[r.serial,r.jobCard,r.jcNo,r.household,r.applicant,r.applicantNo,r.uniqueId,r.deleted ? "Deleted" : (r.status || "Active")])].map(row=>row.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob(["\ufeff",csv], {type:"text/csv;charset=utf-8"});
+  const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+$("exportSelectedBtn").addEventListener("click", () => {
+  const chosen = records.filter(r => selectedIds.has(r.uniqueId));
+  if(!chosen.length){ message("Select at least one applicant in the list before exporting selected records.", "warn"); return; }
+  exportRecords(chosen, "vbgramg-selected-applicants.csv");
+  message("Exported "+chosen.length+" selected applicants. The tracker was not changed.", "info");
+});
+$("exportBtn").addEventListener("click", () => {
+  const query = $("search").value.trim().toLowerCase();
+  const shown = records.filter(r => (activeFilter==="all" || (activeFilter==="deleted" ? r.deleted : !r.deleted)) &&
+    [r.jobCard,r.jcNo,r.household,r.applicant,r.uniqueId,r.status].some(v=>String(v).toLowerCase().includes(query)));
+  exportRecords(shown, "vbgramg-registration-records.csv");
+});
+</script>
+</body>
+</html>
