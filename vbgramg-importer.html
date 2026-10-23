@@ -114,23 +114,51 @@ $("fetchBtn").addEventListener("click", async () => {
   if(!/^https:\/\//i.test(url)){ message("Enter a valid HTTPS source URL.", "err"); return; }
   $("fetchBtn").disabled = true; message("Fetching source page…");
   let html = "";
-  let loadedFrom = "";
+  let loadedFrom = "Cloudflare Worker";
   try{
-    try {
-      const response = await fetch(url, {cache:"no-store", credentials:"omit"});
-      if(!response.ok) throw new Error("Direct request returned HTTP "+response.status+".");
-      html = await response.text();
-      loadedFrom = "direct browser request";
-    } catch(directError) {
-      const fetcher = $("fetcherUrl").value.trim();
-      if(url !== "https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html") throw new Error("Automatic loading is available only for the preconfigured New Serchhip North report. Use a saved webpage for other locations.");
-      if(fetcher !== TRUSTED_FETCHER) throw new Error("The automatic report service configuration is unavailable. Refresh the page or upload a saved webpage.");
-      if(!fetcher) throw new Error("Direct loading failed ("+(directError?.message || String(directError))+"). The automatic report service is not configured. Refresh the page or upload a saved webpage.");
-      const proxyResponse = await fetch(fetcher, {method:"GET", cache:"no-store", credentials:"omit"});
-      if(!proxyResponse.ok) throw new Error("The automatic report service returned HTTP "+proxyResponse.status+". You can retry or upload a saved webpage.");
-      html = await proxyResponse.text();
-      loadedFrom = "report service";
+    const expectedUrl = "https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html";
+    if(url !== expectedUrl) throw new Error("The configured Worker serves only the preconfigured New Serchhip North report. For another report, use a saved webpage.");
+    const fetcher = $("fetcherUrl").value.trim();
+    if(fetcher !== TRUSTED_FETCHER) throw new Error("The trusted report service configuration does not match. Refresh the page or upload a saved webpage.");
+
+    // Always fetch through our Worker. Retry transient upstream failures and reject
+    // successful HTTP responses that are actually error pages without a report table.
+    const maxAttempts = 3;
+    let lastProblem = "";
+    for(let attempt = 1; attempt <= maxAttempts; attempt++){
+      try{
+        const response = await fetch(TRUSTED_FETCHER, {
+          method:"GET",
+          cache:"no-store",
+          credentials:"omit"
+        });
+        const responseText = await response.text();
+        if(!response.ok){
+          let detail = "";
+          try {
+            const data = JSON.parse(responseText);
+            detail = data && data.upstream_status ? " (official server status "+data.upstream_status+")" :
+              data && data.error ? ": "+String(data.error).slice(0,160) : "";
+          } catch {}
+          throw new Error("Worker returned HTTP "+response.status+detail+".");
+        }
+        const doc = new DOMParser().parseFromString(responseText, "text/html");
+        if(!doc.querySelector("table")){
+          const title = (doc.title || "").trim() || "(no page title)";
+          throw new Error("Worker response contained no HTML table (page title: "+title+").");
+        }
+        html = responseText;
+        lastProblem = "";
+        break;
+      }catch(fetchError){
+        lastProblem = fetchError && fetchError.message ? fetchError.message : String(fetchError);
+        if(attempt < maxAttempts){
+          message("Worker fetch attempt "+attempt+" of "+maxAttempts+" failed: "+lastProblem+" Retrying…", "warn");
+          await new Promise(resolve => setTimeout(resolve, 700 * attempt));
+        }
+      }
     }
+    if(!html) throw new Error("Worker fetch failed after "+maxAttempts+" attempts. Last result: "+lastProblem+" You can retry later or upload a saved webpage.");
     parseAndRender(html, url + " (" + loadedFrom + ")");
   }catch(err){
     message("Could not retrieve the official report.\n\n"+(err && err.message ? err.message : String(err))+"\n\nNo tracker data was changed.", "err");
