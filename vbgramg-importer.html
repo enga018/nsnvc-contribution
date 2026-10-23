@@ -136,10 +136,10 @@ $("fetchBtn").addEventListener("click", async () => {
         const responseText = await response.text();
         const contentType = response.headers.get("content-type") || "(not provided)";
         const trimmed = responseText.trimStart();
-        const controlCount = (responseText.match(/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/g) || []).length;
+        const controlCount = (responseText.match(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g) || []).length;
         const format = !responseText.length ? "empty" :
           controlCount > Math.max(4, responseText.length * 0.02) ? "binary-like text" :
-          /^<!doctype\\s+html|^<html/i.test(trimmed) ? "HTML" :
+          /^<!doctype\s+html|^<html/i.test(trimmed) ? "HTML" :
           /^[{[]/.test(trimmed) ? "JSON-like" :
           trimmed.startsWith("<") ? "markup-like" : "plain/unknown text";
         const responseMeta = "attempt "+attempt+"/"+maxAttempts+
@@ -160,7 +160,7 @@ $("fetchBtn").addEventListener("click", async () => {
         const tableCount = doc.querySelectorAll("table").length;
         if(!tableCount){
           const title = (doc.title || "").trim() || "(no page title)";
-          const bodyTextLength = (doc.body?.textContent || "").replace(/\\s+/g, " ").trim().length;
+          const bodyTextLength = (doc.body?.textContent || "").replace(/\s+/g, " ").trim().length;
           throw new Error(responseMeta+"; tables=0; title="+title+"; readable-body-chars="+bodyTextLength+".");
         }
         html = responseText;
