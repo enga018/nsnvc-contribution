@@ -28,8 +28,17 @@ button,.btn{display:inline-flex;align-items:center;justify-content:center;border
   <div id="app" class="hidden">
     <section class="card">
       <h2>1. Load VB-GRAMG data</h2>
-      <p class="muted">The importer tries to fetch the source page directly. If the government site blocks cross-origin access, open/save the page as an HTML file and upload it here. No contribution records are read or changed.</p>
-      <div class="field"><label for="sourceUrl">VB-GRAMG registration page URL</label><input id="sourceUrl" type="url" value="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html"></div>
+      <p class="muted">Configured for Serchhip district, Mizoram. Choose the block and enter the target Panchayat/village and financial year. The URL stays editable because the portal's report URL uses its own code pattern, which should not be guessed from LGD codes.</p>
+      <div class="stats" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+        <div class="field"><label for="stateName">State / State code</label><input id="stateName" value="Mizoram (15)" readonly></div>
+        <div class="field"><label for="districtName">District / District code</label><input id="districtName" value="Serchhip (05)" readonly></div>
+      </div>
+      <div class="stats" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+        <div class="field"><label for="blockName">Rural Development Block</label><select id="blockName" style="width:100%;padding:11px;border:1px solid #cfd0c7;border-radius:9px;font:inherit"><option value="Serchhip (01)">Serchhip (01)</option><option value="East Lungdar (02)">East Lungdar (02)</option></select></div>
+        <div class="field"><label for="villageName">Panchayat / village name</label><input id="villageName" value="New Serchhip North" autocomplete="off"></div>
+      </div>
+      <div class="field"><label for="financialYear">Financial year</label><select id="financialYear" style="width:100%;padding:11px;border:1px solid #cfd0c7;border-radius:9px;font:inherit"><option value="2026-27" selected>2026–27</option><option value="2025-26">2025–26</option><option value="2024-25">2024–25</option><option value="2023-24">2023–24</option></select></div>
+      <div class="field"><label for="sourceUrl">VB-GRAMG registration page URL (verify from the portal)</label><input id="sourceUrl" type="url" value="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html"></div>
       <div class="actions"><button id="fetchBtn">Fetch page</button><a class="btn secondary" id="openSource" href="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html" target="_blank" rel="noopener">Open source page</a></div>
       <div class="field" style="margin-top:14px"><label for="htmlFile">Or import a saved webpage (.html/.htm)</label><input id="htmlFile" type="file" accept=".html,.htm,text/html"></div>
       <div id="message" aria-live="polite"></div>
@@ -130,7 +139,7 @@ function parseAndRender(html, label){
   $("results").classList.remove("hidden");
   $("filters").querySelectorAll("button").forEach(b=>b.classList.toggle("active", b.dataset.filter===activeFilter));
   $("search").value = "";
-  message("Loaded "+records.length+" records from "+label+". No records were written to the contribution tracker.", "info");
+  message("Loaded "+records.length+" records from "+label+". Location selected: Serchhip district · "+$("blockName").value+" · "+$("villageName").value+" · FY "+$("financialYear").value+". No records were written to the contribution tracker.", "info");
   renderTable();
 }
 function renderTable(){
