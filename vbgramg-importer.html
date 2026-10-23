@@ -43,8 +43,8 @@ button,.btn{display:inline-flex;align-items:center;justify-content:center;border
       <p class="muted">Only the existing New Serchhip North URL is preconfigured. For another block or village, paste the exact Registration Application Register URL from the official portal below; the importer will not guess location codes.</p>
       <div class="field"><label for="sourceUrl">VB-GRAMG registration page URL</label><input id="sourceUrl" type="url" value="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html"></div>
       <div class="actions"><button id="fetchBtn">Load Records</button><a class="btn secondary" id="openSource" href="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html" target="_blank" rel="noopener">Open source page</a></div>
-      <div class="field" style="margin-top:12px"><label for="fetcherUrl">Optional server-side fetcher endpoint</label><input id="fetcherUrl" type="url" placeholder="https://your-worker.example.workers.dev"></div>
-      <p class="muted">If direct browser fetching fails, the importer can try this endpoint. It must be a trusted endpoint configured to retrieve only the fixed New Serchhip North report. See <code>vbgramg-fetcher/worker.js</code> in the repository. Do not enter an unknown public proxy.</p>
+      <div class="field" style="margin-top:12px"><label for="fetcherUrl">Optional server-side fetcher endpoint</label><input id="fetcherUrl" type="url" value="https://nsnvc-vbgramg-proxy.enga018.workers.dev/report" placeholder="https://nsnvc-vbgramg-proxy.enga018.workers.dev/report"></div>
+      <p class="muted">If direct browser fetching fails, the importer uses the configured NSNVC Cloudflare Worker for the fixed New Serchhip North report. The Worker has a fixed upstream URL and does not access the contribution database. Keep this endpoint unchanged unless the council deploys a reviewed replacement.</p>
       <div class="field" style="margin-top:14px"><label for="htmlFile">Or import a saved webpage (.html/.htm)</label><input id="htmlFile" type="file" accept=".html,.htm,text/html"></div>
       <div id="message" aria-live="polite"></div>
     </section>
@@ -73,6 +73,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const $ = id => document.getElementById(id);
+const TRUSTED_FETCHER = "https://nsnvc-vbgramg-proxy.enga018.workers.dev/report";
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 let records = [];
@@ -122,9 +123,9 @@ $("fetchBtn").addEventListener("click", async () => {
       loadedFrom = "direct browser request";
     } catch(directError) {
       const fetcher = $("fetcherUrl").value.trim();
-      if(fetcher && url !== "https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html") throw new Error("The configured fetcher is restricted to the fixed New Serchhip North report URL. Restore that exact URL before using the fetcher.");
-      if(!fetcher) throw new Error("Direct request failed ("+(directError?.message || String(directError))+"). If this is a CORS restriction, deploy the repository's trusted server-side fetcher and enter its endpoint above. HTTP 401/403 from the official site may require a valid session and cannot be fixed by CORS alone.");
-      if(!/^https:\/\//i.test(fetcher)) throw new Error("Fetcher endpoint must use HTTPS.");
+      if(url !== "https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html") throw new Error("The server-side fetcher is restricted to the fixed New Serchhip North report URL. Restore that exact URL before using the fetcher.");
+      if(fetcher !== TRUSTED_FETCHER) throw new Error("For safety, this importer only uses the council's configured NSNVC Worker endpoint. Restore the configured endpoint and try again.");
+      if(!fetcher) throw new Error("Direct request failed ("+(directError?.message || String(directError))+"). The trusted NSNVC Worker endpoint is required for the fallback. HTTP 401/403 from the official site may require a valid session and cannot be fixed by CORS alone.");
       const proxyResponse = await fetch(fetcher, {method:"GET", cache:"no-store", credentials:"omit"});
       if(!proxyResponse.ok) throw new Error("Fetcher endpoint returned HTTP "+proxyResponse.status+".");
       html = await proxyResponse.text();
