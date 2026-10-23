@@ -147,7 +147,7 @@ function parseAndRender(html, label){
   const tables = [...doc.querySelectorAll("table")];
   if(!tables.length){
     const title = (doc.title || "").trim() || "(no page title)";
-    const preview = (doc.body?.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 160) || "(no readable body text)";
+    const preview = (doc.body?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 160) || "(no readable body text)";
     throw new Error(
       "No HTML table found. Response diagnostics: " +
       "source=" + label + "; response size=" + html.length + " characters; " +
