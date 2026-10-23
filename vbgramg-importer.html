@@ -37,13 +37,13 @@ button,.btn{display:inline-flex;align-items:center;justify-content:center;border
       <div class="stats">
         <div class="stat"><span>Total records</span><strong id="totalCount">0</strong></div>
         <div class="stat"><span>Active</span><strong id="activeCount">0</strong></div>
-        <div class="stat"><span>Deleted saved</span><strong id="deletedCount">0</strong></div>
+        <div class="stat"><span>Deleted skipped</span><strong id="deletedCount">0</strong></div>
       </div>
       <div class="tools"><input id="search" type="search" placeholder="Search job card, household or applicant"></div>
-      <p class="muted">Only active records are stored. Deleted records are excluded before saving.</p>
+      <p class="muted">Results are displayed in this page only. Nothing is saved to Firestore, Supabase, or the contribution ledger. Export CSV if you need to keep a copy; refreshing or closing this page clears the results.</p>
       <div id="recordTable" class="table-wrap"></div>
       <div class="actions"><button id="backBtn" type="button">Back to URL</button><button id="exportBtn" type="button">Export visible CSV</button></div>
-      <p class="muted">Saved in a separate Firestore collection for authorised council users. The contribution tracker and ledger are not modified.</p>
+      <p class="muted">Temporary in-page results only — no database writes.</p>
     </section>
   </div>
 </main>
@@ -52,21 +52,21 @@ button,.btn{display:inline-flex;align-items:center;justify-content:center;border
 import { firebaseConfig } from "./firebase.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, writeBatch, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
 
 const $ = id => document.getElementById(id);
 const TRUSTED_FETCHER = "https://nsnvc-vbgramg-proxy.enga018.workers.dev/report";
 const EXPECTED_URL = "https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html";
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+
 let records = [];
 let activeImportId = null;
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function message(text, kind="info"){ $("message").innerHTML = '<div class="notice '+kind+'">'+esc(text)+'</div>'; }
 onAuthStateChanged(auth, user => {
   $("authWait").classList.add("hidden");
-  if(user){ $("authDenied").classList.add("hidden"); $("app").classList.remove("hidden"); loadSavedImport().catch(error=>message("Could not load saved records.\n"+(error?.message||String(error)), "err")); }
+  if(user){ $("authDenied").classList.add("hidden"); $("app").classList.remove("hidden"); message("Ready. Load Records to display a temporary result set in this page only."); }
   else { $("app").classList.add("hidden"); $("authDenied").classList.remove("hidden"); }
 });
 $("fetchBtn").addEventListener("click", async () => {
@@ -132,85 +132,15 @@ async function parseAndRender(html,label) {
     output.push({serial:output.length+1,jobCard,jcNo:slash>=0?jobCard.slice(slash+1).trim():jobCard,household,applicant,applicantNo:occurrence,uniqueId:jobCard+"/"+occurrence,status,deleted:false});
   }
   if(!output.length) throw new Error("No active records found using the existing importer column rules. No saved import was changed.");
-  message("Saving "+output.length+" active records to the council database…","warn");
-  const importId=await saveImport(output,label,deletedSkipped);
   records=output;
-  activeImportId=importId;
+  activeImportId=null;
   $("totalCount").textContent=records.length.toLocaleString("en-IN");
   $("activeCount").textContent=records.length.toLocaleString("en-IN");
-  $("deletedCount").textContent="0";
-  $("sourceInfo").textContent="Source: "+label+" · Saved centrally · "+deletedSkipped.toLocaleString("en-IN")+" deleted record(s) skipped";
+  $("deletedCount").textContent=deletedSkipped.toLocaleString("en-IN");
+  $("sourceInfo").textContent="Source: "+label+" · Temporary in-page results · "+deletedSkipped.toLocaleString("en-IN")+" deleted record(s) skipped";
   $("search").value="";
   renderTable();
-  message("Saved "+records.length+" active records to the council database. "+deletedSkipped+" deleted record(s) were excluded and not saved.","info");
-}
-async function saveImport(activeRecords,sourceUrl,deletedSkipped) {
-  const stateRef=doc(db,"vbgramgImportState","current");
-  const previousState=await getDoc(stateRef);
-  const previousImportId=previousState.exists()?previousState.data().activeImportId:null;
-  const importRef=doc(collection(db,"vbgramgImports"));
-  const importId=importRef.id;
-  const recordsRef=collection(db,"vbgramgImports",importId,"records");
-  for(let offset=0;offset<activeRecords.length;offset+=400) {
-    const batch=writeBatch(db);
-    for(const record of activeRecords.slice(offset,offset+400)) {
-      batch.set(doc(recordsRef,String(record.serial).padStart(6,"0")),record);
-    }
-    await batch.commit();
-  }
-  await setDoc(importRef,{
-    sourceUrl,recordCount:activeRecords.length,deletedSkipped,
-    importedBy:auth.currentUser?.uid||null,
-    importedByEmail:auth.currentUser?.email||null,
-    importedAt:serverTimestamp(),status:"complete"
-  });
-  // Switch the pointer only after every active record has been written.
-  await setDoc(stateRef,{
-    activeImportId:importId,sourceUrl,recordCount:activeRecords.length,
-    deletedSkipped,updatedAt:serverTimestamp()
-  });
-  // Remove the previous snapshot after the new one is active, so records that
-  // have since become deleted are not retained in old import snapshots.
-  if(previousImportId && previousImportId!==importId) {
-    try {
-      const oldRecords=await getDocs(collection(db,"vbgramgImports",previousImportId,"records"));
-      for(let offset=0;offset<oldRecords.docs.length;offset+=400) {
-        const batch=writeBatch(db);
-        for(const oldRecord of oldRecords.docs.slice(offset,offset+400)) batch.delete(oldRecord.ref);
-        await batch.commit();
-      }
-      await deleteDoc(doc(db,"vbgramgImports",previousImportId));
-    } catch(cleanupError) {
-      console.warn("New VB-GRAMG import is active, but cleanup of the previous snapshot failed.",cleanupError);
-    }
-  }
-  return importId;
-}
-async function loadSavedImport() {
-  const stateSnap=await getDoc(doc(db,"vbgramgImportState","current"));
-  if(!stateSnap.exists()) {
-    message("No saved import yet. Load Records to create the first council-wide active-record snapshot.","info");
-    return;
-  }
-  const state=stateSnap.data();
-  if(!state.activeImportId) {
-    message("No completed import is currently selected. Load Records to import active records.","warn");
-    return;
-  }
-  message("Loading saved council records…");
-  const savedQuery=query(collection(db,"vbgramgImports",state.activeImportId,"records"),orderBy("serial"));
-  const snapshot=await getDocs(savedQuery);
-  records=snapshot.docs.map(s=>{const d=s.data();return {serial:d.serial,jobCard:d.jobCard,jcNo:d.jcNo,household:d.household,applicant:d.applicant,applicantNo:d.applicantNo,uniqueId:d.uniqueId,status:d.status,deleted:false};});
-  activeImportId=state.activeImportId;
-  $("totalCount").textContent=records.length.toLocaleString("en-IN");
-  $("activeCount").textContent=records.length.toLocaleString("en-IN");
-  $("deletedCount").textContent="0";
-  $("sourceInfo").textContent="Saved council import · "+(state.sourceUrl||EXPECTED_URL)+" · Last saved "+(state.updatedAt?.toDate?state.updatedAt.toDate().toLocaleString():"time unavailable");
-  $("search").value="";
-  renderTable();
-  $("importPanel").classList.add("hidden");
-  $("results").classList.remove("hidden");
-  message("Loaded "+records.length+" saved active records from the council database. Deleted records are not stored.","info");
+  message("Displayed "+records.length+" active records in this page. "+deletedSkipped+" deleted record(s) were skipped. Nothing was written to any database.","info");
 }
 function getShown() {
   const queryText=$("search").value.trim().toLowerCase();
@@ -224,7 +154,7 @@ function renderTable() {
     '</tbody></table>';
 }
 $("search").addEventListener("input",renderTable);
-$("backBtn").addEventListener("click",()=>{$("results").classList.add("hidden");$("importPanel").classList.remove("hidden");message("Saved records remain in the council database. Load Records to refresh the saved snapshot.");});
+$("backBtn").addEventListener("click",()=>{$("results").classList.add("hidden");$("importPanel").classList.remove("hidden");records=[]; $("recordTable").innerHTML=""; message("Temporary results cleared from this page. Load Records to fetch them again.");});
 $("exportBtn").addEventListener("click",()=>{
   const header=["Sl. No.","Job Card Number","JC No.","Head of Household","Name of Applicant","Applicant No.","Unique ID","Status"];
   const cell=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
