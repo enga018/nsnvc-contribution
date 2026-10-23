@@ -34,12 +34,15 @@ button,.btn{display:inline-flex;align-items:center;justify-content:center;border
         <div class="field"><label for="districtName">District / District code</label><input id="districtName" value="Serchhip (05)" readonly></div>
       </div>
       <div class="stats" style="grid-template-columns:repeat(2,minmax(0,1fr))">
-        <div class="field"><label for="blockName">Rural Development Block</label><select id="blockName" style="width:100%;padding:11px;border:1px solid #cfd0c7;border-radius:9px;font:inherit"><option value="Serchhip (01)">Serchhip (01)</option><option value="East Lungdar (02)">East Lungdar (02)</option></select></div>
-        <div class="field"><label for="villageName">Panchayat / village name</label><input id="villageName" value="New Serchhip North" autocomplete="off"></div>
+        <div class="field"><label for="blockName">Rural Development Block</label><select id="blockName" style="width:100%;padding:11px;border:1px solid #cfd0c7;border-radius:9px;font:inherit"><option value="Serchhip" selected>Serchhip</option><option value="East Lungdar">East Lungdar</option><option value="Other block">Other block / manual URL</option></select></div>
+        <div class="field"><label for="villageChoice">Village / Gram Panchayat</label><select id="villageChoice" style="width:100%;padding:11px;border:1px solid #cfd0c7;border-radius:9px;font:inherit"><option value="New Serchhip North" selected>New Serchhip North</option><option value="other">Other village / manual URL</option></select></div>
       </div>
+      <div id="otherVillageWrap" class="field hidden"><label for="villageName">Village name</label><input id="villageName" placeholder="Enter village / Gram Panchayat name" autocomplete="off"></div>
       <div class="field"><label for="financialYear">Financial year</label><select id="financialYear" style="width:100%;padding:11px;border:1px solid #cfd0c7;border-radius:9px;font:inherit"><option value="2026-27" selected>2026–27</option><option value="2025-26">2025–26</option><option value="2024-25">2024–25</option><option value="2023-24">2023–24</option></select></div>
-      <div class="field"><label for="sourceUrl">VB-GRAMG registration page URL (verify from the portal)</label><input id="sourceUrl" type="url" value="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html"></div>
-      <div class="actions"><button id="fetchBtn">Fetch page</button><a class="btn secondary" id="openSource" href="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html" target="_blank" rel="noopener">Open source page</a></div>
+      <div class="actions"><button id="applySettingsBtn" class="secondary">Apply location & year</button></div>
+      <p class="muted">Only the existing New Serchhip North URL is preconfigured. For another block or village, paste the exact Registration Application Register URL from the official portal below; the importer will not guess location codes.</p>
+      <div class="field"><label for="sourceUrl">VB-GRAMG registration page URL</label><input id="sourceUrl" type="url" value="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html"></div>
+      <div class="actions"><button id="fetchBtn">Load Records</button><a class="btn secondary" id="openSource" href="https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html" target="_blank" rel="noopener">Open source page</a></div>
       <div class="field" style="margin-top:14px"><label for="htmlFile">Or import a saved webpage (.html/.htm)</label><input id="htmlFile" type="file" accept=".html,.htm,text/html"></div>
       <div id="message" aria-live="polite"></div>
     </section>
@@ -79,6 +82,27 @@ onAuthStateChanged(auth, user => {
   else { $("app").classList.add("hidden"); $("authDenied").classList.remove("hidden"); }
 });
 $("sourceUrl").addEventListener("input", () => { $("openSource").href = $("sourceUrl").value.trim(); });
+$("villageChoice").addEventListener("change", () => {
+  $("otherVillageWrap").classList.toggle("hidden", $("villageChoice").value !== "other");
+});
+$("applySettingsBtn").addEventListener("click", () => {
+  const block = $("blockName").value;
+  const village = $("villageChoice").value === "other" ? $("villageName").value.trim() : $("villageChoice").value;
+  const year = $("financialYear").value;
+  if (block === "Serchhip" && village === "New Serchhip North") {
+    const current = $("sourceUrl").value.trim();
+    if (!current) { message("The source URL is empty. Paste the exact Registration Application Register URL from the portal.", "err"); return; }
+    if (!/eng\\d{4}\\.html$/i.test(current)) {
+      message("The URL does not end in the expected engYYZZ.html pattern. Open the official portal and paste the exact page URL; it was not changed.", "warn"); return;
+    }
+    const suffix = "eng" + year.slice(2,4) + year.slice(5,7) + ".html";
+    $("sourceUrl").value = current.replace(/eng\\d{4}\\.html$/i, suffix);
+    $("openSource").href = $("sourceUrl").value;
+    message("Applied Serchhip · New Serchhip North · FY " + year + ". Review the URL, then tap Load Records. The village code was kept unchanged; only the financial-year suffix was changed.", "info");
+  } else {
+    message("Location selected: " + block + " · " + (village || "village not entered") + " · FY " + year + ". For this location, paste the exact Registration Application Register URL from the official VB-GRAMG portal. No code has been guessed.", "warn");
+  }
+});
 $("fetchBtn").addEventListener("click", async () => {
   const url = $("sourceUrl").value.trim();
   if(!/^https:\/\//i.test(url)){ message("Enter a valid HTTPS source URL.", "err"); return; }
