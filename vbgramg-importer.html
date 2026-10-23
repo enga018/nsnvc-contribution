@@ -217,16 +217,67 @@ $("fetchBtn").addEventListener("click", async () => {
       }
     }
     if(!html) throw new Error("Unable to load report after 3 attempts.\n"+diagnostics.join("\n"));
-    await parseAndRender(html,url);
+    await parseAndRender(html,url,false);
     $("importPanel").classList.add("hidden");
     $("results").classList.remove("hidden");
   } catch(error) {
     message("Could not retrieve the report.\n"+(error?.message||String(error))+"\n\nNo tracker data was changed.","err");
   } finally { $("fetchBtn").disabled=false; }
 });
-async function parseAndRender(html,label) {
-  message("Starting the in-browser Python engine…");
-  const parsed = await parseWithPython(html);
+function parseWithJavaScript(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const tables = Array.from(doc.querySelectorAll("table"));
+  if (!tables.length) throw new Error("No HTML tables were found in the retrieved report.");
+  const rowCount = table => table.rows ? table.rows.length : 0;
+  const table = tables.length > 4 && rowCount(tables[4]) > 10
+    ? tables[4]
+    : tables.reduce((best, candidate) => rowCount(candidate) > rowCount(best) ? candidate : best, tables[0]);
+  if (rowCount(table) < 3) throw new Error("The selected table has too few rows to be a registration report.");
+  const counts = new Map();
+  const output = [];
+  let previousHousehold = "";
+  let deletedSkipped = 0;
+  const numericSerial = /^\d+(?:\.\d+)?$/;
+  for (let i = 2; i < table.rows.length; i++) {
+    const row = table.rows[i];
+    const cells = Array.from(row.cells, cell => (cell.innerText || cell.textContent || "").replace(/\s+/g, " ").trim());
+    if (!cells.length || !cells[0] || !numericSerial.test(cells[0])) continue;
+    const jobCard = cells[8] || "";
+    let household = cells[1] || "";
+    if (household) previousHousehold = household;
+    else household = previousHousehold;
+    const applicant = cells[3] || "";
+    const status = cells[10] || "";
+    if (!jobCard) continue;
+    if (status.toLowerCase().includes("deleted")) { deletedSkipped++; continue; }
+    const occurrence = (counts.get(jobCard) || 0) + 1;
+    counts.set(jobCard, occurrence);
+    const slash = jobCard.lastIndexOf("/");
+    const jcNo = slash >= 0 ? jobCard.slice(slash + 1).trim() : jobCard;
+    output.push({
+      serial: output.length + 1,
+      jobCard,
+      jcNo,
+      household,
+      applicant,
+      applicantNo: occurrence,
+      uniqueId: jobCard + "/" + occurrence,
+      status,
+      deleted: false
+    });
+  }
+  if (!output.length) throw new Error("No active records matched the expected report columns. The portal may have returned an error page or changed its table layout.");
+  return {records: output, deletedSkipped, tableCount: tables.length, selectedRowCount: rowCount(table)};
+}
+async function parseAndRender(html,label,usePython=true) {
+  let parsed;
+  if (usePython) {
+    message("Starting the in-browser Python engine…");
+    parsed = await parseWithPython(html);
+  } else {
+    message("Parsing the report in this browser…");
+    parsed = parseWithJavaScript(html);
+  }
   records = parsed.records;
   const deletedSkipped = parsed.deletedSkipped;
   $("totalCount").textContent=records.length.toLocaleString("en-IN");
