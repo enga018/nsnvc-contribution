@@ -145,7 +145,18 @@ $("htmlFile").addEventListener("change", async event => {
 function parseAndRender(html, label){
   const doc = new DOMParser().parseFromString(html, "text/html");
   const tables = [...doc.querySelectorAll("table")];
-  if(!tables.length) throw new Error("No HTML table found. Make sure you saved the full registration page, not a shortcut or screenshot.");
+  if(!tables.length){
+    const title = (doc.title || "").trim() || "(no page title)";
+    const preview = (doc.body?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 160) || "(no readable body text)";
+    throw new Error(
+      "No HTML table found. Response diagnostics: " +
+      "source=" + label + "; response size=" + html.length + " characters; " +
+      "page title=" + title + "; table elements found=0; " +
+      "body preview=" + preview +
+      ". This usually means the report service returned a different page (for example, an error page) rather than the registration table. " +
+      "No tracker data was changed."
+    );
+  }
   let table = tables[4] && tables[4].rows.length > 10 ? tables[4] : tables.reduce((best, t) => t.rows.length > best.rows.length ? t : best, tables[0]);
   if(table.rows.length < 3) throw new Error("The selected table has too few rows.");
   const counts = new Map();
