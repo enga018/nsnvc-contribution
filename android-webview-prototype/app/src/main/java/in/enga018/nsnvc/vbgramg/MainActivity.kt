@@ -127,10 +127,10 @@ class MainActivity : Activity() {
                 }
                 val rows = result.optJSONArray("rows") ?: JSONArray()
                 status.text = if (rows.length() == 0) "No table rows found. The page may be an error or session page."
-                    else "Read ${rows.length() table rows. Preview only; no tracker data changed."
+                    else "Read ${rows.length()} table rows. Preview only; no tracker data changed."
                 showPreview(result, rows)
             } catch (error: Exception) {
-                status.text = "Could not inspect report: ${error.message"
+                status.text = "Could not inspect report: ${error.message}"
             }
         }
     }
