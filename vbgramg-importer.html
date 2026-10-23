@@ -237,7 +237,7 @@ function parseWithJavaScript(html) {
   const output = [];
   let previousHousehold = "";
   let deletedSkipped = 0;
-  const numericSerial = /^\d+(?:\\.\d+)?$/;
+  const numericSerial = /^\d+(?:\.\d+)?$/;
   for (let i = 2; i < table.rows.length; i++) {
     const row = table.rows[i];
     const cells = Array.from(row.cells, cell => (cell.innerText || cell.textContent || "").replace(/\s+/g, " ").trim());
