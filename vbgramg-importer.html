@@ -37,13 +37,13 @@ button,.btn{display:inline-flex;align-items:center;justify-content:center;border
       <div class="stats">
         <div class="stat"><span>Total records</span><strong id="totalCount">0</strong></div>
         <div class="stat"><span>Active</span><strong id="activeCount">0</strong></div>
-        <div class="stat"><span>Deleted</span><strong id="deletedCount">0</strong></div>
+        <div class="stat"><span>Deleted saved</span><strong id="deletedCount">0</strong></div>
       </div>
       <div class="tools"><input id="search" type="search" placeholder="Search job card, household or applicant"></div>
-      <div class="filters" id="filters"><button class="active" data-filter="active">Active</button><button data-filter="deleted">Deleted</button><button data-filter="all">All records</button></div>
+      <p class="muted">Only active records are stored. Deleted records are excluded before saving.</p>
       <div id="recordTable" class="table-wrap"></div>
       <div class="actions"><button id="backBtn" type="button">Back to URL</button><button id="exportBtn" type="button">Export visible CSV</button></div>
-      <p class="muted">Preview only. Nothing is written to or changed in the contribution tracker or ledger.</p>
+      <p class="muted">Saved in a separate Firestore collection for authorised council users. The contribution tracker and ledger are not modified.</p>
     </section>
   </div>
 </main>
@@ -52,19 +52,21 @@ button,.btn{display:inline-flex;align-items:center;justify-content:center;border
 import { firebaseConfig } from "./firebase.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, writeBatch, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const $ = id => document.getElementById(id);
 const TRUSTED_FETCHER = "https://nsnvc-vbgramg-proxy.enga018.workers.dev/report";
 const EXPECTED_URL = "https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html";
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db = getFirestore(app);
 let records = [];
-let activeFilter = "active";
+let activeImportId = null;
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function message(text, kind="info"){ $("message").innerHTML = '<div class="notice '+kind+'">'+esc(text)+'</div>'; }
 onAuthStateChanged(auth, user => {
   $("authWait").classList.add("hidden");
-  if(user){ $("authDenied").classList.add("hidden"); $("app").classList.remove("hidden"); }
+  if(user){ $("authDenied").classList.add("hidden"); $("app").classList.remove("hidden"); loadSavedImport().catch(error=>message("Could not load saved records.\\n"+(error?.message||String(error)), "err")); }
   else { $("app").classList.add("hidden"); $("authDenied").classList.remove("hidden"); }
 });
 $("fetchBtn").addEventListener("click", async () => {
@@ -101,48 +103,99 @@ $("fetchBtn").addEventListener("click", async () => {
       }
     }
     if(!html) throw new Error("Unable to load report after 3 attempts.\n"+diagnostics.join("\n"));
-    parseAndRender(html,url);
+    await parseAndRender(html,url);
     $("importPanel").classList.add("hidden");
     $("results").classList.remove("hidden");
   } catch(error) {
     message("Could not retrieve the report.\n"+(error?.message||String(error))+"\n\nNo tracker data was changed.","err");
   } finally { $("fetchBtn").disabled=false; }
 });
-function parseAndRender(html,label) {
-  const doc = new DOMParser().parseFromString(html,"text/html");
-  const tables = [...doc.querySelectorAll("table")];
+async function parseAndRender(html,label) {
+  const reportDoc = new DOMParser().parseFromString(html,"text/html");
+  const tables = [...reportDoc.querySelectorAll("table")];
   if(!tables.length) throw new Error("No HTML table found in the report.");
   const table = tables[4] && tables[4].rows.length>10 ? tables[4] : tables.reduce((best,t)=>t.rows.length>best.rows.length?t:best,tables[0]);
   if(table.rows.length<3) throw new Error("The selected table has too few rows.");
-  const counts = new Map();
-  const output = [];
-  let previousHousehold = "";
+  const counts = new Map(), output = [];
+  let previousHousehold = "", deletedSkipped = 0;
   for(let i=2;i<table.rows.length;i++) {
     const cells = [...table.rows[i].cells].map(cell=>(cell.innerText||cell.textContent||"").trim());
-    if(!cells[0] || !/^\d+(?:\.\d+)?$/.test(cells[0])) continue;
-    const jobCard = cells[8] || "";
-    let household = cells[1] || "";
+    if(!cells[0] || !/^\\d+(?:\\.\\d+)?$/.test(cells[0])) continue;
+    const jobCard=cells[8]||"";
+    let household=cells[1]||"";
     if(household) previousHousehold=household; else household=previousHousehold;
     const applicant=cells[3]||"", status=cells[10]||"";
     if(!jobCard) continue;
+    if(status.toLowerCase().includes("deleted")) { deletedSkipped++; continue; }
     const occurrence=(counts.get(jobCard)||0)+1; counts.set(jobCard,occurrence);
     const slash=jobCard.lastIndexOf("/");
-    output.push({serial:output.length+1,jobCard,jcNo:slash>=0?jobCard.slice(slash+1).trim():jobCard,household,applicant,applicantNo:occurrence,uniqueId:jobCard+"/"+occurrence,status,deleted:status.toLowerCase().includes("deleted")});
+    output.push({serial:output.length+1,jobCard,jcNo:slash>=0?jobCard.slice(slash+1).trim():jobCard,household,applicant,applicantNo:occurrence,uniqueId:jobCard+"/"+occurrence,status,deleted:false});
   }
-  if(!output.length) throw new Error("No valid records found using the existing importer column rules. The source page layout may have changed.");
-  records=output; activeFilter="active";
+  if(!output.length) throw new Error("No active records found using the existing importer column rules. No saved import was changed.");
+  message("Saving "+output.length+" active records to the council database…","warn");
+  const importId=await saveImport(output,label,deletedSkipped);
+  records=output;
+  activeImportId=importId;
   $("totalCount").textContent=records.length.toLocaleString("en-IN");
-  $("activeCount").textContent=records.filter(r=>!r.deleted).length.toLocaleString("en-IN");
-  $("deletedCount").textContent=records.filter(r=>r.deleted).length.toLocaleString("en-IN");
-  $("sourceInfo").textContent="Source: "+label;
+  $("activeCount").textContent=records.length.toLocaleString("en-IN");
+  $("deletedCount").textContent="0";
+  $("sourceInfo").textContent="Source: "+label+" · Saved centrally · "+deletedSkipped.toLocaleString("en-IN")+" deleted record(s) skipped";
   $("search").value="";
-  $("filters").querySelectorAll("button").forEach(b=>b.classList.toggle("active",b.dataset.filter===activeFilter));
   renderTable();
-  message("Loaded "+records.length+" records. Preview only; tracker and ledger unchanged.","info");
+  message("Saved "+records.length+" active records to the council database. "+deletedSkipped+" deleted record(s) were excluded and not saved.","info");
+}
+async function saveImport(activeRecords,sourceUrl,deletedSkipped) {
+  const importRef=doc(collection(db,"vbgramgImports"));
+  const importId=importRef.id;
+  const recordsRef=collection(db,"vbgramgImports",importId,"records");
+  for(let offset=0;offset<activeRecords.length;offset+=400) {
+    const batch=writeBatch(db);
+    for(const record of activeRecords.slice(offset,offset+400)) {
+      batch.set(doc(recordsRef,String(record.serial).padStart(6,"0")),record);
+    }
+    await batch.commit();
+  }
+  await setDoc(importRef,{
+    sourceUrl,recordCount:activeRecords.length,deletedSkipped,
+    importedBy:auth.currentUser?.uid||null,
+    importedByEmail:auth.currentUser?.email||null,
+    importedAt:serverTimestamp(),status:"complete"
+  });
+  await setDoc(doc(db,"vbgramgImportState","current"),{
+    activeImportId:importId,sourceUrl,recordCount:activeRecords.length,
+    deletedSkipped,updatedAt:serverTimestamp()
+  });
+  return importId;
+}
+async function loadSavedImport() {
+  const stateSnap=await getDoc(doc(db,"vbgramgImportState","current"));
+  if(!stateSnap.exists()) {
+    message("No saved import yet. Load Records to create the first council-wide active-record snapshot.","info");
+    return;
+  }
+  const state=stateSnap.data();
+  if(!state.activeImportId) {
+    message("No completed import is currently selected. Load Records to import active records.","warn");
+    return;
+  }
+  message("Loading saved council records…");
+  const savedQuery=query(collection(db,"vbgramgImports",state.activeImportId,"records"),orderBy("serial"));
+  const snapshot=await getDocs(savedQuery);
+  records=snapshot.docs.map(s=>{const d=s.data();return {serial:d.serial,jobCard:d.jobCard,jcNo:d.jcNo,household:d.household,applicant:d.applicant,applicantNo:d.applicantNo,uniqueId:d.uniqueId,status:d.status,deleted:false};});
+  activeImportId=state.activeImportId;
+  $("totalCount").textContent=records.length.toLocaleString("en-IN");
+  $("activeCount").textContent=records.length.toLocaleString("en-IN");
+  $("deletedCount").textContent="0";
+  $("sourceInfo").textContent="Saved council import · "+(state.sourceUrl||EXPECTED_URL)+" · Last saved "+(state.updatedAt?.toDate?state.updatedAt.toDate().toLocaleString():"time unavailable");
+  $("search").value="";
+  renderTable();
+  $("importPanel").classList.add("hidden");
+  $("results").classList.remove("hidden");
+  message("Loaded "+records.length+" saved active records from the council database. Deleted records are not stored.","info");
 }
 function getShown() {
-  const query=$("search").value.trim().toLowerCase();
-  return records.filter(r=>(activeFilter==="all"||(activeFilter==="deleted"?r.deleted:!r.deleted))&&[r.jobCard,r.jcNo,r.household,r.applicant,r.uniqueId,r.status].some(v=>String(v).toLowerCase().includes(query)));
+  const queryText=$("search").value.trim().toLowerCase();
+  return records.filter(r=>[r.jobCard,r.jcNo,r.household,r.applicant,r.uniqueId,r.status].some(v=>String(v).toLowerCase().includes(queryText)));
 }
 function renderTable() {
   const shown=getShown();
@@ -151,9 +204,8 @@ function renderTable() {
     shown.map(r=>'<tr class="'+(r.deleted?'deleted':'')+'"><td>'+r.serial+'</td><td>'+esc(r.jobCard)+'</td><td>'+esc(r.jcNo)+'</td><td>'+esc(r.household)+'</td><td>'+esc(r.applicant)+'</td><td>'+r.applicantNo+'</td><td class="id">'+esc(r.uniqueId)+'</td><td><span class="status '+(r.deleted?'deleted':'active')+'">'+(r.deleted?'Deleted':'Active')+'</span>'+(r.status?' <span class="muted">'+esc(r.status)+'</span>':'')+'</td></tr>').join("")+
     '</tbody></table>';
 }
-$("filters").addEventListener("click",e=>{const b=e.target.closest("button[data-filter]");if(!b)return;activeFilter=b.dataset.filter;$("filters").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b));renderTable();});
 $("search").addEventListener("input",renderTable);
-$("backBtn").addEventListener("click",()=>{$("results").classList.add("hidden");$("importPanel").classList.remove("hidden");});
+$("backBtn").addEventListener("click",()=>{$("results").classList.add("hidden");$("importPanel").classList.remove("hidden");message("Saved records remain in the council database. Load Records to refresh the saved snapshot.");});
 $("exportBtn").addEventListener("click",()=>{
   const header=["Sl. No.","Job Card Number","JC No.","Head of Household","Name of Applicant","Applicant No.","Unique ID","Status"];
   const cell=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
