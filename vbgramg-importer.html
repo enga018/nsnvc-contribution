@@ -122,6 +122,7 @@ $("fetchBtn").addEventListener("click", async () => {
       loadedFrom = "direct browser request";
     } catch(directError) {
       const fetcher = $("fetcherUrl").value.trim();
+      if(fetcher && url !== "https://vbgramgrep.dord.gov.in/VBGRAMG/writereaddata/citizen_out/panchregpeople_2207001005_eng2627.html") throw new Error("The configured fetcher is restricted to the fixed New Serchhip North report URL. Restore that exact URL before using the fetcher.");
       if(!fetcher) throw new Error("Direct request failed ("+(directError?.message || String(directError))+"). If this is a CORS restriction, deploy the repository's trusted server-side fetcher and enter its endpoint above. HTTP 401/403 from the official site may require a valid session and cannot be fixed by CORS alone.");
       if(!/^https:\/\//i.test(fetcher)) throw new Error("Fetcher endpoint must use HTTPS.");
       const proxyResponse = await fetch(fetcher, {method:"GET", cache:"no-store", credentials:"omit"});
